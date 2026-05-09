@@ -1,0 +1,289 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { User } from "firebase/auth";
+import { useAuth } from "@/lib/firebase/auth-context";
+import {
+  bootstrapAccessOwner,
+  checkAccess,
+  getAccessBootstrap,
+} from "@/lib/firebase/data";
+import type { AccessEntry } from "@/lib/domain/types";
+
+type AccessResult = {
+  email: string;
+  granted: boolean;
+  entry: AccessEntry | null;
+};
+
+type AccessCache = AccessResult & {
+  checkedAt: number;
+};
+
+const ACCESS_CACHE_PREFIX = "briefing:access:";
+const ACCESS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function getAccessCacheKey(email: string) {
+  return `${ACCESS_CACHE_PREFIX}${email}`;
+}
+
+function readCachedAccess(email: string): AccessResult | null {
+  if (typeof window === "undefined" || !email) return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(getAccessCacheKey(email));
+    if (!raw) return null;
+
+    const cached = JSON.parse(raw) as AccessCache;
+    if (cached.email !== email) return null;
+    if (Date.now() - cached.checkedAt > ACCESS_CACHE_TTL_MS) return null;
+
+    return {
+      email: cached.email,
+      granted: cached.granted,
+      entry: cached.entry,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAccess(result: AccessResult) {
+  if (typeof window === "undefined" || !result.email) return;
+
+  try {
+    const cached: AccessCache = {
+      ...result,
+      checkedAt: Date.now(),
+    };
+    window.sessionStorage.setItem(
+      getAccessCacheKey(result.email),
+      JSON.stringify(cached),
+    );
+  } catch {
+    // ignore cache write failures
+  }
+}
+
+/**
+ * Wraps the app — only renders children when the signed-in user
+ * has an entry in the accessControl collection.
+ *
+ * Security note: Firestore rules must also restrict reads/writes to
+ * authenticated users whose email exists in /accessControl/{email}.
+ * This component is a UX guard only; real security is in Firestore rules.
+ */
+export function AccessGuard({ children }: { children: React.ReactNode }) {
+  const { user, signOut } = useAuth();
+  const [access, setAccess] = useState<AccessResult | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const email = user.email?.toLowerCase() ?? "";
+    let cancelled = false;
+
+    async function check(u: User, cached: AccessResult | null) {
+      try {
+        if (!email) {
+          if (!cancelled) {
+            setAccess((prev) =>
+              prev && prev.email === "" ? prev : { email: "", granted: false, entry: null },
+            );
+          }
+          return;
+        }
+
+        const bootstrap = await getAccessBootstrap();
+        if (cancelled) return;
+
+        if (!bootstrap) {
+          const newEntry: AccessEntry = {
+            email,
+            role: "owner",
+            displayName: u.displayName ?? undefined,
+            photoURL: u.photoURL ?? undefined,
+          };
+          await bootstrapAccessOwner(newEntry);
+          if (!cancelled) {
+            const nextAccess = { email, granted: true, entry: newEntry };
+            writeCachedAccess(nextAccess);
+            setAccess((prev) =>
+              prev && prev.email === email && prev.granted === true ? prev : nextAccess,
+            );
+          }
+          return;
+        }
+
+        if (cached?.granted) {
+          if (u.displayName || u.photoURL) {
+            import("@/lib/firebase/data").then(({ updateAccessEntry }) =>
+              updateAccessEntry(email, {
+                displayName: u.displayName ?? undefined,
+                photoURL: u.photoURL ?? undefined,
+              }),
+            );
+          }
+        }
+
+        const found = await checkAccess(email);
+        if (cancelled) return;
+
+        if (!cancelled) {
+          if (found) {
+            if (u.displayName || u.photoURL) {
+              import("@/lib/firebase/data").then(({ updateAccessEntry }) =>
+                updateAccessEntry(email, {
+                  displayName: u.displayName ?? undefined,
+                  photoURL: u.photoURL ?? undefined,
+                }),
+              );
+            }
+            const nextAccess = { email, granted: true, entry: found };
+            writeCachedAccess(nextAccess);
+            setAccess((prev) =>
+              prev && prev.email === email && prev.granted === true && prev.entry === found
+                ? prev
+                : nextAccess,
+            );
+          } else {
+            const nextAccess = { email, granted: false, entry: null };
+            writeCachedAccess(nextAccess);
+            setAccess((prev) =>
+              prev && prev.email === email && prev.granted === false ? prev : nextAccess,
+            );
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          const nextAccess = { email, granted: false, entry: null };
+          writeCachedAccess(nextAccess);
+          setAccess((prev) =>
+            prev && prev.email === email && prev.granted === false ? prev : nextAccess,
+          );
+        }
+      }
+    }
+
+    async function hydrateAndCheck(u: User) {
+      const cached = readCachedAccess(email);
+
+      if (!cancelled) {
+        setAccess(cached ?? null);
+      }
+
+      await check(u, cached);
+    }
+
+    void hydrateAndCheck(user);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  if (!user) return null; // LoginCard handles unauthenticated state
+
+  const currentEmail = user.email?.toLowerCase() ?? "";
+  const isPending = !access || access.email !== currentEmail;
+
+  if (isPending) return <LoadingScreen />;
+  if (!access.granted)
+    return <DeniedScreen onLogout={signOut} userEmail={user.email ?? ""} />;
+
+  return <>{children}</>;
+}
+
+function LoadingScreen() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        flexDirection: "column",
+        gap: 16,
+        color: "var(--muted)",
+      }}
+    >
+      <div style={{ fontSize: "2rem", animation: "spin 1s linear infinite" }}>
+        ⏳
+      </div>
+      <p style={{ fontSize: ".9rem" }}>Verificando acesso…</p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+function DeniedScreen({
+  onLogout,
+  userEmail,
+}: {
+  onLogout: () => void;
+  userEmail: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        padding: "0 16px",
+      }}
+    >
+      <div
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 16,
+          padding: "40px 32px",
+          maxWidth: 400,
+          width: "100%",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: "3rem", marginBottom: 16 }}>🚫</div>
+        <h2
+          style={{
+            fontSize: "1.2rem",
+            fontWeight: 700,
+            marginBottom: 8,
+            color: "var(--text)",
+          }}
+        >
+          Acesso não autorizado
+        </h2>
+        <p
+          style={{
+            fontSize: ".88rem",
+            color: "var(--muted)",
+            lineHeight: 1.6,
+            marginBottom: 8,
+          }}
+        >
+          A conta <strong style={{ color: "var(--text)" }}>{userEmail}</strong>{" "}
+          não possui permissão para acessar este sistema.
+        </p>
+        <p
+          style={{
+            fontSize: ".82rem",
+            color: "var(--muted)",
+            marginBottom: 24,
+          }}
+        >
+          Entre em contato com o administrador para solicitar acesso.
+        </p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={onLogout}
+          style={{ width: "100%", justifyContent: "center" }}
+        >
+          🔄 Trocar conta / Sair
+        </button>
+      </div>
+    </div>
+  );
+}

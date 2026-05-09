@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function requesterDoc() {
+      return get(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
+    }
+
+    function isOwnerOrAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email))
+        && requesterDoc().data.role in ["owner", "admin"];
+    }
+
+    function isAuthorized() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
+    }
+
+    match /controleAcessoMeta/{docId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && docId == "config"
+        && !exists(/databases/$(database)/documents/controleAcessoMeta/config)
+        && request.resource.data.ownerEmail == request.auth.token.email;
+      allow update, delete: if isOwnerOrAdmin();
+    }
+
+    match /controleAcesso/{email} {
+      allow read: if signedIn() && (request.auth.token.email == email || isOwnerOrAdmin());
+      allow list: if isOwnerOrAdmin();
+      allow create: if signedIn() && (
+        (!exists(/databases/$(database)/documents/controleAcessoMeta/config)
+          && request.auth.token.email == email
+          && request.resource.data.role == "owner")
+        || isOwnerOrAdmin()
+      );
+      allow update, delete: if isOwnerOrAdmin() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
+    }
+
+    // Shared collections for team
+    match /rascunho/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
+    match /dias/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
+    match /metas/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
+    match /metasHistorico/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
+    match /custos/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
+    match /estoque/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
+    // Legacy: Allow authorized users read old data, writes only own uid
+    match /usuarios/{uid}/{document=**} {
+      allow read: if isAuthorized();
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
