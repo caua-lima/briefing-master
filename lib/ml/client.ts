@@ -1,0 +1,59 @@
+// lib/ml/client.ts
+const ML_APP_ID = process.env.ML_APP_ID!;
+const ML_SECRET = process.env.ML_SECRET!;
+const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI!;
+const ML_API = "https://api.mercadolibre.com";
+
+export function getAuthURL(): string {
+  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`;
+}
+
+export async function exchangeCodeForToken(code: string) {
+  const res = await fetch(`${ML_API}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: ML_APP_ID,
+      client_secret: ML_SECRET,
+      code,
+      redirect_uri: ML_REDIRECT_URI,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function refreshAccessToken(refreshToken: string) {
+  const res = await fetch(`${ML_API}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: ML_APP_ID,
+      client_secret: ML_SECRET,
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getOrdersForDay(accessToken: string, sellerId: string, dateISO: string) {
+  const from = `${dateISO}T00:00:00.000-03:00`;
+  const to   = `${dateISO}T23:59:59.999-03:00`;
+  const url = `${ML_API}/orders/search?seller=${sellerId}&order.date_created.from=${encodeURIComponent(from)}&order.date_created.to=${encodeURIComponent(to)}&order.status=paid&limit=50`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getItemDetails(accessToken: string, itemId: string) {
+  const res = await fetch(`${ML_API}/items/${itemId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
