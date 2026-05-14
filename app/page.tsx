@@ -12,6 +12,7 @@ import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
+import { MLConnectButton } from "@/components/MLConnectButton";
 
 type Tab = "dashboard" | "hoje" | "historico" | "metas" | "custos" | "estoque" | "acesso";
 
@@ -267,9 +268,12 @@ function AppShell() {
               {NAV_ITEMS.find((n) => n.id === tab)?.label}
             </div>
 
-            <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
               Mercado Livre · Multiplos Anuncios
-            </div>
+              </span>
+            <MLConnectButton />
+</div>
           </header>
 
           {/* Tab content */}
