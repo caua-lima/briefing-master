@@ -5,7 +5,7 @@ Guia direto para instalar e configurar Firebase neste projeto, localmente e em d
 ## 1. Requisitos
 
 - Node.js 20+
-- Conta Google com acesso ao projeto Firebase `briefing-76017` <- procure pelo nome do seu projeto>
+- Conta Google com acesso ao projeto Firebase `vazxpress-a2350` (substitua pelo nome do seu projeto se for um fork)
 - npm
 
 ## 2. Instalar dependencias do projeto
@@ -22,11 +22,10 @@ Crie ou ajuste arquivo `.env.local` na raiz com estas chaves:
 ```env
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=briefing-76017
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=vazxpress-a2350
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
-NEXT_PUBLIC_ALLOWED_EMAILS=
 ```
 
 Obs:
@@ -45,7 +44,7 @@ Abra `http://localhost:3000`.
 
 Este projeto ja possui:
 - `firebase.json`
-- `.firebaserc` com projeto default `briefing-76017`
+- `.firebaserc` com projeto default `vazxpress-a2350`
 - `firestore.rules`
 
 ### 5.1 Usar CLI sem instalacao global
@@ -63,13 +62,13 @@ npx firebase-tools login
 ### 5.3 Confirmar projeto alvo
 
 ```bash
-npx firebase-tools use briefing-76017 ### Aqui deve ser o nome do seu projeto, se nao tiver, rode `npx firebase-tools projects:list` para ver os projetos disponiveis e confirmar o nome correto.
+npx firebase-tools use vazxpress-a2350 ### Aqui deve ser o nome do seu projeto, se nao tiver, rode `npx firebase-tools projects:list` para ver os projetos disponiveis e confirmar o nome correto.
 ```
 
 ### 5.4 Deploy das regras do Firestore
 
 ```bash
-npx firebase-tools deploy --only firestore:rules --project briefing-76017
+npx firebase-tools deploy --only firestore:rules --project vazxpress-a2350
 ```
 
 ### 5.5 Emuladores locais (opcional)
@@ -112,7 +111,6 @@ No painel da Vercel, adicione as mesmas variaveis do `.env.local`:
 - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
-- `NEXT_PUBLIC_ALLOWED_EMAILS` (opcional)
 
 Depois redeploy.
 
@@ -121,7 +119,7 @@ Depois redeploy.
 Mesmo com app na Vercel, deploy das regras ainda e via Firebase CLI:
 
 ```bash
-npx firebase-tools deploy --only firestore:rules --project briefing-76017
+npx firebase-tools deploy --only firestore:rules --project vazxpress-a2350
 ```
 
 ## 8. Deploy no Firebase Hosting (alternativa a Vercel)
@@ -131,13 +129,13 @@ npx firebase-tools deploy --only firestore:rules --project briefing-76017
 ### 8.1 Deploy
 
 ```bash
-npx firebase-tools deploy --only hosting --project briefing-76017
+npx firebase-tools deploy --only hosting --project vazxpress-a2350
 ```
 
 ### 8.2 Deploy completo (hosting + rules)
 
 ```bash
-npx firebase-tools deploy --project briefing-76017
+npx firebase-tools deploy --project vazxpress-a2350
 ```
 
 ## 9. Troubleshooting rapido
