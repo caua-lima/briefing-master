@@ -1,54 +1,63 @@
-import { getAdminDb } from "@/lib/firebase/admin";
+import { NextResponse } from "next/server";
+import { getAdminDb } from "../../../../lib/firebase/admin";
 
-export async function getValidMlAccessToken() {
-  const db = getAdminDb();
-  const ref = db.collection("ml_tokens").doc("main");
-  const snap = await ref.get();
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const code = url.searchParams.get("code");
 
-  if (!snap.exists) return null;
+    if (!code) {
+      return NextResponse.json({ error: "Missing code" }, { status: 400 });
+    }
 
-  const data = snap.data()!;
-  const accessToken = data.access_token as string | undefined;
-  const refreshToken = data.refresh_token as string | undefined;
-  const updatedAt = data.updated_at ? new Date(data.updated_at) : null;
-  const expiresIn = Number(data.expires_in ?? 0);
+    const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: process.env.ML_CLIENT_ID || "",
+        client_secret: process.env.ML_CLIENT_SECRET || "",
+        code,
+        redirect_uri: process.env.ML_REDIRECT_URI || "",
+      }),
+    });
 
-  if (!accessToken) return null;
+    const token = await tokenRes.json();
 
-  const expired =
-    !updatedAt || Date.now() > updatedAt.getTime() + expiresIn * 1000 - 5 * 60 * 1000;
+    if (!tokenRes.ok) {
+      return NextResponse.json(
+        { error: "Token exchange failed", details: token },
+        { status: 500 }
+      );
+    }
 
-  if (!expired) return accessToken;
+    const db = getAdminDb();
 
-  if (!refreshToken) return null;
+    await db.collection("ml_tokens").doc("main").set(
+      {
+        access_token: token.access_token || null,
+        refresh_token: token.refresh_token || null,
+        expires_in: token.expires_in || null,
+        user_id: token.user_id || null,
+        updated_at: new Date().toISOString(),
+      },
+      { merge: true }
+    );
 
-  const refreshRes = await fetch("https://api.mercadolibre.com/oauth/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: process.env.ML_CLIENT_ID!,
-      client_secret: process.env.ML_CLIENT_SECRET!,
-      refresh_token: refreshToken,
-    }),
-  });
-
-  const refreshed = await refreshRes.json();
-
-  if (!refreshRes.ok) return null;
-
-  await ref.set(
-    {
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token ?? refreshToken,
-      expires_in: refreshed.expires_in ?? expiresIn,
-      user_id: refreshed.user_id ?? data.user_id ?? null,
-      updated_at: new Date().toISOString(),
-    },
-    { merge: true }
-  );
-
-  return refreshed.access_token as string;
+    return NextResponse.json({
+      success: true,
+      connected: true,
+      user_id: token.user_id || null,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      {
+        error: "Unexpected error in callback",
+        details: error?.message || String(error),
+      },
+      { status: 500 }
+    );
+  }
 }
