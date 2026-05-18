@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "../../../../lib/firebase/admin";
 
-async function getAuthToken() {
+async function getMlTokenData() {
   const db = getAdminDb();
   const doc = await db.collection("ml_tokens").doc("main").get();
 
   if (!doc.exists) return null;
 
-  return doc.data()?.access_token || null;
+  return doc.data() || null;
+}
+
+async function getAuthToken() {
+  const data = await getMlTokenData();
+  return data?.access_token || null;
+}
+
+async function getSellerId() {
+  const envSellerId = process.env.ML_SELLER_ID;
+  if (envSellerId) return envSellerId;
+
+  const data = await getMlTokenData();
+  return data?.user_id ? String(data.user_id) : null;
 }
 
 export async function GET() {
@@ -21,7 +34,7 @@ export async function GET() {
       );
     }
 
-    const sellerId = process.env.ML_SELLER_ID;
+    const sellerId = await getSellerId();
 
     if (!sellerId) {
       return NextResponse.json(

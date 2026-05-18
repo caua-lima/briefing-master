@@ -1,35 +1,54 @@
-import { exchangeCodeForToken } from "../../../../lib/ml/client";
-import { getAdminDb } from "../../../../lib/firebase/admin";
-import { NextRequest, NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebase/admin";
 
-export async function GET(req: NextRequest) {
-  const code = req.nextUrl.searchParams.get("code");
+export async function getValidMlAccessToken() {
+  const db = getAdminDb();
+  const ref = db.collection("ml_tokens").doc("main");
+  const snap = await ref.get();
 
-  if (!code) {
-    return NextResponse.json({ error: "Código ausente" }, { status: 400 });
-  }
+  if (!snap.exists) return null;
 
-  try {
-    const token = await exchangeCodeForToken(code);
-    const adminDb = getAdminDb();
+  const data = snap.data()!;
+  const accessToken = data.access_token as string | undefined;
+  const refreshToken = data.refresh_token as string | undefined;
+  const updatedAt = data.updated_at ? new Date(data.updated_at) : null;
+  const expiresIn = Number(data.expires_in ?? 0);
 
-    await adminDb.collection("ml_tokens").doc("main").set(
-      {
-        access_token: token.access_token,
-        refresh_token: token.refresh_token ?? null,
-        expires_in: token.expires_in ?? null,
-        user_id: token.user_id ?? null,
-        updated_at: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+  if (!accessToken) return null;
 
-    return NextResponse.redirect(new URL("/?ml=conectado", req.url));
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+  const expired =
+    !updatedAt || Date.now() > updatedAt.getTime() + expiresIn * 1000 - 5 * 60 * 1000;
 
-    return NextResponse.redirect(
-      new URL(`/?ml=erro&msg=${encodeURIComponent(msg)}`, req.url)
-    );
-  }
+  if (!expired) return accessToken;
+
+  if (!refreshToken) return null;
+
+  const refreshRes = await fetch("https://api.mercadolibre.com/oauth/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: process.env.ML_CLIENT_ID!,
+      client_secret: process.env.ML_CLIENT_SECRET!,
+      refresh_token: refreshToken,
+    }),
+  });
+
+  const refreshed = await refreshRes.json();
+
+  if (!refreshRes.ok) return null;
+
+  await ref.set(
+    {
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token ?? refreshToken,
+      expires_in: refreshed.expires_in ?? expiresIn,
+      user_id: refreshed.user_id ?? data.user_id ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+
+  return refreshed.access_token as string;
 }
