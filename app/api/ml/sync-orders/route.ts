@@ -1,25 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { getMlAccessToken } from "../token";
 
 export async function POST() {
   try {
     const adminDb = getAdminDb();
-
-    const tokenDoc = await adminDb.collection("ml_tokens").doc("main").get();
-
-    if (!tokenDoc.exists) {
-      return NextResponse.json(
-        { error: "Token do Mercado Livre não encontrado" },
-        { status: 400 }
-      );
-    }
-
-    const tokenData = tokenDoc.data();
-    const accessToken = tokenData?.access_token;
+    const accessToken = await getMlAccessToken();
 
     if (!accessToken) {
       return NextResponse.json(
-        { error: "Access token ausente" },
+        { error: "Token do Mercado Livre não encontrado ou expirado" },
         { status: 400 }
       );
     }
