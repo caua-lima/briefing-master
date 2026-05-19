@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "../../../../lib/firebase/admin";
+import { exchangeCodeForToken } from "@/lib/ml/client";
 
 export async function GET(req: Request) {
   try {
@@ -10,28 +11,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing code" }, { status: 400 });
     }
 
-    const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        client_id: process.env.ML_CLIENT_ID || "",
-        client_secret: process.env.ML_CLIENT_SECRET || "",
-        code,
-        redirect_uri: process.env.ML_REDIRECT_URI || "",
-      }),
-    });
-
-    const token = await tokenRes.json();
-
-    if (!tokenRes.ok) {
-      return NextResponse.json(
-        { error: "Token exchange failed", details: token },
-        { status: 500 }
-      );
-    }
+    const token = await exchangeCodeForToken(code);
 
     const db = getAdminDb();
 
