@@ -13,6 +13,7 @@ import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MLConnectButton } from "@/components/MLConnectButton";
+import { MlAccountStatus } from "@/components/MlAccountStatus";
 
 type Tab = "dashboard" | "hoje" | "historico" | "metas" | "custos" | "estoque" | "acesso";
 
@@ -272,7 +273,7 @@ function AppShell() {
               <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
               Mercado Livre · Multiplos Anuncios
               </span>
-            <MLConnectButton />
+            <MlAccountStatus />
 </div>
           </header>
 
