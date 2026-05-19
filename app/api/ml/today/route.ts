@@ -17,21 +17,27 @@ export async function GET() {
     if (!access) return NextResponse.json({ error: "no_token", connected: false }, { status: 401 });
 
     const { from, to } = todayRangeISO();
-    const url = `https://api.mercadolibre.com/orders/search?seller=me&order.date_created.from=${encodeURIComponent(from)}&order.date_created.to=${encodeURIComponent(to)}&order.status=paid&limit=200`;
+    let nextUrl = `https://api.mercadolibre.com/orders/search?seller=me&order.date_created.from=${encodeURIComponent(from)}&order.date_created.to=${encodeURIComponent(to)}&order.status=paid&limit=100`;
 
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${access}` }, cache: "no-store" });
-    if (!res.ok) {
-      const txt = await res.text();
-      return NextResponse.json({ error: "ml_fetch_failed", details: txt }, { status: 502 });
+    let allResults: any[] = [];
+    while (nextUrl) {
+      const pageRes = await fetch(nextUrl, { headers: { Authorization: `Bearer ${access}` }, cache: "no-store" });
+      if (!pageRes.ok) {
+        const txt = await pageRes.text();
+        return NextResponse.json({ error: "ml_fetch_failed", details: txt }, { status: 502 });
+      }
+
+      const pageJson = await pageRes.json();
+      const pageResults = pageJson.results ?? [];
+      allResults = allResults.concat(pageResults);
+
+      nextUrl = pageJson.paging?.next ?? null;
     }
-
-    const json = await res.json();
-    const results = json.results ?? [];
 
     let faturamento = 0;
     const perListing: Record<string, { title: string; vendas: number; faturamento: number }> = {};
 
-    for (const o of results) {
+    for (const o of allResults) {
       faturamento += Number(o.total_amount || 0);
       for (const it of o.order_items ?? []) {
         const id = String(it.item?.id ?? it.item?.seller_sku ?? "unknown");
@@ -45,7 +51,7 @@ export async function GET() {
 
     const items = Object.entries(perListing).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.faturamento - a.faturamento);
 
-    return NextResponse.json({ connected: true, faturamento, ordersCount: results.length, items });
+    return NextResponse.json({ connected: true, faturamento, ordersCount: allResults.length, items });
   } catch (err: any) {
     return NextResponse.json({ error: "unexpected", details: err?.message || String(err) }, { status: 500 });
   }
