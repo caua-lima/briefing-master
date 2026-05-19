@@ -7,6 +7,7 @@ export type MlTokenData = {
   refresh_token?: string | null;
   expires_in?: number | null;
   user_id?: string | number | null;
+  user_profile?: any | null;
   updated_at?: string | null;
 };
 
@@ -53,6 +54,7 @@ export async function getMlTokenStatus() {
   return {
     connected: Boolean(data?.refresh_token || data?.access_token),
     user_id: data?.user_id ? String(data.user_id) : null,
+    user_profile: data?.user_profile || null,
   };
 }
 

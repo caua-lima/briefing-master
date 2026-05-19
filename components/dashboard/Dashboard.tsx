@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   computeSummary,
   diaAtualNoMes,
@@ -202,6 +202,26 @@ export default function Dashboard({ data }: Props) {
     [data.days]
   );
 
+  const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: any[] }>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        const res = await fetch('/api/ml/today', { cache: 'no-store' });
+        if (!res.ok) return setMlToday(null);
+        const json = await res.json();
+        if (mounted && json && json.connected) setMlToday({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), items: json.items || [] });
+      } catch (e) {
+        if (mounted) setMlToday(null);
+      }
+    }
+
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { mounted = false; clearInterval(id); };
+  }, []);
+
   const selectedDate =
     dayMode === "hoje" ? todayStr() : dayMode === "ontem" ? yesterdayStr() : customDate;
 
@@ -347,6 +367,12 @@ export default function Dashboard({ data }: Props) {
             colorOverride="margin"
             percentValue={margemLiquida}
           />
+          {mlToday && (
+            <>
+              <KpiCard label="ML: Faturamento Hoje" value={mlToday.faturamento} isCurrency colorOverride="positive" />
+              <KpiCard label="ML: Pedidos Hoje" value={mlToday.ordersCount} isCurrency={false} colorOverride="neutral" />
+            </>
+          )}
         </div>
       </div>
 
