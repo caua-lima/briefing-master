@@ -203,6 +203,8 @@ export default function Dashboard({ data }: Props) {
   );
 
   const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: any[] }>(null);
+  const [mlMetrics, setMlMetrics] = useState<null | { faturamento: number; ordersCount: number; start?: string; end?: string }>(null);
+  const [mlMonthLoading, setMlMonthLoading] = useState(false);
   const mountedRef = useRef(true);
 
   const fetchMlToday = async () => {
@@ -229,6 +231,29 @@ export default function Dashboard({ data }: Props) {
     const id = setInterval(fetchMlToday, 60_000);
     return () => { mountedRef.current = false; clearInterval(id); };
   }, []);
+
+
+  const fetchMlMonth = async (month?: string) => {
+    setMlMonthLoading(true);
+    try {
+      const url = '/api/ml/metrics' + (month ? `?month=${month}` : `?month=${mes}`);
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) {
+        setMlMetrics(null);
+        return;
+      }
+      const json = await res.json();
+      if (json && json.faturamento != null) {
+        setMlMetrics({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), start: json.start, end: json.end });
+      } else {
+        setMlMetrics(null);
+      }
+    } catch (e) {
+      setMlMetrics(null);
+    } finally {
+      setMlMonthLoading(false);
+    }
+  };
 
   const selectedDate =
     dayMode === "hoje" ? todayStr() : dayMode === "ontem" ? yesterdayStr() : customDate;
@@ -259,6 +284,9 @@ export default function Dashboard({ data }: Props) {
   const taxasML = 0;
 
   const mes = mesAtual();
+  useEffect(() => {
+    fetchMlMonth(mes);
+  }, [mes]);
   const activeGoalEntry = data.goalEntries.find((e) => e.mes === mes) ?? data.goalEntries[0] ?? null;
   const goals = activeGoalEntry
     ? {
@@ -385,7 +413,7 @@ export default function Dashboard({ data }: Props) {
             <button
               type="button"
               className="btn btn-sm btn-ghost"
-              onClick={() => { setMlToday(null); fetchMlToday(); }}
+              onClick={() => { setMlToday(null); fetchMlToday(); fetchMlMonth(mes); }}
             >
               ⟳ Atualizar ML agora
             </button>
@@ -434,7 +462,12 @@ export default function Dashboard({ data }: Props) {
 
         {/* KPIs mensais */}
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
-          <KpiCard label="Faturamento do Mês" value={mesResumo.fatMes} isCurrency colorOverride="positive" />
+          <KpiCard
+            label="Faturamento do Mês"
+            value={mlMetrics ? mlMetrics.faturamento : mesResumo.fatMes}
+            isCurrency
+            colorOverride="positive"
+          />
           <KpiCard
             label="Lucro Líquido do Mês"
             value={mesResumo.lucroLiquidoMes}
