@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   computeSummary,
   diaAtualNoMes,
@@ -203,23 +203,31 @@ export default function Dashboard({ data }: Props) {
   );
 
   const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: any[] }>(null);
+  const mountedRef = useRef(true);
+
+  const fetchMlToday = async () => {
+    try {
+      const res = await fetch('/api/ml/today', { cache: 'no-store' });
+      if (!res.ok) {
+        if (mountedRef.current) setMlToday(null);
+        return;
+      }
+      const json = await res.json();
+      if (mountedRef.current && json && json.connected) {
+        setMlToday({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), items: json.items || [] });
+      } else if (mountedRef.current) {
+        setMlToday(null);
+      }
+    } catch (e) {
+      if (mountedRef.current) setMlToday(null);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-    async function load() {
-      try {
-        const res = await fetch('/api/ml/today', { cache: 'no-store' });
-        if (!res.ok) return setMlToday(null);
-        const json = await res.json();
-        if (mounted && json && json.connected) setMlToday({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), items: json.items || [] });
-      } catch (e) {
-        if (mounted) setMlToday(null);
-      }
-    }
-
-    load();
-    const id = setInterval(load, 60_000);
-    return () => { mounted = false; clearInterval(id); };
+    mountedRef.current = true;
+    fetchMlToday();
+    const id = setInterval(fetchMlToday, 60_000);
+    return () => { mountedRef.current = false; clearInterval(id); };
   }, []);
 
   const selectedDate =
@@ -343,13 +351,45 @@ export default function Dashboard({ data }: Props) {
         )}
       </div>
 
+      {/* ── Resumo rápido de faturamento ── */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>Faturamento (dia)</div>
+          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{fmtBRL(faturamentoBruto)}</div>
+        </div>
+
+        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>Faturamento (mês)</div>
+          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{fmtBRL(mesResumo.fatMes)}</div>
+        </div>
+
+        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>ML hoje</div>
+          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{mlToday ? fmtBRL(mlToday.faturamento) : "—"} {mlToday ? `(${mlToday.ordersCount} pedidos)` : ""}</div>
+        </div>
+      </div>
+
       {/* ── Row 1: KPI Cards do Dia ── */}
       <div>
         <div style={{
-          fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em",
-          color: "var(--muted)", fontWeight: 700, marginBottom: 10,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          marginBottom: 10,
         }}>
-          📅 Resultado do Dia
+          <div style={{
+            fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em",
+            color: "var(--muted)", fontWeight: 700,
+          }}>
+            📅 Resultado do Dia
+          </div>
+          <div>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => { setMlToday(null); fetchMlToday(); }}
+            >
+              ⟳ Atualizar ML agora
+            </button>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <KpiCard label="Faturamento Bruto" value={faturamentoBruto} isCurrency colorOverride="positive" />
