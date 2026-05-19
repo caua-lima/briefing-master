@@ -203,6 +203,7 @@ export default function Dashboard({ data }: Props) {
   );
 
   const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: any[] }>(null);
+  const [mlAccount, setMlAccount] = useState<null | { connected: boolean; user_id?: string | null; user?: { id?: number; nickname?: string; site_id?: string; email?: string; permalink?: string; thumbnail?: { picture_url?: string } } | null }>(null);
   const [mlMetrics, setMlMetrics] = useState<null | { faturamento: number; ordersCount: number; start?: string; end?: string }>(null);
   const [mlMonthLoading, setMlMonthLoading] = useState(false);
   const mountedRef = useRef(true);
@@ -232,6 +233,23 @@ export default function Dashboard({ data }: Props) {
     return () => { mountedRef.current = false; clearInterval(id); };
   }, []);
 
+  useEffect(() => {
+    async function loadAccount() {
+      try {
+        const res = await fetch('/api/ml/account', { cache: 'no-store' });
+        if (!res.ok) {
+          setMlAccount(null);
+          return;
+        }
+        const json = await res.json();
+        setMlAccount(json);
+      } catch (e) {
+        setMlAccount(null);
+      }
+    }
+
+    loadAccount();
+  }, []);
 
   const fetchMlMonth = async (month?: string) => {
     setMlMonthLoading(true);
@@ -381,19 +399,28 @@ export default function Dashboard({ data }: Props) {
 
       {/* ── Resumo rápido de faturamento ── */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
-          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>Faturamento (dia)</div>
-          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{fmtBRL(faturamentoBruto)}</div>
+        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, minWidth: 180 }}>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>Conta ML</div>
+          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{mlAccount?.user?.nickname || mlAccount?.user_id || "Desconectado"}</div>
+          <div style={{ color: "var(--muted)", fontSize: ".72rem" }}>{mlAccount?.user?.site_id || mlAccount?.user?.email || ""}</div>
         </div>
 
-        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, minWidth: 180 }}>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>Faturamento ML Hoje</div>
+          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>
+            {mlToday ? fmtBRL(mlToday.faturamento) : "—"}
+          </div>
+          {mlToday && (
+            <div style={{ color: "var(--muted)", fontSize: ".72rem" }}>
+              {mlToday.ordersCount} pedidos hoje
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, minWidth: 180 }}>
           <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>Faturamento (mês)</div>
-          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{fmtBRL(mesResumo.fatMes)}</div>
-        </div>
-
-        <div style={{ padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
-          <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>ML hoje</div>
-          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{mlToday ? fmtBRL(mlToday.faturamento) : "—"} {mlToday ? `(${mlToday.ordersCount} pedidos)` : ""}</div>
+          <div style={{ fontWeight: 800, fontSize: ".98rem" }}>{mlMetrics ? fmtBRL(mlMetrics.faturamento) : fmtBRL(mesResumo.fatMes)}</div>
+          {mlMetrics && <div style={{ color: "var(--muted)", fontSize: ".72rem" }}>Dados ML</div>}
         </div>
       </div>
 
