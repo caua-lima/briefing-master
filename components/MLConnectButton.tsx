@@ -11,6 +11,7 @@ export function MLConnectButton() {
   const [status, setStatus] = useState<MlStatus>({ connected: false, user_id: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
     async function loadStatus() {
@@ -47,6 +48,25 @@ export function MLConnectButton() {
 
     loadStatus();
   }, []);
+
+  async function handleConnect() {
+    setConnecting(true);
+    try {
+      // 1. Desconecta a conta ML atual (se houver)
+      await fetch('/api/ml/disconnect', { method: 'POST' });
+      
+      // 2. Limpa localStorage
+      localStorage.setItem('ml_disconnected', 'true');
+      
+      // 3. Aguarda um pouco e redireciona para login
+      setTimeout(() => {
+        window.location.href = '/api/ml/auth?login=true';
+      }, 300);
+    } catch (err) {
+      console.error('Erro ao conectar ML', err);
+      setConnecting(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -88,28 +108,27 @@ export function MLConnectButton() {
   }
 
   return (
-    <a
-      href="/api/ml/auth?login=true"
+    <button
+      type="button"
+      onClick={handleConnect}
+      disabled={connecting}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 6,
-        background: "#ffe600",
+        background: connecting ? "#f5f5f5" : "#ffe600",
         color: "#000",
         fontWeight: 600,
         fontSize: ".78rem",
         padding: "5px 12px",
         borderRadius: 8,
-        textDecoration: "none",
+        border: "none",
         whiteSpace: "nowrap",
-        cursor: "pointer",
-      }}
-      onClick={() => {
-        // Limpa o flag de desconectado ao tentar conectar
-        localStorage.removeItem('ml_disconnected');
+        cursor: connecting ? 'not-allowed' : 'pointer',
+        opacity: connecting ? 0.6 : 1,
       }}
     >
-      🛒 Conectar ML
-    </a>
+      {connecting ? '⏳ Conectando...' : '🛒 Conectar ML'}
+    </button>
   );
 }
