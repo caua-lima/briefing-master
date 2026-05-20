@@ -74,7 +74,7 @@ export function MLConnectButton() {
 
   return (
     <a
-      href="/api/ml/auth"
+      href="/api/ml/auth?login=true"
       style={{
         display: "flex",
         alignItems: "center",

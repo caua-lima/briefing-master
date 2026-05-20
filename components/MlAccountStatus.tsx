@@ -82,7 +82,7 @@ export function MlAccountStatus() {
     try {
       const res = await fetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
-        window.location.href = '/api/ml/auth';
+        window.location.href = '/api/ml/auth?login=true';
       } else {
         setFeedback({ type: 'error', message: '❌ Erro ao trocar conta' });
         setSwapLoading(false);

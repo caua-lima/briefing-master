@@ -4,8 +4,18 @@ const ML_SECRET = process.env.ML_SECRET!;
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI!;
 const ML_API = "https://api.mercadolibre.com";
 
-export function getAuthURL(): string {
-  return `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`;
+export function getAuthURL(forceLogin: boolean = false): string {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: ML_APP_ID,
+    redirect_uri: ML_REDIRECT_URI,
+  });
+  
+  if (forceLogin) {
+    params.append("prompt", "login");
+  }
+  
+  return `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
 }
 
 export async function exchangeCodeForToken(code: string) {
