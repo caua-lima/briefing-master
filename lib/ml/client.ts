@@ -10,12 +10,21 @@ export function getAuthURL(forceLogin: boolean = false): string {
     client_id: ML_APP_ID,
     redirect_uri: ML_REDIRECT_URI,
   });
-  
-  if (forceLogin) {
-    params.append("prompt", "login");
-  }
-  
-  return `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
+
+  // ML suporta o parâmetro correto para forçar novo login é via URL diferente
+  // Adicionamos timestamp como state para evitar cache
+  params.append("state", Date.now().toString());
+
+  const base = forceLogin
+    ? "https://auth.mercadolivre.com.br/logout?client.id="
+        + ML_APP_ID
+        + "&logout=true&returnTo="
+        + encodeURIComponent(
+            `https://auth.mercadolivre.com.br/authorization?${params.toString()}`
+          )
+    : `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
+
+  return base;
 }
 
 export async function exchangeCodeForToken(code: string) {
