@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import {
   computeSummary,
   diaAtualNoMes,
@@ -46,22 +46,19 @@ function MetasCascata({
     ...(meta3 ? [{ valor: meta3, emoji: "🥉", nome: "Meta 3", cor: "#a855f7", corBg: "rgba(168,85,247,.13)" }] : []),
   ];
 
-  // Gatilho: só mostra a próxima meta se a anterior foi batida
   const metasVisiveis: typeof metas = [];
   for (let i = 0; i < metas.length; i++) {
     metasVisiveis.push(metas[i]);
-    if (fatMes < metas[i].valor) break; // para aqui se não bateu
+    if (fatMes < metas[i].valor) break;
   }
 
   const maxValor = metas[metas.length - 1].valor;
   const barraMax = Math.max(maxValor * 1.05, fatMes * 1.05, projecao * 1.05);
-
   const pctFat = Math.min((fatMes / barraMax) * 100, 100);
   const pctProj = Math.min((projecao / barraMax) * 100, 100);
 
   return (
     <div style={{ width: "100%" }}>
-      {/* Labels das metas visíveis */}
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
         {metasVisiveis.map((m, i) => {
           const batida = fatMes >= m.valor;
@@ -72,10 +69,8 @@ function MetasCascata({
               padding: "5px 12px",
               background: batida ? m.corBg : ativa ? m.corBg : "var(--surface2)",
               border: `1px solid ${batida || ativa ? m.cor : "var(--border)"}`,
-              borderRadius: 999,
-              fontSize: ".78rem",
-              opacity: batida || ativa ? 1 : 0.5,
-              transition: "all .3s",
+              borderRadius: 999, fontSize: ".78rem",
+              opacity: batida || ativa ? 1 : 0.5, transition: "all .3s",
             }}>
               <span>{m.emoji}</span>
               <span style={{ fontWeight: 700, color: batida || ativa ? m.cor : "var(--muted)" }}>{m.nome}</span>
@@ -85,45 +80,36 @@ function MetasCascata({
             </div>
           );
         })}
-        {/* Próxima meta bloqueada */}
         {metasVisiveis.length < metas.length && (
           <div style={{
             display: "flex", alignItems: "center", gap: 6,
-            padding: "5px 12px",
-            background: "var(--surface2)",
-            border: "1px solid var(--border)",
-            borderRadius: 999,
-            fontSize: ".78rem",
-            opacity: 0.4,
+            padding: "5px 12px", background: "var(--surface2)",
+            border: "1px solid var(--border)", borderRadius: 999,
+            fontSize: ".78rem", opacity: 0.4,
           }}>
             <span>🔒</span>
-            <span style={{ color: "var(--muted)" }}>{metas[metasVisiveis.length].nome} — desbloqueie batendo {metas[metasVisiveis.length - 1].nome}</span>
+            <span style={{ color: "var(--muted)" }}>
+              {metas[metasVisiveis.length].nome} — desbloqueie batendo {metas[metasVisiveis.length - 1].nome}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Barra principal */}
       <div style={{ position: "relative", height: 36, borderRadius: 999, background: "var(--surface2)", overflow: "visible" }}>
-
-        {/* Marcadores das metas na barra */}
         {metasVisiveis.map((m) => {
           const pct = Math.min((m.valor / barraMax) * 100, 99.5);
           const batida = fatMes >= m.valor;
           return (
             <div key={m.valor} style={{
               position: "absolute", left: `${pct}%`, top: 0, bottom: 0,
-              width: 2,
-              background: m.cor,
-              opacity: batida ? 1 : 0.5,
-              zIndex: 3,
-              borderRadius: 2,
+              width: 2, background: m.cor, opacity: batida ? 1 : 0.5,
+              zIndex: 3, borderRadius: 2,
             }}>
               <div style={{
                 position: "absolute", bottom: "calc(100% + 4px)", left: "50%",
-                transform: "translateX(-50%)",
-                fontSize: ".65rem", color: m.cor, fontWeight: 700,
-                whiteSpace: "nowrap", background: "var(--bg)", padding: "1px 4px",
-                borderRadius: 4, border: `1px solid ${m.cor}`,
+                transform: "translateX(-50%)", fontSize: ".65rem", color: m.cor,
+                fontWeight: 700, whiteSpace: "nowrap", background: "var(--bg)",
+                padding: "1px 4px", borderRadius: 4, border: `1px solid ${m.cor}`,
               }}>
                 {m.emoji} {fmtBRL(m.valor)}
               </div>
@@ -131,18 +117,13 @@ function MetasCascata({
           );
         })}
 
-        {/* Barra de projeção (fundo, tracejada) */}
         <div style={{
-          position: "absolute", left: 0, top: "25%",
-          height: "50%", width: `${pctProj}%`,
-          background: "rgba(255,255,255,.06)",
-          borderRadius: 999,
-          border: "1px dashed rgba(255,255,255,.15)",
-          zIndex: 1,
-          transition: "width .5s ease",
+          position: "absolute", left: 0, top: "25%", height: "50%",
+          width: `${pctProj}%`, background: "rgba(255,255,255,.06)",
+          borderRadius: 999, border: "1px dashed rgba(255,255,255,.15)",
+          zIndex: 1, transition: "width .5s ease",
         }} />
 
-        {/* Barra de faturamento real */}
         <div style={{
           position: "absolute", left: 0, top: 0, bottom: 0,
           width: `${pctFat}%`,
@@ -151,12 +132,9 @@ function MetasCascata({
             : fatMes >= (meta2 ?? meta1)
               ? "linear-gradient(90deg, #4f8ef7, #f7c948)"
               : "linear-gradient(90deg, #4f8ef7, #60a5fa)",
-          borderRadius: 999,
-          zIndex: 2,
-          transition: "width .5s ease",
+          borderRadius: 999, zIndex: 2, transition: "width .5s ease",
           display: "flex", alignItems: "center", justifyContent: "flex-end",
-          paddingRight: 10,
-          minWidth: fatMes > 0 ? 60 : 0,
+          paddingRight: 10, minWidth: fatMes > 0 ? 60 : 0,
         }}>
           {fatMes > 0 && (
             <span style={{ fontSize: ".72rem", fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
@@ -166,7 +144,6 @@ function MetasCascata({
         </div>
       </div>
 
-      {/* Legenda inferior */}
       <div style={{
         display: "flex", justifyContent: "space-between",
         fontSize: ".7rem", color: "var(--muted)", marginTop: 8, flexWrap: "wrap", gap: 4,
@@ -193,9 +170,12 @@ function MetasCascata({
 
 // ── Dashboard principal ────────────────────────────────────────
 export default function Dashboard({ data }: Props) {
+  const mes = mesAtual();
+
   const [chartWindow, setChartWindow] = useState<7 | 15 | 30>(15);
   const [dayMode, setDayMode] = useState<"hoje" | "ontem" | "custom">("hoje");
   const [customDate, setCustomDate] = useState("");
+  const [mlRefreshing, setMlRefreshing] = useState(false);
 
   const recomputedDays = useMemo(
     () => data.days.map((day) => ({ ...day, ...computeSummary(day.raw ?? []) })),
@@ -203,81 +183,84 @@ export default function Dashboard({ data }: Props) {
   );
 
   const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: any[] }>(null);
-  const [mlAccount, setMlAccount] = useState<null | { connected: boolean; user_id?: string | null; user?: { id?: number; nickname?: string; site_id?: string; email?: string; permalink?: string; thumbnail?: { picture_url?: string } } | null }>(null);
+  const [mlAccount, setMlAccount] = useState<null | {
+    connected: boolean;
+    user_id?: string | null;
+    user?: { id?: number; nickname?: string; site_id?: string; email?: string; permalink?: string; thumbnail?: { picture_url?: string } } | null;
+  }>(null);
   const [mlMetrics, setMlMetrics] = useState<null | { faturamento: number; ordersCount: number; start?: string; end?: string }>(null);
-  const [mlMonthLoading, setMlMonthLoading] = useState(false);
   const mountedRef = useRef(true);
 
-  const fetchMlToday = async () => {
+  const fetchMlToday = useCallback(async () => {
     try {
-      const res = await fetch('/api/ml/today', { cache: 'no-store' });
-      if (!res.ok) {
-        if (mountedRef.current) setMlToday(null);
-        return;
-      }
+      const res = await fetch("/api/ml/today", { cache: "no-store" });
+      if (!res.ok) { if (mountedRef.current) setMlToday(null); return; }
       const json = await res.json();
-      if (mountedRef.current && json && json.connected) {
+      if (mountedRef.current && json?.connected) {
         setMlToday({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), items: json.items || [] });
       } else if (mountedRef.current) {
         setMlToday(null);
       }
-    } catch (e) {
+    } catch {
       if (mountedRef.current) setMlToday(null);
     }
-  };
+  }, []);
+
+  const fetchMlMonth = useCallback(async (month: string) => {
+    try {
+      const res = await fetch(`/api/ml/metrics?month=${month}`, { cache: "no-store" });
+      if (!res.ok) { setMlMetrics(null); return; }
+      const json = await res.json();
+      if (json?.faturamento != null) {
+        setMlMetrics({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), start: json.start, end: json.end });
+      } else {
+        setMlMetrics(null);
+      }
+    } catch {
+      setMlMetrics(null);
+    }
+  }, []);
+
+  async function handleRefreshML() {
+    setMlRefreshing(true);
+    try {
+      await fetch("/api/ml/sync-all", { method: "POST" });
+      setMlToday(null);
+      await fetchMlToday();
+      await fetchMlMonth(mes);
+    } catch (e) {
+      console.error("Erro ao atualizar ML", e);
+    } finally {
+      setMlRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     mountedRef.current = true;
     fetchMlToday();
     const id = setInterval(fetchMlToday, 60_000);
     return () => { mountedRef.current = false; clearInterval(id); };
-  }, []);
+  }, [fetchMlToday]);
 
   useEffect(() => {
     async function loadAccount() {
       try {
-        const res = await fetch('/api/ml/account', { cache: 'no-store' });
-        if (!res.ok) {
-          setMlAccount(null);
-          return;
-        }
-        const json = await res.json();
-        setMlAccount(json);
-      } catch (e) {
+        const res = await fetch("/api/ml/account", { cache: "no-store" });
+        if (!res.ok) { setMlAccount(null); return; }
+        setMlAccount(await res.json());
+      } catch {
         setMlAccount(null);
       }
     }
-
     loadAccount();
   }, []);
 
-  const fetchMlMonth = async (month?: string) => {
-    setMlMonthLoading(true);
-    try {
-      const url = '/api/ml/metrics' + (month ? `?month=${month}` : `?month=${mes}`);
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) {
-        setMlMetrics(null);
-        return;
-      }
-      const json = await res.json();
-      if (json && json.faturamento != null) {
-        setMlMetrics({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), start: json.start, end: json.end });
-      } else {
-        setMlMetrics(null);
-      }
-    } catch (e) {
-      setMlMetrics(null);
-    } finally {
-      setMlMonthLoading(false);
-    }
-  };
+  useEffect(() => {
+    fetchMlMonth(mes);
+  }, [mes, fetchMlMonth]);
 
-  const selectedDate =
-    dayMode === "hoje" ? todayStr() : dayMode === "ontem" ? yesterdayStr() : customDate;
-
-  const selectedArchivedDay =
-    dayMode !== "hoje" ? (recomputedDays.find((d) => d.date === selectedDate) ?? null) : null;
+  const selectedDate = dayMode === "hoje" ? todayStr() : dayMode === "ontem" ? yesterdayStr() : customDate;
+  const selectedArchivedDay = dayMode !== "hoje" ? (recomputedDays.find((d) => d.date === selectedDate) ?? null) : null;
 
   const todaySummary = useMemo(() => {
     if (dayMode === "hoje") return computeSummary(data.draft?.ads ?? []);
@@ -285,15 +268,8 @@ export default function Dashboard({ data }: Props) {
     return computeSummary([]);
   }, [dayMode, data.draft, selectedArchivedDay]);
 
-  const custosDia = useMemo(
-    () => totalCustosDia(data.costs, selectedDate || todayStr()),
-    [data.costs, selectedDate]
-  );
-
-  const custosMes = useMemo(
-    () => totalCustosMes(data.costs, mesAtual()),
-    [data.costs]
-  );
+  const custosDia = useMemo(() => totalCustosDia(data.costs, selectedDate || todayStr()), [data.costs, selectedDate]);
+  const custosMes = useMemo(() => totalCustosMes(data.costs, mesAtual()), [data.costs]);
 
   const lucroLiquidoFinal = todaySummary.totalLiquido - custosDia;
   const faturamentoBruto = todaySummary.totalFaturamento;
@@ -301,10 +277,6 @@ export default function Dashboard({ data }: Props) {
   const margemLiquida = faturamentoBruto > 0 ? (lucroLiquidoFinal / faturamentoBruto) * 100 : 0;
   const taxasML = 0;
 
-  const mes = mesAtual();
-  useEffect(() => {
-    fetchMlMonth(mes);
-  }, [mes]);
   const activeGoalEntry = data.goalEntries.find((e) => e.mes === mes) ?? data.goalEntries[0] ?? null;
   const goals = activeGoalEntry
     ? {
@@ -321,10 +293,8 @@ export default function Dashboard({ data }: Props) {
 
   const availableDates = [...data.days].sort((a, b) => b.date.localeCompare(a.date));
 
-  // ── Resumo Mensal ──────────────────────────────────────────
   const mesResumo = useMemo(() => {
     const diasArquivados = recomputedDays.filter((d) => d.date.startsWith(mes));
-
     let fatMes = diasArquivados.reduce((s, d) => s + d.totalFaturamento, 0);
     let lucroMes = diasArquivados.reduce((s, d) => s + d.totalLiquido, 0);
     let cmvMes = diasArquivados.reduce((s, d) => s + d.totalCMV, 0);
@@ -341,7 +311,6 @@ export default function Dashboard({ data }: Props) {
     const custosMesTotal = totalCustosMes(data.costs, mes);
     const lucroLiquidoMes = lucroMes - custosMesTotal;
     const margemMes = fatMes > 0 ? (lucroLiquidoMes / fatMes) * 100 : 0;
-
     const diaAtual = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     const mediaDiaria = diaAtual > 0 ? fatMes / diaAtual : 0;
@@ -359,9 +328,7 @@ export default function Dashboard({ data }: Props) {
           Visualizar:
         </span>
         {(["hoje", "ontem", "custom"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
+          <button key={mode} type="button"
             className={`btn btn-sm ${dayMode === mode ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setDayMode(mode)}
           >
@@ -369,9 +336,7 @@ export default function Dashboard({ data }: Props) {
           </button>
         ))}
         {dayMode === "custom" && (
-          <select
-            value={customDate}
-            onChange={(e) => setCustomDate(e.target.value)}
+          <select value={customDate} onChange={(e) => setCustomDate(e.target.value)}
             style={{
               background: "var(--surface)", border: "1px solid var(--border)",
               borderRadius: "var(--radius)", color: "var(--fg)",
@@ -426,42 +391,25 @@ export default function Dashboard({ data }: Props) {
 
       {/* ── Row 1: KPI Cards do Dia ── */}
       <div>
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          marginBottom: 10,
-        }}>
-          <div style={{
-            fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em",
-            color: "var(--muted)", fontWeight: 700,
-          }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700 }}>
             📅 Resultado do Dia
           </div>
-          <div>
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              onClick={() => { setMlToday(null); fetchMlToday(); fetchMlMonth(mes); }}
-            >
-              ⟳ Atualizar ML agora
-            </button>
-          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={handleRefreshML}
+            disabled={mlRefreshing}
+            style={{ opacity: mlRefreshing ? 0.6 : 1, cursor: mlRefreshing ? "not-allowed" : "pointer" }}
+          >
+            {mlRefreshing ? "⏳ Sincronizando..." : "⟳ Atualizar ML agora"}
+          </button>
         </div>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <KpiCard label="Faturamento Bruto" value={faturamentoBruto} isCurrency colorOverride="positive" />
           <KpiCard label="Gastos Totais" value={totalGastos} isCurrency colorOverride="negative" />
-          <KpiCard
-            label="Lucro Líquido Real"
-            value={lucroLiquidoFinal}
-            isCurrency
-            colorOverride={lucroLiquidoFinal >= 0 ? "positive" : "negative"}
-          />
-          <KpiCard
-            label="Margem Líquida"
-            value={margemLiquida}
-            isPercent
-            colorOverride="margin"
-            percentValue={margemLiquida}
-          />
+          <KpiCard label="Lucro Líquido Real" value={lucroLiquidoFinal} isCurrency colorOverride={lucroLiquidoFinal >= 0 ? "positive" : "negative"} />
+          <KpiCard label="Margem Líquida" value={margemLiquida} isPercent colorOverride="margin" percentValue={margemLiquida} />
           {mlToday && (
             <>
               <KpiCard label="ML: Faturamento Hoje" value={mlToday.faturamento} isCurrency colorOverride="positive" />
@@ -472,10 +420,7 @@ export default function Dashboard({ data }: Props) {
       </div>
 
       {/* ── Row 2: Resumo Mensal ── */}
-      <section style={{
-        background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: "var(--radius)", padding: "18px 20px",
-      }}>
+      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
         <div style={{
           fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em",
           color: "var(--muted)", fontWeight: 700, marginBottom: 16,
@@ -487,38 +432,17 @@ export default function Dashboard({ data }: Props) {
           </span>
         </div>
 
-        {/* KPIs mensais */}
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
-          <KpiCard
-            label="Faturamento do Mês"
-            value={mlMetrics ? mlMetrics.faturamento : mesResumo.fatMes}
-            isCurrency
-            colorOverride="positive"
-          />
-          <KpiCard
-            label="Lucro Líquido do Mês"
-            value={mesResumo.lucroLiquidoMes}
-            isCurrency
-            colorOverride={mesResumo.lucroLiquidoMes >= 0 ? "positive" : "negative"}
-          />
+          <KpiCard label="Faturamento do Mês" value={mlMetrics ? mlMetrics.faturamento : mesResumo.fatMes} isCurrency colorOverride="positive" />
+          <KpiCard label="Lucro Líquido do Mês" value={mesResumo.lucroLiquidoMes} isCurrency colorOverride={mesResumo.lucroLiquidoMes >= 0 ? "positive" : "negative"} />
           <KpiCard label="Custos Operacionais" value={mesResumo.custosMesTotal} isCurrency colorOverride="negative" />
-          <KpiCard
-            label="Margem do Mês"
-            value={mesResumo.margemMes}
-            isPercent
-            colorOverride="margin"
-            percentValue={mesResumo.margemMes}
-          />
+          <KpiCard label="Margem do Mês" value={mesResumo.margemMes} isPercent colorOverride="margin" percentValue={mesResumo.margemMes} />
           <KpiCard label="Projeção de Fechamento" value={mesResumo.projecao} isCurrency colorOverride="neutral" />
         </div>
 
-        {/* Gráfico de Metas em Cascata */}
         {goals?.meta1 ? (
           <div>
-            <div style={{
-              fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em",
-              color: "var(--muted)", fontWeight: 700, marginBottom: 12,
-            }}>
+            <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 12 }}>
               🎯 Andamento das Metas
             </div>
             <MetasCascata
@@ -538,42 +462,23 @@ export default function Dashboard({ data }: Props) {
       </section>
 
       {/* ── Row 3: Ontem vs Hoje ── */}
-      <section style={{
-        background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: "var(--radius)", padding: "18px 20px",
-      }}>
-        <div style={{
-          fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em",
-          color: "var(--muted)", marginBottom: 12, fontWeight: 700,
-        }}>
+      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
+        <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", marginBottom: 12, fontWeight: 700 }}>
           Ontem vs Hoje
         </div>
         <YesterdayVsToday days={recomputedDays} todayLiquido={lucroLiquidoFinal} />
       </section>
 
       {/* ── Row 4: Line Chart + Top 3 Ads ── */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)",
-        gap: 16, alignItems: "start",
-      }} className="dashboard-main-grid">
-        <section style={{
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: "var(--radius)", padding: "18px 20px",
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            marginBottom: 14, flexWrap: "wrap", gap: 8,
-          }}>
-            <div style={{
-              fontSize: ".78rem", textTransform: "uppercase",
-              letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700,
-            }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", gap: 16, alignItems: "start" }} className="dashboard-main-grid">
+        <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700 }}>
               Faturamento & Lucro
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               {([7, 15, 30] as const).map((w) => (
-                <button
-                  key={w} type="button"
+                <button key={w} type="button"
                   className={`btn btn-xs ${chartWindow === w ? "btn-primary" : "btn-ghost"}`}
                   onClick={() => setChartWindow(w)}
                 >
@@ -585,28 +490,16 @@ export default function Dashboard({ data }: Props) {
           <RevenueLineChart days={recomputedDays} windowDays={chartWindow} />
         </section>
 
-        <section style={{
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: "var(--radius)", padding: "18px 20px",
-        }}>
-          <div style={{
-            fontSize: ".78rem", textTransform: "uppercase",
-            letterSpacing: ".06em", color: "var(--muted)", marginBottom: 12, fontWeight: 700,
-          }}>
+        <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
+          <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", marginBottom: 12, fontWeight: 700 }}>
             Top 3 Anuncios (lucro hoje)
           </div>
           <TopAdsTable ads={todaySummary.ads} />
           {custosDia > 0 && (
-            <div style={{
-              marginTop: 14, padding: "10px 12px",
-              background: "rgba(239,68,68,.07)", border: "1px solid rgba(239,68,68,.25)",
-              borderRadius: 8, fontSize: ".78rem", color: "var(--red)",
-            }}>
+            <div style={{ marginTop: 14, padding: "10px 12px", background: "rgba(239,68,68,.07)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, fontSize: ".78rem", color: "var(--red)" }}>
               Custos operacionais hoje: <strong>{fmtBRL(custosDia)}</strong>
               {custosMes > 0 && (
-                <span style={{ color: "var(--muted)", marginLeft: 8 }}>
-                  | Mes: {fmtBRL(custosMes)}
-                </span>
+                <span style={{ color: "var(--muted)", marginLeft: 8 }}>| Mes: {fmtBRL(custosMes)}</span>
               )}
             </div>
           )}
@@ -614,18 +507,9 @@ export default function Dashboard({ data }: Props) {
       </div>
 
       {/* ── Row 5: Doughnut + Metas detalhadas ── */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)",
-        gap: 16, alignItems: "start",
-      }} className="dashboard-bottom-grid">
-        <section style={{
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: "var(--radius)", padding: "18px 20px",
-        }}>
-          <div style={{
-            fontSize: ".78rem", textTransform: "uppercase",
-            letterSpacing: ".06em", color: "var(--muted)", marginBottom: 12, fontWeight: 700,
-          }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: 16, alignItems: "start" }} className="dashboard-bottom-grid">
+        <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
+          <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", marginBottom: 12, fontWeight: 700 }}>
             Composição dos Gastos (hoje)
           </div>
           <ExpensesDoughnut
@@ -636,14 +520,8 @@ export default function Dashboard({ data }: Props) {
           />
         </section>
 
-        <section style={{
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: "var(--radius)", padding: "18px 20px",
-        }}>
-          <div style={{
-            fontSize: ".78rem", textTransform: "uppercase",
-            letterSpacing: ".06em", color: "var(--muted)", marginBottom: 14, fontWeight: 700,
-          }}>
+        <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
+          <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", marginBottom: 14, fontWeight: 700 }}>
             Progresso das Metas
           </div>
           <GoalsProgressBars
