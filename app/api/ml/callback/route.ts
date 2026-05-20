@@ -54,10 +54,3 @@ export async function GET(req: Request) {
     );
   }
 }
-        error: "Unexpected error in callback",
-        details: error?.message || String(error),
-      },
-      { status: 500 }
-    );
-  }
-}
