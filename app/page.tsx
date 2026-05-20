@@ -305,11 +305,8 @@ function AppShell() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
-              Mercado Livre · Multiplos Anuncios
-              </span>
             <MlAccountStatus />
-</div>
+        </div>
           </header>
 
           {/* Tab content */}
