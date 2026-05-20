@@ -52,3 +52,12 @@ export function getFirebase() {
 }
 
 export const googleProvider = new GoogleAuthProvider();
+
+// Provider que força a seleção de conta (para trocar de conta)
+export function getGoogleProviderWithAccountSelection() {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({
+    prompt: 'select_account',
+  });
+  return provider;
+}

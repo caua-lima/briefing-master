@@ -57,9 +57,10 @@ export default function Page() {
 }
 
 function AppShell() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, signInWithAccountSelection } = useAuth();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [swappingAccount, setSwappingAccount] = useState(false);
 
   const data = useUserData(user?.uid);
 
@@ -70,6 +71,30 @@ function AppShell() {
     day: "2-digit",
     month: "short",
   });
+
+  async function handleSwapAccount() {
+    if (!confirm('Desconectar da conta Google atual e fazer login com outra?\n\nVocê poderá escolher qual conta Google usar.')) return;
+    
+    setSwappingAccount(true);
+    try {
+      // Primeiro faz logout da conta atual
+      await signOut();
+      
+      // Depois redireciona para login com seleção de conta
+      // Usa um pequeno delay para garantir que o logout foi processado
+      setTimeout(async () => {
+        try {
+          await signInWithAccountSelection();
+        } catch (err) {
+          console.error('Erro ao fazer login com seleção de conta', err);
+          setSwappingAccount(false);
+        }
+      }, 300);
+    } catch (err) {
+      console.error('Erro ao trocar conta', err);
+      setSwappingAccount(false);
+    }
+  }
 
   return (
     <>
@@ -219,9 +244,19 @@ function AppShell() {
             </div>
             <button
               type="button"
+              className="btn btn-primary btn-xs"
+              onClick={handleSwapAccount}
+              disabled={swappingAccount}
+              style={{ width: "100%", justifyContent: "center", marginBottom: 6, opacity: swappingAccount ? 0.6 : 1, cursor: swappingAccount ? 'not-allowed' : 'pointer' }}
+            >
+              {swappingAccount ? '⏳ Trocando...' : '🔄 Trocar conta'}
+            </button>
+            <button
+              type="button"
               className="btn btn-ghost btn-xs"
               onClick={signOut}
-              style={{ width: "100%", justifyContent: "center" }}
+              disabled={swappingAccount}
+              style={{ width: "100%", justifyContent: "center", opacity: swappingAccount ? 0.6 : 1, cursor: swappingAccount ? 'not-allowed' : 'pointer' }}
             >
               Sair
             </button>

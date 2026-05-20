@@ -7,12 +7,13 @@ import {
   signOut as firebaseSignOut,
 } from "firebase/auth";
 import { createContext, useContext, useEffect, useState } from "react";
-import { getFirebase, googleProvider } from "./client";
+import { getFirebase, googleProvider, getGoogleProviderWithAccountSelection } from "./client";
 
 type AuthState = {
   user: User | null;
   loading: boolean;
   signIn: () => Promise<void>;
+  signInWithAccountSelection: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -35,13 +36,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithPopup(auth, googleProvider);
   }
 
+  async function signInWithAccountSelection() {
+    const { auth } = getFirebase();
+    const provider = getGoogleProviderWithAccountSelection();
+    await signInWithPopup(auth, provider);
+  }
+
   async function signOut() {
     const { auth } = getFirebase();
     await firebaseSignOut(auth);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signInWithAccountSelection, signOut }}>
       {children}
     </AuthContext.Provider>
   );

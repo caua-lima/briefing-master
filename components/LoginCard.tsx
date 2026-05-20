@@ -4,15 +4,19 @@ import { useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 
 export default function LoginCard() {
-  const { signIn } = useAuth();
+  const { signIn, signInWithAccountSelection } = useAuth();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function handleClick() {
+  async function handleClick(useAccountSelection: boolean = false) {
     setBusy(true);
     setErr(null);
     try {
-      await signIn();
+      if (useAccountSelection) {
+        await signInWithAccountSelection();
+      } else {
+        await signIn();
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha no login";
       setErr(msg);
@@ -30,11 +34,20 @@ export default function LoginCard() {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={handleClick}
+          onClick={() => handleClick(false)}
+          disabled={busy}
+          style={{ width: "100%", justifyContent: "center", marginBottom: 8 }}
+        >
+          {busy ? "Entrando…" : "Entrar com Google"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => handleClick(true)}
           disabled={busy}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          {busy ? "Entrando…" : "Entrar com Google"}
+          {busy ? "Entrando…" : "🔄 Usar outra conta Google"}
         </button>
         {err && (
           <p style={{ color: "var(--red)", fontSize: ".82rem", marginTop: 12 }}>
