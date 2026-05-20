@@ -12,6 +12,10 @@ type Account = {
 export function MlAccountStatus() {
   const [data, setData] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [disconnectLoading, setDisconnectLoading] = useState(false);
+  const [swapLoading, setSwapLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -33,25 +37,60 @@ export function MlAccountStatus() {
 
   if (!data || !data.connected) return <MLConnectButton />;
 
+  async function sync() {
+    setSyncLoading(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/ml/sync-all', { method: 'POST' });
+      if (res.ok) {
+        setFeedback({ type: 'success', message: '✅ Sincronização iniciada!' });
+        setTimeout(() => setFeedback(null), 3000);
+      } else {
+        setFeedback({ type: 'error', message: '❌ Erro ao sincronizar' });
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar', error);
+      setFeedback({ type: 'error', message: '❌ Erro ao sincronizar' });
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   async function disconnect() {
+    if (!confirm('Tem certeza que deseja desconectar sua conta Mercado Livre?')) return;
+    setDisconnectLoading(true);
+    setFeedback(null);
     try {
       const res = await fetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
-        setData({ connected: false });
+        setFeedback({ type: 'success', message: '✅ Desconectado!' });
+        setTimeout(() => setData({ connected: false }), 500);
+      } else {
+        setFeedback({ type: 'error', message: '❌ Erro ao desconectar' });
       }
     } catch (error) {
       console.error('Erro ao desconectar ML', error);
+      setFeedback({ type: 'error', message: '❌ Erro ao desconectar' });
+    } finally {
+      setDisconnectLoading(false);
     }
   }
 
   async function swapAccount() {
+    setSwapLoading(true);
+    setFeedback(null);
     try {
       const res = await fetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
         window.location.href = '/api/ml/auth';
+      } else {
+        setFeedback({ type: 'error', message: '❌ Erro ao trocar conta' });
+        setSwapLoading(false);
       }
     } catch (error) {
       console.error('Erro ao trocar conta ML', error);
+      setFeedback({ type: 'error', message: '❌ Erro ao trocar conta' });
+      setSwapLoading(false);
     }
   }
 
@@ -61,28 +100,59 @@ export function MlAccountStatus() {
         <div style={{ fontWeight: 700 }}>{data.user?.nickname || data.user_id}</div>
         <div style={{ color: 'var(--muted)', fontSize: '.72rem' }}>{data.user?.email || data.user?.site_id || ''}</div>
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button
-          onClick={async () => { await fetch('/api/ml/sync-all', { method: 'POST' }); }}
+          onClick={sync}
+          disabled={syncLoading}
           className="btn btn-xs"
-          style={{ padding: '6px 10px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)' }}
+          style={{ 
+            padding: '6px 10px', 
+            borderRadius: 8, 
+            background: syncLoading ? '#f5f5f5' : '#fff', 
+            border: '1px solid var(--border)',
+            opacity: syncLoading ? 0.6 : 1,
+            cursor: syncLoading ? 'not-allowed' : 'pointer'
+          }}
         >
-          Re-sincronizar
+          {syncLoading ? '⏳ Sincronizando...' : '🔄 Sincronizar'}
         </button>
         <button
           onClick={disconnect}
+          disabled={disconnectLoading}
           className="btn btn-xs btn-ghost"
-          style={{ padding: '6px 10px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)' }}
+          style={{ 
+            padding: '6px 10px', 
+            borderRadius: 8, 
+            background: disconnectLoading ? '#f5f5f5' : '#fff', 
+            border: '1px solid var(--border)',
+            opacity: disconnectLoading ? 0.6 : 1,
+            cursor: disconnectLoading ? 'not-allowed' : 'pointer'
+          }}
         >
-          Desconectar
+          {disconnectLoading ? '⏳ Desconectando...' : '🚪 Desconectar'}
         </button>
         <button
           onClick={swapAccount}
+          disabled={swapLoading}
           className="btn btn-xs btn-primary"
-          style={{ padding: '6px 10px', borderRadius: 8 }}
+          style={{ 
+            padding: '6px 10px', 
+            borderRadius: 8,
+            opacity: swapLoading ? 0.6 : 1,
+            cursor: swapLoading ? 'not-allowed' : 'pointer'
+          }}
         >
-          Trocar conta
+          {swapLoading ? '⏳ Trocando...' : '🔄 Trocar conta'}
         </button>
+        {feedback && (
+          <div style={{
+            fontSize: '.75rem',
+            color: feedback.type === 'success' ? '#22c55e' : '#ef4444',
+            fontWeight: 600
+          }}>
+            {feedback.message}
+          </div>
+        )}
       </div>
     </div>
   );
