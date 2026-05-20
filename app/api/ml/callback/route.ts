@@ -39,15 +39,21 @@ export async function GET(req: Request) {
       { merge: true }
     );
 
-    return NextResponse.json({
-      success: true,
-      connected: true,
-      user_id: token.user_id || null,
-      user: userProfile,
-    });
+    // Redireciona para a home em vez de retornar JSON
+    const response = NextResponse.redirect(new URL("/", req.url));
+    // Limpa o flag de desconectado
+    response.cookies.set("ml_disconnected", "false", { maxAge: 0 });
+    return response;
   } catch (error: any) {
     return NextResponse.json(
       {
+        error: "Unexpected error in callback",
+        details: error?.message || String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
         error: "Unexpected error in callback",
         details: error?.message || String(error),
       },

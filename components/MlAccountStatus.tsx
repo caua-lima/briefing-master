@@ -95,21 +95,33 @@ export function MlAccountStatus() {
   }
 
   async function forceLogout() {
-    if (!confirm('⚠️ LOGOUT FORÇADO\n\nIsso vai limpar TODAS as credenciais da conta ML atual.\n\nDeseja continuar?')) return;
+    if (!confirm('⚠️ LOGOUT FORÇADO\n\nIsso vai limpar TODAS as credenciais da conta ML atual.\n\nVocê será redirecionado para fazer login com a conta correta.\n\nDeseja continuar?')) return;
     
     setSwapLoading(true);
     setFeedback(null);
     try {
-      // Limpa localStorage
-      localStorage.setItem('ml_disconnected', 'true');
+      // 1. Mostra feedback
+      setFeedback({ type: 'success', message: '🔄 Desconectando completamente...' });
       
-      // Faz logout
-      const res = await fetch('/api/ml/disconnect', { method: 'POST' });
+      // 2. Limpa localStorage
+      localStorage.clear();
+      sessionStorage.clear();
       
-      // Aguarda um pouco e redireciona para login
+      // 3. Chama força logout no servidor
+      const res = await fetch('/api/ml/force-logout', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!res.ok) {
+        throw new Error('Erro ao limpar sessão');
+      }
+
+      // 4. Aguarda um pouco e faz reload COMPLETO com parâmetro force
       setTimeout(() => {
-        window.location.href = '/api/ml/auth?login=true&force=true';
-      }, 300);
+        // Reload completo vai limpar cache do browser
+        window.location.href = '/api/ml/auth?login=true';
+      }, 500);
     } catch (error) {
       console.error('Erro no logout forçado', error);
       setFeedback({ type: 'error', message: '❌ Erro ao fazer logout' });

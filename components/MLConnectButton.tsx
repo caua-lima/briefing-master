@@ -30,9 +30,16 @@ export function MLConnectButton() {
         }
 
         const json = await res.json();
-        setStatus({ connected: Boolean(json.connected), user_id: json.user_id ?? null });
+        if (json.connected) {
+          // Se conectado, limpa o flag de desconectado
+          localStorage.removeItem('ml_disconnected');
+          setStatus({ connected: Boolean(json.connected), user_id: json.user_id ?? null });
+        } else {
+          setStatus({ connected: false, user_id: null });
+        }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));
+        setStatus({ connected: false, user_id: null });
       } finally {
         setLoading(false);
       }
