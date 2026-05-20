@@ -20,10 +20,26 @@ export function MlAccountStatus() {
   useEffect(() => {
     async function load() {
       try {
+        // Verifica se o usuário desconectou intencionalmente
+        const isDisconnected = localStorage.getItem('ml_disconnected');
+        if (isDisconnected === 'true') {
+          setData({ connected: false });
+          setLoading(false);
+          return;
+        }
+
         const res = await fetch('/api/ml/account', { cache: 'no-store' });
-        if (!res.ok) return setData({ connected: false });
+        if (!res.ok) {
+          setData({ connected: false });
+          setLoading(false);
+          return;
+        }
         const json = await res.json();
         setData(json);
+        // Limpa o flag de desconectado se conseguiu se conectar
+        if (json.connected) {
+          localStorage.removeItem('ml_disconnected');
+        }
       } catch (e) {
         setData({ connected: false });
       } finally {
@@ -57,12 +73,14 @@ export function MlAccountStatus() {
   }
 
   async function disconnect() {
-    if (!confirm('Tem certeza que deseja desconectar sua conta Mercado Livre?')) return;
+    if (!confirm('Tem certeza que deseja desconectar sua conta Mercado Livre?\n\nVocê vai precisar fazer login novamente para usar a plataforma.')) return;
     setDisconnectLoading(true);
     setFeedback(null);
     try {
       const res = await fetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
+        // Salva o estado de desconexão no localStorage
+        localStorage.setItem('ml_disconnected', 'true');
         setFeedback({ type: 'success', message: '✅ Desconectado!' });
         setTimeout(() => setData({ connected: false }), 500);
       } else {
@@ -76,12 +94,36 @@ export function MlAccountStatus() {
     }
   }
 
+  async function forceLogout() {
+    if (!confirm('⚠️ LOGOUT FORÇADO\n\nIsso vai limpar TODAS as credenciais da conta ML atual.\n\nDeseja continuar?')) return;
+    
+    setSwapLoading(true);
+    setFeedback(null);
+    try {
+      // Limpa localStorage
+      localStorage.setItem('ml_disconnected', 'true');
+      
+      // Faz logout
+      const res = await fetch('/api/ml/disconnect', { method: 'POST' });
+      
+      // Aguarda um pouco e redireciona para login
+      setTimeout(() => {
+        window.location.href = '/api/ml/auth?login=true&force=true';
+      }, 300);
+    } catch (error) {
+      console.error('Erro no logout forçado', error);
+      setFeedback({ type: 'error', message: '❌ Erro ao fazer logout' });
+      setSwapLoading(false);
+    }
+  }
+
   async function swapAccount() {
     setSwapLoading(true);
     setFeedback(null);
     try {
       const res = await fetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
+        localStorage.setItem('ml_disconnected', 'true');
         window.location.href = '/api/ml/auth?login=true';
       } else {
         setFeedback({ type: 'error', message: '❌ Erro ao trocar conta' });
@@ -117,6 +159,19 @@ export function MlAccountStatus() {
           {syncLoading ? '⏳ Sincronizando...' : '🔄 Sincronizar'}
         </button>
         <button
+          onClick={swapAccount}
+          disabled={swapLoading}
+          className="btn btn-xs btn-primary"
+          style={{ 
+            padding: '6px 10px', 
+            borderRadius: 8,
+            opacity: swapLoading ? 0.6 : 1,
+            cursor: swapLoading ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {swapLoading ? '⏳ Trocando...' : '🔄 Trocar conta'}
+        </button>
+        <button
           onClick={disconnect}
           disabled={disconnectLoading}
           className="btn btn-xs btn-ghost"
@@ -132,17 +187,21 @@ export function MlAccountStatus() {
           {disconnectLoading ? '⏳ Desconectando...' : '🚪 Desconectar'}
         </button>
         <button
-          onClick={swapAccount}
+          onClick={forceLogout}
           disabled={swapLoading}
-          className="btn btn-xs btn-primary"
+          className="btn btn-xs"
           style={{ 
             padding: '6px 10px', 
-            borderRadius: 8,
+            borderRadius: 8, 
+            background: swapLoading ? '#f5f5f5' : '#ef4444',
+            color: '#fff',
+            border: '1px solid #dc2626',
             opacity: swapLoading ? 0.6 : 1,
-            cursor: swapLoading ? 'not-allowed' : 'pointer'
+            cursor: swapLoading ? 'not-allowed' : 'pointer',
+            fontWeight: 600
           }}
         >
-          {swapLoading ? '⏳ Trocando...' : '🔄 Trocar conta'}
+          {swapLoading ? '⏳ Logout...' : '🔴 Logout Forçado'}
         </button>
         {feedback && (
           <div style={{

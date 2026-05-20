@@ -15,6 +15,14 @@ export function MLConnectButton() {
   useEffect(() => {
     async function loadStatus() {
       try {
+        // Verifica se o usuário desconectou intencionalmente
+        const isDisconnected = localStorage.getItem('ml_disconnected');
+        if (isDisconnected === 'true') {
+          setStatus({ connected: false, user_id: null });
+          setLoading(false);
+          return;
+        }
+
         const res = await fetch("/api/ml/status", { cache: "no-store" });
         if (!res.ok) {
           const json = await res.json();
@@ -87,6 +95,11 @@ export function MLConnectButton() {
         borderRadius: 8,
         textDecoration: "none",
         whiteSpace: "nowrap",
+        cursor: "pointer",
+      }}
+      onClick={() => {
+        // Limpa o flag de desconectado ao tentar conectar
+        localStorage.removeItem('ml_disconnected');
       }}
     >
       🛒 Conectar ML
