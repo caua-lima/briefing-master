@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
 import { getMlAccessToken } from "../token";
 
-interface MlPaging { total: number; offset: number; limit: number; next?: string; }
-interface MlOrdersResponse { results: Record<string, unknown>[]; paging: MlPaging; }
+const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
+
+interface MlOrdersResponse {
+  results: Record<string, unknown>[];
+  paging: { total: number; offset: number; limit: number };
+}
 
 function todayRangeISO() {
-  // UTC-3 forçado — Vercel roda em UTC
   const now = new Date();
   const brTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
   const yyyy = brTime.getUTCFullYear();
   const mm = String(brTime.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(brTime.getUTCDate()).padStart(2, "0");
-  const from = `${yyyy}-${mm}-${dd}T00:00:00.000-03:00`;
-  const to   = `${yyyy}-${mm}-${dd}T23:59:59.999-03:00`;
-  return { from, to };
+  return {
+    from: `${yyyy}-${mm}-${dd}T00:00:00.000-03:00`,
+    to:   `${yyyy}-${mm}-${dd}T23:59:59.999-03:00`,
+  };
 }
 
 export async function GET() {
@@ -22,26 +26,33 @@ export async function GET() {
     if (!access) return NextResponse.json({ error: "no_token", connected: false }, { status: 401 });
 
     const { from, to } = todayRangeISO();
-    let nextUrl: string | null =
-      `https://api.mercadolibre.com/orders/search?seller=me` +
-      `&order.date_created.from=${encodeURIComponent(from)}` +
-      `&order.date_created.to=${encodeURIComponent(to)}` +
-      `&limit=100`;
-
     let allResults: Record<string, unknown>[] = [];
+    let offset = 0;
+    const limit = 50;
 
-    while (nextUrl) {
-      const pageRes: Response = await fetch(nextUrl, {
+    while (true) {
+      const url =
+        `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}` +
+        `&order.date_created.from=${encodeURIComponent(from)}` +
+        `&order.date_created.to=${encodeURIComponent(to)}` +
+        `&limit=${limit}&offset=${offset}`;
+
+      const pageRes = await fetch(url, {
         headers: { Authorization: `Bearer ${access}` },
         cache: "no-store",
       });
+
       if (!pageRes.ok) {
         const txt = await pageRes.text();
         return NextResponse.json({ error: "ml_fetch_failed", details: txt }, { status: 502 });
       }
+
       const pageJson = await pageRes.json() as MlOrdersResponse;
-      allResults = allResults.concat(pageJson.results ?? []);
-      nextUrl = (pageJson.paging?.next as string | undefined) ?? null;
+      const results = pageJson.results ?? [];
+      allResults = allResults.concat(results);
+      const total = pageJson.paging?.total ?? 0;
+      offset += results.length;
+      if (offset >= total || results.length === 0) break;
     }
 
     let faturamento = 0;

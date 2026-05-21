@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getMlAccessToken } from "../token";
 
+const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
+
 function currentMonthRangeBR() {
-  // Força fuso Brasília (UTC-3) no servidor Vercel que roda UTC
   const now = new Date();
   const brTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
   const year = brTime.getUTCFullYear();
-  const month = brTime.getUTCMonth(); // 0-indexed
+  const month = brTime.getUTCMonth();
   const mm = String(month + 1).padStart(2, "0");
   const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const ld = String(lastDay).padStart(2, "0");
@@ -30,15 +31,13 @@ export async function POST() {
     }
 
     const { from, to } = currentMonthRangeBR();
-
     let allResults: Record<string, unknown>[] = [];
     let offset = 0;
     const limit = 50;
 
     while (true) {
-      // Sem filtro de status — igual ao painel do ML
       const url =
-        `https://api.mercadolibre.com/orders/search?seller=me` +
+        `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}` +
         `&order.date_created.from=${encodeURIComponent(from)}` +
         `&order.date_created.to=${encodeURIComponent(to)}` +
         `&limit=${limit}&offset=${offset}`;
@@ -62,21 +61,18 @@ export async function POST() {
       if (offset >= total || results.length === 0) break;
     }
 
-    // Salva em lotes de 500 (limite do Firestore batch)
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 400;
     for (let i = 0; i < allResults.length; i += BATCH_SIZE) {
       const batch = adminDb.batch();
       for (const order of allResults.slice(i, i + BATCH_SIZE)) {
         const o = order as Record<string, unknown>;
         const orderId = String(o.id);
-        // Normaliza date_created para ISO UTC para facilitar queries
-        const dateRaw = String(o.date_created ?? "");
         batch.set(
           adminDb.collection("ml_orders").doc(orderId),
           {
             order_id: orderId,
             status: o.status ?? null,
-            date_created: dateRaw,
+            date_created: String(o.date_created ?? ""),
             total_amount: Number(o.total_amount ?? 0),
             currency: o.currency_id ?? "BRL",
             buyer_id: (o.buyer as Record<string, unknown>)?.id
