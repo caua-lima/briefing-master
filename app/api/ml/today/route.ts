@@ -5,12 +5,12 @@ interface MlPaging { total: number; offset: number; limit: number; next?: string
 interface MlOrdersResponse { results: Record<string, unknown>[]; paging: MlPaging; }
 
 function todayRangeISO() {
+  // UTC-3 forçado — Vercel roda em UTC
   const now = new Date();
-  const brOffset = -3 * 60;
-  const brTime = new Date(now.getTime() + (brOffset - now.getTimezoneOffset()) * 60000);
-  const yyyy = brTime.getFullYear();
-  const mm = String(brTime.getMonth() + 1).padStart(2, "0");
-  const dd = String(brTime.getDate()).padStart(2, "0");
+  const brTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  const yyyy = brTime.getUTCFullYear();
+  const mm = String(brTime.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(brTime.getUTCDate()).padStart(2, "0");
   const from = `${yyyy}-${mm}-${dd}T00:00:00.000-03:00`;
   const to   = `${yyyy}-${mm}-${dd}T23:59:59.999-03:00`;
   return { from, to };
@@ -26,7 +26,7 @@ export async function GET() {
       `https://api.mercadolibre.com/orders/search?seller=me` +
       `&order.date_created.from=${encodeURIComponent(from)}` +
       `&order.date_created.to=${encodeURIComponent(to)}` +
-      `&order.status=paid&limit=100`;
+      `&limit=100`;
 
     let allResults: Record<string, unknown>[] = [];
 
@@ -41,15 +41,15 @@ export async function GET() {
       }
       const pageJson = await pageRes.json() as MlOrdersResponse;
       allResults = allResults.concat(pageJson.results ?? []);
-      nextUrl = pageJson.paging?.next ?? null;
+      nextUrl = (pageJson.paging?.next as string | undefined) ?? null;
     }
 
     let faturamento = 0;
     const perListing: Record<string, { title: string; vendas: number; faturamento: number }> = {};
 
     for (const o of allResults) {
-      faturamento += Number((o as Record<string, unknown>).total_amount || 0);
-      const orderItems = (o as Record<string, unknown[]>).order_items ?? [];
+      faturamento += Number(o.total_amount || 0);
+      const orderItems = (o.order_items as Record<string, unknown>[]) ?? [];
       for (const it of orderItems) {
         const item = it as Record<string, Record<string, unknown>>;
         const id = String(item.item?.id ?? item.item?.seller_sku ?? "unknown");
