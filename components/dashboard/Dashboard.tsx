@@ -24,6 +24,21 @@ import YesterdayVsToday from "./YesterdayVsToday";
 
 type Props = { data: UserData };
 
+// ── Tipo dos dados mensais do ML ───────────────────────────────
+type MlMetrics = {
+  faturamento: number;
+  ordersCount: number;
+  lucroBruto: number;
+  lucroLiquido: number;
+  totalCustoProduto: number;
+  totalAds: number;
+  totalEnvio: number;
+  custosOperacionais: number;
+  devolucoes: number;
+  start?: string;
+  end?: string;
+};
+
 // ── Gráfico de Metas em Cascata ────────────────────────────────
 function MetasCascata({
   fatMes,
@@ -182,13 +197,13 @@ export default function Dashboard({ data }: Props) {
     [data.days]
   );
 
-  const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: any[] }>(null);
+  const [mlToday, setMlToday] = useState<null | { faturamento: number; ordersCount: number; items: unknown[] }>(null);
   const [mlAccount, setMlAccount] = useState<null | {
     connected: boolean;
     user_id?: string | null;
     user?: { id?: number; nickname?: string; site_id?: string; email?: string; permalink?: string; thumbnail?: { picture_url?: string } } | null;
   }>(null);
-  const [mlMetrics, setMlMetrics] = useState<null | { faturamento: number; ordersCount: number; start?: string; end?: string }>(null);
+  const [mlMetrics, setMlMetrics] = useState<null | MlMetrics>(null);
   const mountedRef = useRef(true);
 
   const fetchMlToday = useCallback(async () => {
@@ -212,7 +227,19 @@ export default function Dashboard({ data }: Props) {
       if (!res.ok) { setMlMetrics(null); return; }
       const json = await res.json();
       if (json?.faturamento != null) {
-        setMlMetrics({ faturamento: Number(json.faturamento || 0), ordersCount: Number(json.ordersCount || 0), start: json.start, end: json.end });
+        setMlMetrics({
+          faturamento: Number(json.faturamento ?? 0),
+          ordersCount: Number(json.ordersCount ?? 0),
+          lucroBruto: Number(json.lucroBruto ?? 0),
+          lucroLiquido: Number(json.lucroLiquido ?? 0),
+          totalCustoProduto: Number(json.totalCustoProduto ?? 0),
+          totalAds: Number(json.totalAds ?? 0),
+          totalEnvio: Number(json.totalEnvio ?? 0),
+          custosOperacionais: Number(json.custosOperacionais ?? 0),
+          devolucoes: Number(json.devolucoes ?? 0),
+          start: json.start,
+          end: json.end,
+        });
       } else {
         setMlMetrics(null);
       }
@@ -318,6 +345,11 @@ export default function Dashboard({ data }: Props) {
 
     return { fatMes, lucroLiquidoMes, cmvMes, adsMes, custosMesTotal, margemMes, projecao, diaAtual, totalDias };
   }, [recomputedDays, data.draft, data.costs, dayMode, todaySummary, mes]);
+
+  // Margem mensal calculada com dados ML se disponíveis
+  const margemMesML = mlMetrics && mlMetrics.faturamento > 0
+    ? (mlMetrics.lucroLiquido / mlMetrics.faturamento) * 100
+    : mesResumo.margemMes;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -432,13 +464,93 @@ export default function Dashboard({ data }: Props) {
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
-          <KpiCard label="Faturamento do Mês" value={mlMetrics ? mlMetrics.faturamento : mesResumo.fatMes} isCurrency colorOverride="positive" />
-          <KpiCard label="Lucro Líquido do Mês" value={mesResumo.lucroLiquidoMes} isCurrency colorOverride={mesResumo.lucroLiquidoMes >= 0 ? "positive" : "negative"} />
-          <KpiCard label="Custos Operacionais" value={mesResumo.custosMesTotal} isCurrency colorOverride="negative" />
-          <KpiCard label="Margem do Mês" value={mesResumo.margemMes} isPercent colorOverride="margin" percentValue={mesResumo.margemMes} />
-          <KpiCard label="Projeção de Fechamento" value={mesResumo.projecao} isCurrency colorOverride="neutral" />
+        {/* KPIs principais */}
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+          <KpiCard
+            label="Faturamento do Mês"
+            value={mlMetrics ? mlMetrics.faturamento : mesResumo.fatMes}
+            isCurrency colorOverride="positive"
+          />
+          <KpiCard
+            label="Margem do Mês"
+            value={margemMesML}
+            isPercent colorOverride="margin"
+            percentValue={margemMesML}
+          />
+          <KpiCard
+            label="Projeção de Fechamento"
+            value={mesResumo.projecao}
+            isCurrency colorOverride="neutral"
+          />
         </div>
+
+        {/* Bloco de lucro com / sem custos operacionais */}
+        {mlMetrics ? (
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+            {/* Coluna: Receita - Custo */}
+            <div style={{
+              flex: 1, minWidth: 260,
+              background: "var(--surface2)", border: "1px solid var(--border)",
+              borderRadius: 10, padding: "14px 16px",
+            }}>
+              <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+                💰 Lucro Bruto (sem custos operacionais)
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <KpiCard label="Custo de Produto" value={mlMetrics.totalCustoProduto} isCurrency colorOverride="negative" />
+                <KpiCard label="Custo de Envio" value={mlMetrics.totalEnvio} isCurrency colorOverride="negative" />
+                <KpiCard label="Ads (ML)" value={mlMetrics.totalAds} isCurrency colorOverride="negative" />
+                <KpiCard
+                  label="Lucro Bruto ML"
+                  value={mlMetrics.lucroBruto}
+                  isCurrency
+                  colorOverride={mlMetrics.lucroBruto >= 0 ? "positive" : "negative"}
+                />
+              </div>
+              <div style={{ marginTop: 8, fontSize: ".7rem", color: "var(--muted)" }}>
+                = Faturamento − Custo Produto − Envio − Ads − Devoluções
+              </div>
+            </div>
+
+            {/* Coluna: Com custos operacionais */}
+            <div style={{
+              flex: 1, minWidth: 260,
+              background: "var(--surface2)", border: "1px solid var(--border)",
+              borderRadius: 10, padding: "14px 16px",
+            }}>
+              <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+                🏭 Lucro Líquido (com custos operacionais)
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <KpiCard label="Custos Operacionais" value={mlMetrics.custosOperacionais} isCurrency colorOverride="negative" />
+                <KpiCard
+                  label="Lucro Líquido ML"
+                  value={mlMetrics.lucroLiquido}
+                  isCurrency
+                  colorOverride={mlMetrics.lucroLiquido >= 0 ? "positive" : "negative"}
+                />
+              </div>
+              <div style={{ marginTop: 8, fontSize: ".7rem", color: "var(--muted)" }}>
+                = Lucro Bruto − Fitas, Envio Full, Impressora, Extras
+              </div>
+            </div>
+          </div>
+        ) : (
+          // Fallback sem dados ML: exibe cálculo manual
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+            <KpiCard
+              label="Lucro Líquido do Mês"
+              value={mesResumo.lucroLiquidoMes}
+              isCurrency
+              colorOverride={mesResumo.lucroLiquidoMes >= 0 ? "positive" : "negative"}
+            />
+            <KpiCard
+              label="Custos Operacionais"
+              value={mesResumo.custosMesTotal}
+              isCurrency colorOverride="negative"
+            />
+          </div>
+        )}
 
         {goals?.meta1 ? (
           <div>
