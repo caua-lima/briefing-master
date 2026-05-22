@@ -23,6 +23,19 @@ function monthRangeBR(monthStr?: string) {
   };
 }
 
+type ProdutoMap = {
+  custo: number;
+  ads: number;
+  envioFull: number;
+};
+
+type OrderItem = {
+  sku?: string;
+  quantity?: number;
+  unit_price?: number;
+  title?: string;
+};
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -30,7 +43,7 @@ export async function GET(req: Request) {
     const { start, end, startBR, endBR } = monthRangeBR(month);
     const db = getAdminDb();
 
-    // 1. Buscar pedidos do mês
+    // 1. Buscar pedidos do mês (UTC e BR para não perder nenhum)
     const [snapUTC, snapBR] = await Promise.all([
       db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
       db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
@@ -44,65 +57,79 @@ export async function GET(req: Request) {
     }
     const orders = Array.from(ordersMap.values());
 
-    // 2. Buscar produtos vinculados (para custo e ads por SKU)
-    const produtosSnap = await db.collection("produtos").get();
-    const produtosMap = new Map<string, { custo: number; ads: number }>();
+    // 2. Buscar produtos cadastrados no estoque (coleção "produtos" de cada user)
+    //    A coleção fica em /produtos (global) ou /users/{uid}/produtos dependendo da sua estrutura.
+    //    Ajuste o caminho abaixo se necessário.
+    const produtosSnap = await db.collectionGroup("produtos").get();
+    const produtosMap = new Map<string, ProdutoMap>();
     for (const doc of produtosSnap.docs) {
       const d = doc.data();
-      // vincula por sku ou por ml_item_id
-      const chaves = [d.sku, d.ml_item_id, doc.id].filter(Boolean) as string[];
-      for (const chave of chaves) {
-        produtosMap.set(chave, {
-          custo: Number(d.custo ?? d.custo_produto ?? 0),
-          ads: Number(d.ads ?? d.custo_ads ?? 0),
+      const sku = String(d.sku ?? "").trim();
+      if (sku) {
+        produtosMap.set(sku, {
+          custo:     Number(d.custo ?? 0),
+          ads:       Number(d.ads ?? 0),
+          envioFull: Number(d.custo_envio_full ?? 0),
         });
       }
     }
 
-    // 3. Calcular faturamento, custo produto, ads, envio por pedido
-    let faturamento = 0;
+    // 3. Calcular totais iterando sobre pedidos e seus items
+    let faturamento       = 0;
     let totalCustoProduto = 0;
-    let totalAds = 0;
-    let totalEnvio = 0;
+    let totalAds          = 0;
+    let totalEnvio        = 0;
+    let pedidosSemVinculo = 0;
 
     for (const o of orders) {
       faturamento += Number(o.total_amount ?? 0);
-      const envio = Number(o.shipping_cost ?? o.base_shipping_cost ?? 0);
-      totalEnvio += envio;
 
-      const items = (o.items as { sku?: string; quantity?: number; unit_price?: number }[]) ?? [];
+      const items = (o.items as OrderItem[]) ?? [];
+      let pedidoVinculado = false;
+
       for (const item of items) {
         const qty = Number(item.quantity ?? 1);
-        const sku = item.sku ?? "";
+        const sku = String(item.sku ?? "").trim();
         const produto = produtosMap.get(sku);
+
         if (produto) {
+          pedidoVinculado = true;
           totalCustoProduto += produto.custo * qty;
-          totalAds += produto.ads * qty;
+          totalAds          += produto.ads * qty;
+          totalEnvio        += produto.envioFull * qty;
         }
+      }
+
+      if (!pedidoVinculado && items.length > 0) {
+        pedidosSemVinculo++;
       }
     }
 
-    // 4. Custos operacionais manuais (coleção "custos")
-    const custosSnap = await db.collection("custos").get();
+    // 4. Custos operacionais manuais (coleção "custos" de cada user)
+    const custosSnap = await db.collectionGroup("custos").get();
     let custosOperacionais = 0;
     for (const doc of custosSnap.docs) {
       custosOperacionais += Number(doc.data().valor ?? 0);
     }
 
-    // 5. Devoluções
+    // 5. Devoluções do mês
     const [retUTC, retBR] = await Promise.all([
       db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
       db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const retMap = new Map<string, FirebaseFirestore.DocumentData>();
-    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
-    const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
+    for (const snap of [retUTC, retBR]) {
+      for (const doc of snap.docs) retMap.set(doc.id, doc.data());
+    }
+    const devolucoes = Array.from(retMap.values()).reduce(
+      (s, r) => s + Number(r.total_amount ?? 0), 0
+    );
 
     // 6. Cálculo dos lucros
-    // Lucro Bruto = faturamento - ads - custo_produto - envio_full
-    const lucroBruto = faturamento - totalAds - totalCustoProduto - totalEnvio - devolucoes;
+    // Lucro Bruto = Faturamento - Custo Produto - Envio Full - Ads - Devoluções
+    const lucroBruto = faturamento - totalCustoProduto - totalEnvio - totalAds - devolucoes;
 
-    // Lucro Líquido = lucroBruto - custos operacionais (fitas, impressora, extras)
+    // Lucro Líquido = Lucro Bruto - Custos Operacionais (fitas, impressora, extras)
     const lucroLiquido = lucroBruto - custosOperacionais;
 
     return NextResponse.json({
@@ -115,6 +142,7 @@ export async function GET(req: Request) {
       custosOperacionais,
       lucroBruto,
       lucroLiquido,
+      pedidosSemVinculo, // útil para debug: quantos pedidos não têm SKU cadastrado
       start,
       end,
     });

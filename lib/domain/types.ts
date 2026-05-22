@@ -84,6 +84,9 @@ export type Product = {
   preco: string;
   custo: string;
   retorno: string;
+  sku?: string;              // bate com items[].sku dos pedidos ML
+  ads?: string;              // custo de ads por unidade vendida (R$)
+  custo_envio_full?: string; // custo médio de envio Full por unidade (R$)
   mlb?: string;
   ativo: boolean;
   createdBy?: string;
