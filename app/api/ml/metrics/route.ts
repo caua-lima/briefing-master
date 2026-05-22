@@ -93,21 +93,21 @@ export async function GET(req: Request) {
     const orders = Array.from(ordersMap.values());
 
     // ── 2. Produtos cadastrados (por SKU e por MLB) ────────────
-    const produtosSnap = await db.collectionGroup("produtos").get();
+    const produtosSnap = await db.collectionGroup("products").get();
     const porSku = new Map<string, ProdutoData>();
     const porMlb = new Map<string, ProdutoData>();
 
     for (const doc of produtosSnap.docs) {
       const d = doc.data();
       const entry: ProdutoData = {
-        custo:     Number(d.custo ?? 0),
-        envioFull: Number(d.custo_envio_full ?? 0),
-        mlb:       String(d.mlb ?? "").trim(),
-        name:      String(d.name ?? ""),
-        preco:     Number(d.preco ?? 0),
-      };
-      const sku = String(d.sku ?? "").trim();
-      const mlb = String(d.mlb ?? "").trim();
+  custo:     Number(d.cost ?? d.custo ?? 0),
+  envioFull: Number(d.shipping_cost ?? d.custo_envio_full ?? 0),
+  mlb:       String(d.mlb ?? "").trim(),
+  name:      String(d.name ?? ""),
+  preco:     Number(d.price ?? d.preco ?? 0),
+};
+const sku = String(d.sku ?? "").trim();
+const mlb = String(d.mlb ?? "").trim();
       if (sku) porSku.set(sku, entry);
       if (mlb) porMlb.set(mlb, entry);
     }
