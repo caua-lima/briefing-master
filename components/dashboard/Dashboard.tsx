@@ -435,20 +435,19 @@ export default function Dashboard({ data }: Props) {
       }
     : data.goals;
 
-  // ── FATURAMENTO BRUTO para metas (não retorno) ────────────
-  const fatBruto  = mlMetrics?.faturamentoBruto ?? 0;
-  const retorno   = mlMetrics?.totalRetorno ?? 0;
+  // faturamento bruto (base das metas) e retorno líquido
+  const fatBruto = mlMetrics?.faturamentoBruto ?? 0;
+  const retorno  = mlMetrics?.totalRetorno ?? 0;
 
-  // ── Projeção baseada em faturamento BRUTO ─────────────────
+  // projeção baseada no faturamento bruto
   const projecao = useMemo(() => {
     if (periodoMode !== "mes" || !mlMetrics) return 0;
     const diaAtual  = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     if (diaAtual <= 0) return 0;
-    return (fatBruto / diaAtual) * totalDias;  // ← usa bruto
+    return (fatBruto / diaAtual) * totalDias;
   }, [periodoMode, mlMetrics, fatBruto, mes]);
 
-  // ── Meta diária ativa ─────────────────────────────────────
   const metaDiariaAtiva = goals?.metaDiaria ?? null;
 
   return (
@@ -521,9 +520,8 @@ export default function Dashboard({ data }: Props) {
             </div>
           </div>
 
-          {/* ── Meta Diária + Composição de custos ── */}
+          {/* ── Meta Diária + Composição de custos + Pedidos ── */}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            {/* Meta diária */}
             <MetaDiariaCard
               faturamentoHoje={mlMetrics?.faturamentoHoje ?? 0}
               pedidosHoje={mlMetrics?.pedidosHoje ?? 0}
@@ -614,7 +612,6 @@ export default function Dashboard({ data }: Props) {
               </div>
 
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                {/* ← usa faturamento BRUTO nos cards de metas */}
                 <KpiCard label="Faturamento do Mês" value={fatBruto}  isCurrency colorOverride="positive" />
                 <KpiCard label="Projeção"           value={projecao}  isCurrency colorOverride="neutral" />
                 <KpiCard label="Margem do Mês"      value={mlMetrics?.margemComCustos ?? 0} isPercent colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
@@ -622,7 +619,7 @@ export default function Dashboard({ data }: Props) {
 
               {goals?.meta1 ? (
                 <MetasCascata
-                  fatMes={fatBruto}   {/* ← usa bruto */}
+                  fatMes={fatBruto}
                   projecao={projecao}
                   meta1={goals.meta1}
                   meta2={goals.meta2 ?? null}
@@ -639,7 +636,7 @@ export default function Dashboard({ data }: Props) {
                 <GoalsProgressBars
                   goals={goals}
                   days={[]}
-                  liveRevenue={fatBruto}  {/* ← usa bruto */}
+                  liveRevenue={fatBruto}
                 />
               </div>
             </section>
