@@ -32,10 +32,8 @@ function parseDateParam(p: string | null) {
   return p?.trim() || undefined;
 }
 
-// Normaliza MLB: "MLB1234", "1234" → "MLB1234"
-function normalizeMlb(id: string): string {
-  const s = id.trim().toUpperCase();
-  return s.startsWith("MLB") ? s : `MLB${s}`;
+function normalizeSku(s: string) {
+  return s.trim().toLowerCase();
 }
 
 function buildRange(from?: string, to?: string, month?: string) {
@@ -91,29 +89,27 @@ export async function GET(req: Request) {
       }
     const orders = Array.from(ordersMap.values());
 
-    // ── 2. Produtos — indexa por SKU, por MLB normalizado e por MLB sem prefixo
-    const prodSnap = await db.collection("products").get();
-    const porSku   = new Map<string, ProdutoData>();
-    const porMlb   = new Map<string, ProdutoData>(); // chave sempre "MLB..."
+    // ── 2. Produtos da coleção "estoque" (campos reais do Firestore) ──
+    const prodSnap = await db.collection("estoque").get();
+    const porSku = new Map<string, ProdutoData>();
+    const porMlb = new Map<string, ProdutoData>();
 
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const entry: ProdutoData = {
-        custo:     Number(d.cost ?? d.custo ?? 0),
-        envioFull: Number(d.shipping_cost ?? d.custo_envio_full ?? 0),
+        custo:     Number(d.custo ?? d.cost ?? 0),
+        envioFull: Number(d.custo_envio_full ?? d.shipping_cost ?? 0),
         mlb:       String(d.mlb ?? "").trim(),
         name:      String(d.name ?? ""),
       };
       const sku = String(d.sku ?? "").trim();
       const mlb = String(d.mlb ?? "").trim();
 
-      if (sku) porSku.set(sku.toUpperCase(), entry);      // case-insensitive
-      if (mlb) {
-        porMlb.set(normalizeMlb(mlb), entry);             // MLB6724... e 6724... ambos viram MLB6724...
-      }
+      if (sku) porSku.set(normalizeSku(sku), entry);
+      if (mlb) porMlb.set(mlb.toUpperCase(), entry);
     }
 
-    // ── 3. ADS por item_id da API ML ──────────────────────────
+    // ── 3. ADS por item_id ────────────────────────────────────
     let adsByItem: Record<string, number> = {};
     try {
       const base   = process.env.NEXT_PUBLIC_APP_URL ?? "https://briefing-master.vercel.app";
@@ -136,17 +132,15 @@ export async function GET(req: Request) {
       let vinculado = false;
 
       for (const item of items) {
-        const qty    = Number(item.quantity ?? 1);
-        // Normaliza SKU e itemId para comparação
-        const sku    = String(item.sku     ?? "").trim().toUpperCase();
-        const itemId = String(item.item_id ?? "").trim();
-        const itemIdNorm = itemId ? normalizeMlb(itemId) : "";
-        const title  = String(item.title   ?? itemId);
-        const retorno = Number(item.unit_price ?? 0) * qty;
+        const qty      = Number(item.quantity ?? 1);
+        const skuRaw   = String(item.sku      ?? "").trim();
+        const itemId   = String(item.item_id  ?? "").trim();
+        const title    = String(item.title    ?? skuRaw);
+        const retorno  = Number(item.unit_price ?? 0) * qty;
 
-        // Tenta vincular: SKU > MLB normalizado
-        const produto = (sku ? porSku.get(sku) : undefined)
-                     ?? (itemIdNorm ? porMlb.get(itemIdNorm) : undefined);
+        // Vínculo: SKU normalizado → MLB uppercase
+        const produto = porSku.get(normalizeSku(skuRaw))
+                     ?? porMlb.get(itemId.toUpperCase());
 
         if (produto) {
           vinculado = true;
@@ -156,8 +150,8 @@ export async function GET(req: Request) {
           totalCMV     += cmv;
           totalEnvio   += envio;
 
-          // Chave da tabela: sempre MLB normalizado
-          const chave = itemIdNorm || sku;
+          // Agrupa por SKU (chave principal dos pedidos antigos que não têm item_id)
+          const chave = skuRaw || itemId;
           const prev  = anunciosMap.get(chave);
           if (prev) {
             prev.retorno      += retorno;
@@ -166,8 +160,8 @@ export async function GET(req: Request) {
             prev.qty          += qty;
           } else {
             anunciosMap.set(chave, {
-              item_id:      itemIdNorm || itemId || sku,
-              title:        produto.name || title,   // usa nome do produto cadastrado
+              item_id:      itemId || skuRaw,
+              title:        produto.name || title,
               retorno,
               custoProduto: cmv,
               envioFull:    envio,
@@ -185,10 +179,7 @@ export async function GET(req: Request) {
     // ── 5. ADS e lucro por anúncio ────────────────────────────
     let totalAds = 0;
     for (const [chave, a] of anunciosMap) {
-      // Tenta pegar ADS tanto pelo MLB normalizado quanto sem prefixo
-      a.ads    = adsByItem[chave]
-              ?? adsByItem[chave.replace("MLB", "")]
-              ?? 0;
+      a.ads    = adsByItem[chave] ?? adsByItem[`MLB${chave}`] ?? 0;
       totalAds += a.ads;
       a.lucro  = a.retorno - a.custoProduto - a.envioFull - a.ads;
       a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
@@ -208,37 +199,25 @@ export async function GET(req: Request) {
     const devolucoes = Array.from(retMap.values())
       .reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
 
-    // ── 7. Custos operacionais (coleção "custos" — nome real no Firestore) ──
-    // Tenta as duas coleções possíveis
-    const [custosSnap1, custosSnap2] = await Promise.all([
-      db.collection("custos").get(),
-      db.collection("operational_costs").get(),
-    ]);
+    // ── 7. Custos operacionais (coleção "custos") ─────────────
+    const custosSnap = await db.collection("custos").get();
     let custosOp = 0;
-    for (const snap of [custosSnap1, custosSnap2]) {
-      for (const doc of snap.docs) {
-        const d    = doc.data();
-        const data = String(d.date ?? d.data ?? "");
-        const freq = String(d.frequency ?? d.freq ?? "avulso");
-        if (freq === "mensal" || freq === "monthly") {
-          if (data.slice(0, 7) >= fromStr.slice(0, 7) && data.slice(0, 7) <= toStr.slice(0, 7))
-            custosOp += Number(d.amount ?? d.valor ?? 0);
-        } else {
-          if (data >= fromStr && data <= toStr)
-            custosOp += Number(d.amount ?? d.valor ?? 0);
-        }
+    for (const doc of custosSnap.docs) {
+      const d    = doc.data();
+      const data = String(d.data ?? d.date ?? "");
+      const freq = String(d.freq ?? d.frequency ?? "avulso");
+      if (freq === "mensal" || freq === "monthly") {
+        if (data.slice(0, 7) >= fromStr.slice(0, 7) && data.slice(0, 7) <= toStr.slice(0, 7))
+          custosOp += Number(d.valor ?? d.amount ?? 0);
+      } else {
+        if (data >= fromStr && data <= toStr)
+          custosOp += Number(d.valor ?? d.amount ?? 0);
       }
     }
 
-    // ── 8. Totais ─────────────────────────────────────────────
-    const lucroSemCustos  = totalRetorno - totalCMV - totalEnvio - totalAds - devolucoes;
-    const lucroComCustos  = lucroSemCustos - custosOp;
-    const margemSemCustos = totalRetorno > 0 ? (lucroSemCustos / totalRetorno) * 100 : 0;
-    const margemComCustos = totalRetorno > 0 ? (lucroComCustos / totalRetorno) * 100 : 0;
-
-    // ── 9. Faturamento do dia (hoje no BR) ────────────────────
-    const hoje = new Date(Date.now() - 3 * 3600 * 1000);
-    const hj   = `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth()+1).padStart(2,"0")}-${String(hoje.getUTCDate()).padStart(2,"0")}`;
+    // ── 8. Faturamento de hoje ────────────────────────────────
+    const brNow = new Date(Date.now() - 3 * 3600 * 1000);
+    const hj = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}-${String(brNow.getUTCDate()).padStart(2, "0")}`;
     const [snapHjUTC, snapHjBR] = await Promise.all([
       db.collection("ml_orders").where("date_created", ">=", `${hj}T00:00:00.000Z`).where("date_created", "<=", `${hj}T23:59:59.999Z`).get(),
       db.collection("ml_orders").where("date_created", ">=", `${hj}T00:00:00.000-03:00`).where("date_created", "<=", `${hj}T23:59:59.999-03:00`).get(),
@@ -249,8 +228,14 @@ export async function GET(req: Request) {
         const d = doc.data();
         hjMap.set(d.order_id ?? doc.id, d);
       }
-    const faturamentoHoje    = Array.from(hjMap.values()).reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-    const pedidosHoje        = hjMap.size;
+    const faturamentoHoje = Array.from(hjMap.values()).reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+    const pedidosHoje     = hjMap.size;
+
+    // ── 9. Totais finais ──────────────────────────────────────
+    const lucroSemCustos  = totalRetorno - totalCMV - totalEnvio - totalAds - devolucoes;
+    const lucroComCustos  = lucroSemCustos - custosOp;
+    const margemSemCustos = totalRetorno > 0 ? (lucroSemCustos / totalRetorno) * 100 : 0;
+    const margemComCustos = totalRetorno > 0 ? (lucroComCustos / totalRetorno) * 100 : 0;
 
     return NextResponse.json({
       faturamentoBruto,
