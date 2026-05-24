@@ -17,7 +17,6 @@ import GoalsProgressBars from "./GoalsProgressBars";
 
 type Props = { data: UserData };
 
-// ── Tipos ──────────────────────────────────────────────────────
 type AnuncioResult = {
   item_id:      string;
   title:        string;
@@ -33,8 +32,8 @@ type AnuncioResult = {
 type MlMetrics = {
   faturamentoBruto:   number;
   totalRetorno:       number;
-  faturamentoHoje:    number;   // ← novo
-  pedidosHoje:        number;   // ← novo
+  faturamentoHoje:    number;
+  pedidosHoje:        number;
   ordersCount:        number;
   devolucoes:         number;
   totalCMV:           number;
@@ -51,7 +50,6 @@ type MlMetrics = {
   to:                 string;
 };
 
-// ── Helpers de data ────────────────────────────────────────────
 function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -75,6 +73,66 @@ function monthRange(mes: string): { from: string; to: string } {
   const mm = String(m).padStart(2, "0");
   const ld = String(last).padStart(2, "0");
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${ld}` };
+}
+
+// ── Meta Diária Card ───────────────────────────────────────────
+function MetaDiariaCard({
+  faturamentoHoje,
+  pedidosHoje,
+  metaDiaria,
+}: {
+  faturamentoHoje: number;
+  pedidosHoje: number;
+  metaDiaria: number | null;
+}) {
+  const pct = metaDiaria && metaDiaria > 0
+    ? Math.min((faturamentoHoje / metaDiaria) * 100, 100)
+    : 0;
+  const batida = metaDiaria ? faturamentoHoje >= metaDiaria : false;
+  const falta  = metaDiaria ? Math.max(metaDiaria - faturamentoHoje, 0) : 0;
+
+  return (
+    <div style={{
+      background: "var(--surface2)", border: `1px solid ${batida ? "var(--green)" : "var(--border)"}`,
+      borderRadius: 10, padding: "14px 16px", flex: 1, minWidth: 220,
+    }}>
+      <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+        📅 Meta Diária de Hoje
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+        <span style={{ fontSize: "1.3rem", fontWeight: 800, color: batida ? "var(--green)" : "var(--text)" }}>
+          {fmtBRL(faturamentoHoje)}
+        </span>
+        {metaDiaria && (
+          <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
+            / {fmtBRL(metaDiaria)}
+          </span>
+        )}
+      </div>
+      {metaDiaria && (
+        <>
+          <div style={{ height: 8, borderRadius: 999, background: "var(--surface)", overflow: "hidden", marginBottom: 8 }}>
+            <div style={{
+              height: "100%", borderRadius: 999, transition: "width .5s ease",
+              width: `${pct}%`,
+              background: batida ? "var(--green)" : "linear-gradient(90deg, #4f8ef7, #60a5fa)",
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".75rem", color: "var(--muted)" }}>
+            <span>{pedidosHoje} pedido(s) hoje</span>
+            <span style={{ color: batida ? "var(--green)" : undefined }}>
+              {batida ? "✅ Meta batida!" : `Faltam ${fmtBRL(falta)}`}
+            </span>
+          </div>
+        </>
+      )}
+      {!metaDiaria && (
+        <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>
+          Configure uma meta diária na aba Metas
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Metas em Cascata ───────────────────────────────────────────
@@ -188,7 +246,7 @@ function MetasCascata({
         <div style={{ display: "flex", gap: 14 }}>
           <span>
             <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#4f8ef7", marginRight: 4, verticalAlign: "middle" }} />
-            Retorno atual
+            Faturamento bruto
           </span>
           <span>
             <span style={{ display: "inline-block", width: 10, height: 4, borderRadius: 2, background: "rgba(255,255,255,.2)", marginRight: 4, verticalAlign: "middle", border: "1px dashed rgba(255,255,255,.3)" }} />
@@ -210,7 +268,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
   if (!anuncios.length) {
     return (
       <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>
-        Nenhum anúncio vinculado no período. Sincronize os pedidos e verifique os SKUs no Estoque.
+        Nenhum anúncio vinculado no período. Corrija os SKUs no Estoque.
       </div>
     );
   }
@@ -377,16 +435,21 @@ export default function Dashboard({ data }: Props) {
       }
     : data.goals;
 
-  // ── Valores derivados ─────────────────────────────────────
-  const retorno = mlMetrics?.totalRetorno ?? 0;
+  // ── FATURAMENTO BRUTO para metas (não retorno) ────────────
+  const fatBruto  = mlMetrics?.faturamentoBruto ?? 0;
+  const retorno   = mlMetrics?.totalRetorno ?? 0;
 
+  // ── Projeção baseada em faturamento BRUTO ─────────────────
   const projecao = useMemo(() => {
     if (periodoMode !== "mes" || !mlMetrics) return 0;
     const diaAtual  = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     if (diaAtual <= 0) return 0;
-    return (retorno / diaAtual) * totalDias;
-  }, [periodoMode, mlMetrics, retorno, mes]);
+    return (fatBruto / diaAtual) * totalDias;  // ← usa bruto
+  }, [periodoMode, mlMetrics, fatBruto, mes]);
+
+  // ── Meta diária ativa ─────────────────────────────────────
+  const metaDiariaAtiva = goals?.metaDiaria ?? null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -446,10 +509,10 @@ export default function Dashboard({ data }: Props) {
               💰 Resultado do Período
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <KpiCard label="Retorno sobre Vendas"        value={retorno}                              isCurrency colorOverride="positive" />
-              <KpiCard label="Faturamento Bruto ML"        value={mlMetrics?.faturamentoBruto ?? 0}     isCurrency colorOverride="neutral" />
-              <KpiCard label="Faturamento Hoje"   value={mlMetrics?.faturamentoHoje ?? 0}  isCurrency colorOverride="positive" />
-              <KpiCard label="Pedidos Hoje"       value={mlMetrics?.pedidosHoje ?? 0}       isCurrency={false} colorOverride="neutral" />
+              <KpiCard label="Faturamento Bruto ML"        value={fatBruto}                             isCurrency colorOverride="positive" />
+              <KpiCard label="Retorno sobre Vendas"        value={retorno}                              isCurrency colorOverride="neutral" />
+              <KpiCard label="Faturamento Hoje"            value={mlMetrics?.faturamentoHoje ?? 0}      isCurrency colorOverride="positive" />
+              <KpiCard label="Pedidos Hoje"                value={mlMetrics?.pedidosHoje ?? 0}          isCurrency={false} colorOverride="neutral" />
               <KpiCard label="Devoluções"                  value={mlMetrics?.devolucoes ?? 0}           isCurrency colorOverride="negative" />
               <KpiCard label="Lucro Líq. (sem custos op.)" value={mlMetrics?.lucroSemCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroSemCustos ?? 0) >= 0 ? "positive" : "negative"} />
               <KpiCard label="Lucro Líq. (com custos op.)" value={mlMetrics?.lucroComCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroComCustos ?? 0) >= 0 ? "positive" : "negative"} />
@@ -458,8 +521,15 @@ export default function Dashboard({ data }: Props) {
             </div>
           </div>
 
-          {/* ── Composição de custos + pedidos ── */}
+          {/* ── Meta Diária + Composição de custos ── */}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            {/* Meta diária */}
+            <MetaDiariaCard
+              faturamentoHoje={mlMetrics?.faturamentoHoje ?? 0}
+              pedidosHoje={mlMetrics?.pedidosHoje ?? 0}
+              metaDiaria={metaDiariaAtiva}
+            />
+
             {/* Custos */}
             <div style={{ flex: 1, minWidth: 240, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
               <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
@@ -500,7 +570,7 @@ export default function Dashboard({ data }: Props) {
                 {[
                   { label: "Pedidos no período",    value: String(mlMetrics?.ordersCount ?? 0) },
                   { label: "Sem produto vinculado", value: String(mlMetrics?.pedidosSemVinculo ?? 0) },
-                  { label: "Ticket médio",          value: (mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(retorno / mlMetrics!.ordersCount) : "—" },
+                  { label: "Ticket médio",          value: (mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(fatBruto / mlMetrics!.ordersCount) : "—" },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".84rem" }}>
                     <span style={{ color: "var(--muted)" }}>{label}</span>
@@ -513,7 +583,7 @@ export default function Dashboard({ data }: Props) {
                     background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)",
                     borderRadius: 6, fontSize: ".73rem", color: "#f7c948",
                   }}>
-                    ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — verifique os SKUs no Estoque
+                    ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — corrija os SKUs no Estoque
                   </div>
                 )}
               </div>
@@ -544,14 +614,15 @@ export default function Dashboard({ data }: Props) {
               </div>
 
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <KpiCard label="Retorno do Mês" value={retorno}   isCurrency colorOverride="positive" />
-                <KpiCard label="Projeção"       value={projecao}  isCurrency colorOverride="neutral" />
-                <KpiCard label="Margem do Mês"  value={mlMetrics?.margemComCustos ?? 0} isPercent colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
+                {/* ← usa faturamento BRUTO nos cards de metas */}
+                <KpiCard label="Faturamento do Mês" value={fatBruto}  isCurrency colorOverride="positive" />
+                <KpiCard label="Projeção"           value={projecao}  isCurrency colorOverride="neutral" />
+                <KpiCard label="Margem do Mês"      value={mlMetrics?.margemComCustos ?? 0} isPercent colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
               </div>
 
               {goals?.meta1 ? (
                 <MetasCascata
-                  fatMes={retorno}
+                  fatMes={fatBruto}   {/* ← usa bruto */}
                   projecao={projecao}
                   meta1={goals.meta1}
                   meta2={goals.meta2 ?? null}
@@ -568,7 +639,7 @@ export default function Dashboard({ data }: Props) {
                 <GoalsProgressBars
                   goals={goals}
                   days={[]}
-                  liveRevenue={retorno}
+                  liveRevenue={fatBruto}  {/* ← usa bruto */}
                 />
               </div>
             </section>
