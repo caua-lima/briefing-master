@@ -33,6 +33,8 @@ type AnuncioResult = {
 type MlMetrics = {
   faturamentoBruto:   number;
   totalRetorno:       number;
+  faturamentoHoje:    number;   // ← novo
+  pedidosHoje:        number;   // ← novo
   ordersCount:        number;
   devolucoes:         number;
   totalCMV:           number;
@@ -446,6 +448,8 @@ export default function Dashboard({ data }: Props) {
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <KpiCard label="Retorno sobre Vendas"        value={retorno}                              isCurrency colorOverride="positive" />
               <KpiCard label="Faturamento Bruto ML"        value={mlMetrics?.faturamentoBruto ?? 0}     isCurrency colorOverride="neutral" />
+              <KpiCard label="Faturamento Hoje"   value={mlMetrics?.faturamentoHoje ?? 0}  isCurrency colorOverride="positive" />
+              <KpiCard label="Pedidos Hoje"       value={mlMetrics?.pedidosHoje ?? 0}       isCurrency={false} colorOverride="neutral" />
               <KpiCard label="Devoluções"                  value={mlMetrics?.devolucoes ?? 0}           isCurrency colorOverride="negative" />
               <KpiCard label="Lucro Líq. (sem custos op.)" value={mlMetrics?.lucroSemCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroSemCustos ?? 0) >= 0 ? "positive" : "negative"} />
               <KpiCard label="Lucro Líq. (com custos op.)" value={mlMetrics?.lucroComCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroComCustos ?? 0) >= 0 ? "positive" : "negative"} />

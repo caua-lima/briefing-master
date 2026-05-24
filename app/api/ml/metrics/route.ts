@@ -2,34 +2,40 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 
 type ProdutoData = {
-  custo: number;
+  custo:     number;
   envioFull: number;
-  mlb: string;
-  name: string;
+  mlb:       string;
+  name:      string;
 };
 
 type OrderItem = {
-  sku?: string;
-  item_id?: string;
-  quantity?: number;
+  sku?:        string;
+  item_id?:    string;
+  quantity?:   number;
   unit_price?: number;
-  title?: string;
+  title?:      string;
 };
 
 type AnuncioResult = {
   item_id:      string;
   title:        string;
-  retorno:      number;   // unit_price × qty (receita real)
-  custoProduto: number;   // CMV × qty
+  retorno:      number;
+  custoProduto: number;
   envioFull:    number;
-  ads:          number;   // spend ML Ads
-  lucro:        number;   // retorno - CMV - ads
-  margem:       number;   // lucro / retorno × 100
+  ads:          number;
+  lucro:        number;
+  margem:       number;
   qty:          number;
 };
 
 function parseDateParam(p: string | null) {
   return p?.trim() || undefined;
+}
+
+// Normaliza MLB: "MLB1234", "1234" → "MLB1234"
+function normalizeMlb(id: string): string {
+  const s = id.trim().toUpperCase();
+  return s.startsWith("MLB") ? s : `MLB${s}`;
 }
 
 function buildRange(from?: string, to?: string, month?: string) {
@@ -85,10 +91,10 @@ export async function GET(req: Request) {
       }
     const orders = Array.from(ordersMap.values());
 
-    // ── 2. Produtos (por SKU e por MLB) ───────────────────────
+    // ── 2. Produtos — indexa por SKU, por MLB normalizado e por MLB sem prefixo
     const prodSnap = await db.collection("products").get();
     const porSku   = new Map<string, ProdutoData>();
-    const porMlb   = new Map<string, ProdutoData>();
+    const porMlb   = new Map<string, ProdutoData>(); // chave sempre "MLB..."
 
     for (const doc of prodSnap.docs) {
       const d = doc.data();
@@ -100,8 +106,11 @@ export async function GET(req: Request) {
       };
       const sku = String(d.sku ?? "").trim();
       const mlb = String(d.mlb ?? "").trim();
-      if (sku) porSku.set(sku, entry);
-      if (mlb) porMlb.set(mlb, entry);
+
+      if (sku) porSku.set(sku.toUpperCase(), entry);      // case-insensitive
+      if (mlb) {
+        porMlb.set(normalizeMlb(mlb), entry);             // MLB6724... e 6724... ambos viram MLB6724...
+      }
     }
 
     // ── 3. ADS por item_id da API ML ──────────────────────────
@@ -113,8 +122,8 @@ export async function GET(req: Request) {
     } catch { /* ADS falhou, segue sem */ }
 
     // ── 4. Loop de pedidos ────────────────────────────────────
-    let faturamentoBruto  = 0;  // total_amount (inclui frete comprador)
-    let totalRetorno      = 0;  // unit_price × qty (receita real do vendedor)
+    let faturamentoBruto  = 0;
+    let totalRetorno      = 0;
     let totalCMV          = 0;
     let totalEnvio        = 0;
     let pedidosSemVinculo = 0;
@@ -127,13 +136,17 @@ export async function GET(req: Request) {
       let vinculado = false;
 
       for (const item of items) {
-        const qty      = Number(item.quantity ?? 1);
-        const sku      = String(item.sku      ?? "").trim();
-        const itemId   = String(item.item_id  ?? "").trim();
-        const title    = String(item.title    ?? itemId);
-        const retorno  = Number(item.unit_price ?? 0) * qty;  // ← receita real
+        const qty    = Number(item.quantity ?? 1);
+        // Normaliza SKU e itemId para comparação
+        const sku    = String(item.sku     ?? "").trim().toUpperCase();
+        const itemId = String(item.item_id ?? "").trim();
+        const itemIdNorm = itemId ? normalizeMlb(itemId) : "";
+        const title  = String(item.title   ?? itemId);
+        const retorno = Number(item.unit_price ?? 0) * qty;
 
-        const produto = porSku.get(sku) ?? porMlb.get(itemId);
+        // Tenta vincular: SKU > MLB normalizado
+        const produto = (sku ? porSku.get(sku) : undefined)
+                     ?? (itemIdNorm ? porMlb.get(itemIdNorm) : undefined);
 
         if (produto) {
           vinculado = true;
@@ -143,7 +156,8 @@ export async function GET(req: Request) {
           totalCMV     += cmv;
           totalEnvio   += envio;
 
-          const chave = itemId || sku;
+          // Chave da tabela: sempre MLB normalizado
+          const chave = itemIdNorm || sku;
           const prev  = anunciosMap.get(chave);
           if (prev) {
             prev.retorno      += retorno;
@@ -152,12 +166,12 @@ export async function GET(req: Request) {
             prev.qty          += qty;
           } else {
             anunciosMap.set(chave, {
-              item_id:      chave,
-              title,
+              item_id:      itemIdNorm || itemId || sku,
+              title:        produto.name || title,   // usa nome do produto cadastrado
               retorno,
               custoProduto: cmv,
               envioFull:    envio,
-              ads:          0,   // preenchido abaixo
+              ads:          0,
               lucro:        0,
               margem:       0,
               qty,
@@ -168,12 +182,15 @@ export async function GET(req: Request) {
       if (!vinculado && items.length > 0) pedidosSemVinculo++;
     }
 
-    // ── 5. Aplica ADS e calcula lucro por anúncio ─────────────
+    // ── 5. ADS e lucro por anúncio ────────────────────────────
     let totalAds = 0;
-    for (const [itemId, a] of anunciosMap) {
-      a.ads    = adsByItem[itemId] ?? 0;
+    for (const [chave, a] of anunciosMap) {
+      // Tenta pegar ADS tanto pelo MLB normalizado quanto sem prefixo
+      a.ads    = adsByItem[chave]
+              ?? adsByItem[chave.replace("MLB", "")]
+              ?? 0;
       totalAds += a.ads;
-      a.lucro  = a.retorno - a.custoProduto - a.ads;
+      a.lucro  = a.retorno - a.custoProduto - a.envioFull - a.ads;
       a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
     }
 
@@ -191,46 +208,65 @@ export async function GET(req: Request) {
     const devolucoes = Array.from(retMap.values())
       .reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
 
-    // ── 7. Custos operacionais ────────────────────────────────
-    const custosSnap = await db.collection("operational_costs").get();
+    // ── 7. Custos operacionais (coleção "custos" — nome real no Firestore) ──
+    // Tenta as duas coleções possíveis
+    const [custosSnap1, custosSnap2] = await Promise.all([
+      db.collection("custos").get(),
+      db.collection("operational_costs").get(),
+    ]);
     let custosOp = 0;
-    for (const doc of custosSnap.docs) {
-      const d    = doc.data();
-      const data = String(d.date ?? d.data ?? "");
-      const freq = String(d.frequency ?? d.freq ?? "avulso");
-      if (freq === "mensal" || freq === "monthly") {
-        if (data.slice(0, 7) >= fromStr.slice(0, 7) && data.slice(0, 7) <= toStr.slice(0, 7))
-          custosOp += Number(d.amount ?? d.valor ?? 0);
-      } else {
-        if (data >= fromStr && data <= toStr)
-          custosOp += Number(d.amount ?? d.valor ?? 0);
+    for (const snap of [custosSnap1, custosSnap2]) {
+      for (const doc of snap.docs) {
+        const d    = doc.data();
+        const data = String(d.date ?? d.data ?? "");
+        const freq = String(d.frequency ?? d.freq ?? "avulso");
+        if (freq === "mensal" || freq === "monthly") {
+          if (data.slice(0, 7) >= fromStr.slice(0, 7) && data.slice(0, 7) <= toStr.slice(0, 7))
+            custosOp += Number(d.amount ?? d.valor ?? 0);
+        } else {
+          if (data >= fromStr && data <= toStr)
+            custosOp += Number(d.amount ?? d.valor ?? 0);
+        }
       }
     }
 
-    // ── 8. Totais finais ──────────────────────────────────────
-    // Lucro sem custos op = Retorno real - CMV - Envio Full - ADS - Devoluções
-    const lucroSemCustos = totalRetorno - totalCMV - totalEnvio - totalAds - devolucoes;
-    const lucroComCustos = lucroSemCustos - custosOp;
+    // ── 8. Totais ─────────────────────────────────────────────
+    const lucroSemCustos  = totalRetorno - totalCMV - totalEnvio - totalAds - devolucoes;
+    const lucroComCustos  = lucroSemCustos - custosOp;
     const margemSemCustos = totalRetorno > 0 ? (lucroSemCustos / totalRetorno) * 100 : 0;
     const margemComCustos = totalRetorno > 0 ? (lucroComCustos / totalRetorno) * 100 : 0;
 
+    // ── 9. Faturamento do dia (hoje no BR) ────────────────────
+    const hoje = new Date(Date.now() - 3 * 3600 * 1000);
+    const hj   = `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth()+1).padStart(2,"0")}-${String(hoje.getUTCDate()).padStart(2,"0")}`;
+    const [snapHjUTC, snapHjBR] = await Promise.all([
+      db.collection("ml_orders").where("date_created", ">=", `${hj}T00:00:00.000Z`).where("date_created", "<=", `${hj}T23:59:59.999Z`).get(),
+      db.collection("ml_orders").where("date_created", ">=", `${hj}T00:00:00.000-03:00`).where("date_created", "<=", `${hj}T23:59:59.999-03:00`).get(),
+    ]);
+    const hjMap = new Map<string, FirebaseFirestore.DocumentData>();
+    for (const snap of [snapHjUTC, snapHjBR])
+      for (const doc of snap.docs) {
+        const d = doc.data();
+        hjMap.set(d.order_id ?? doc.id, d);
+      }
+    const faturamentoHoje    = Array.from(hjMap.values()).reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+    const pedidosHoje        = hjMap.size;
+
     return NextResponse.json({
-      // ── Faturamento ──
-      faturamentoBruto,     // total_amount (inclui frete comprador, para referência)
-      totalRetorno,         // unit_price × qty = receita real do vendedor ← USE ESTE
+      faturamentoBruto,
+      totalRetorno,
+      faturamentoHoje,
+      pedidosHoje,
       ordersCount: orders.length,
       devolucoes,
-      // ── Custos ──
       totalCMV,
       totalAds,
       totalEnvio,
       custosOperacionais: custosOp,
-      // ── Lucros ──
-      lucroSemCustos,       // Retorno - CMV - Envio - ADS - Dev
-      lucroComCustos,       // lucroSemCustos - custos operacionais
+      lucroSemCustos,
+      lucroComCustos,
       margemSemCustos,
       margemComCustos,
-      // ── Por anúncio ──
       anuncios,
       pedidosSemVinculo,
       from: fromStr,
