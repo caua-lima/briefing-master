@@ -6,6 +6,7 @@ type ProdutoData = {
   envioFull: number;
   mlb:       string;
   name:      string;
+  sku:       string;
 };
 
 type OrderItem = {
@@ -34,6 +35,11 @@ function parseDateParam(p: string | null) {
 
 function normalizeSku(s: string) {
   return s.trim().toLowerCase();
+}
+
+// Remove prefixo "MLB" e retorna apenas o número, em maiúsculas
+function normalizeItemId(s: string): string {
+  return s.trim().toUpperCase().replace(/^MLB/, "");
 }
 
 function buildRange(from?: string, to?: string, month?: string) {
@@ -89,10 +95,10 @@ export async function GET(req: Request) {
       }
     const orders = Array.from(ordersMap.values());
 
-    // ── 2. Produtos da coleção "estoque" (campos reais do Firestore) ──
+    // ── 2. Estoque: indexar por MLB (sem prefixo) e por SKU ───
     const prodSnap = await db.collection("estoque").get();
-    const porSku = new Map<string, ProdutoData>();
-    const porMlb = new Map<string, ProdutoData>();
+    const porMlb = new Map<string, ProdutoData>(); // chave: "6577305336"
+    const porSku = new Map<string, ProdutoData>(); // chave: sku normalizado
 
     for (const doc of prodSnap.docs) {
       const d = doc.data();
@@ -101,12 +107,13 @@ export async function GET(req: Request) {
         envioFull: Number(d.custo_envio_full ?? d.shipping_cost ?? 0),
         mlb:       String(d.mlb ?? "").trim(),
         name:      String(d.name ?? ""),
+        sku:       String(d.sku ?? "").trim(),
       };
-      const sku = String(d.sku ?? "").trim();
-      const mlb = String(d.mlb ?? "").trim();
-
-      if (sku) porSku.set(normalizeSku(sku), entry);
-      if (mlb) porMlb.set(mlb.toUpperCase(), entry);
+      // Indexar pelo MLB sem prefixo (ex: "6577305336")
+      const mlbNum = normalizeItemId(entry.mlb);
+      if (mlbNum) porMlb.set(mlbNum, entry);
+      // Indexar pelo SKU como fallback
+      if (entry.sku) porSku.set(normalizeSku(entry.sku), entry);
     }
 
     // ── 3. ADS por item_id ────────────────────────────────────
@@ -132,15 +139,17 @@ export async function GET(req: Request) {
       let vinculado = false;
 
       for (const item of items) {
-        const qty      = Number(item.quantity ?? 1);
-        const skuRaw   = String(item.sku      ?? "").trim();
-        const itemId   = String(item.item_id  ?? "").trim();
-        const title    = String(item.title    ?? skuRaw);
-        const retorno  = Number(item.unit_price ?? 0) * qty;
+        const qty    = Number(item.quantity ?? 1);
+        const skuRaw = String(item.sku     ?? "").trim();
+        const itemId = String(item.item_id ?? "").trim(); // ex: "MLB6577305336"
+        const title  = String(item.title   ?? skuRaw);
+        const retorno = Number(item.unit_price ?? 0) * qty;
 
-        // Vínculo: SKU normalizado → MLB uppercase
-        const produto = porSku.get(normalizeSku(skuRaw))
-                     ?? porMlb.get(itemId.toUpperCase());
+        // Vínculo 1: MLB sem prefixo (mais confiável, independe do SKU)
+        const mlbNumPedido = normalizeItemId(itemId);
+        const produto = porMlb.get(mlbNumPedido)
+                     // Vínculo 2: SKU do pedido bate com SKU do estoque
+                     ?? porSku.get(normalizeSku(skuRaw));
 
         if (produto) {
           vinculado = true;
@@ -150,8 +159,8 @@ export async function GET(req: Request) {
           totalCMV     += cmv;
           totalEnvio   += envio;
 
-          // Agrupa por SKU (chave principal dos pedidos antigos que não têm item_id)
-          const chave = skuRaw || itemId;
+          // Chave de agrupamento: MLB sem prefixo (estável)
+          const chave = mlbNumPedido || skuRaw;
           const prev  = anunciosMap.get(chave);
           if (prev) {
             prev.retorno      += retorno;
@@ -179,7 +188,11 @@ export async function GET(req: Request) {
     // ── 5. ADS e lucro por anúncio ────────────────────────────
     let totalAds = 0;
     for (const [chave, a] of anunciosMap) {
-      a.ads    = adsByItem[chave] ?? adsByItem[`MLB${chave}`] ?? 0;
+      // ADS pode vir como "6577305336" ou "MLB6577305336"
+      a.ads    = adsByItem[chave]
+              ?? adsByItem[`MLB${chave}`]
+              ?? adsByItem[a.item_id]
+              ?? 0;
       totalAds += a.ads;
       a.lucro  = a.retorno - a.custoProduto - a.envioFull - a.ads;
       a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
@@ -199,7 +212,7 @@ export async function GET(req: Request) {
     const devolucoes = Array.from(retMap.values())
       .reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
 
-    // ── 7. Custos operacionais (coleção "custos") ─────────────
+    // ── 7. Custos operacionais ────────────────────────────────
     const custosSnap = await db.collection("custos").get();
     let custosOp = 0;
     for (const doc of custosSnap.docs) {
