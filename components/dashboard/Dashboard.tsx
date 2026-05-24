@@ -6,7 +6,6 @@ import {
   fmtBRL,
   formatMesBR,
   mesAtual,
-  totalCustosMes,
   diaAtualNoMes,
   diasNoMes,
 } from "@/lib/domain/calc";
@@ -20,32 +19,34 @@ type Props = { data: UserData };
 
 // ── Tipos ──────────────────────────────────────────────────────
 type AnuncioResult = {
-  item_id: string;
-  title: string;
-  faturamento: number;
+  item_id:      string;
+  title:        string;
+  retorno:      number;
   custoProduto: number;
-  envioFull: number;
-  ads: number;
-  lucroBruto: number;
-  qty: number;
+  envioFull:    number;
+  ads:          number;
+  lucro:        number;
+  margem:       number;
+  qty:          number;
 };
 
 type MlMetrics = {
-  faturamento: number;
-  ordersCount: number;
-  devolucoes: number;
-  totalCustoProduto: number;
-  totalAds: number;
-  totalEnvio: number;
+  faturamentoBruto:   number;
+  totalRetorno:       number;
+  ordersCount:        number;
+  devolucoes:         number;
+  totalCMV:           number;
+  totalAds:           number;
+  totalEnvio:         number;
   custosOperacionais: number;
-  lucroSemCustos: number;
-  lucroComCustos: number;
-  margemSemCustos: number;
-  margemComCustos: number;
-  anuncios: AnuncioResult[];
-  pedidosSemVinculo: number;
-  from: string;
-  to: string;
+  lucroSemCustos:     number;
+  lucroComCustos:     number;
+  margemSemCustos:    number;
+  margemComCustos:    number;
+  anuncios:           AnuncioResult[];
+  pedidosSemVinculo:  number;
+  from:               string;
+  to:                 string;
 };
 
 // ── Helpers de data ────────────────────────────────────────────
@@ -56,7 +57,7 @@ function todayISO(): string {
 
 function weekRange(): { from: string; to: string } {
   const now = new Date();
-  const day = now.getDay(); // 0=dom
+  const day = now.getDay();
   const diff = now.getDate() - day + (day === 0 ? -6 : 1);
   const mon = new Date(now.setDate(diff));
   const sun = new Date(mon);
@@ -74,7 +75,7 @@ function monthRange(mes: string): { from: string; to: string } {
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${ld}` };
 }
 
-// ── Gráfico de Metas em Cascata ────────────────────────────────
+// ── Metas em Cascata ───────────────────────────────────────────
 function MetasCascata({
   fatMes, projecao, meta1, meta2, meta3, label,
 }: {
@@ -93,7 +94,7 @@ function MetasCascata({
   }
   const maxValor = metas[metas.length - 1].valor;
   const barraMax = Math.max(maxValor * 1.05, fatMes * 1.05, projecao * 1.05);
-  const pctFat  = Math.min((fatMes / barraMax) * 100, 100);
+  const pctFat  = Math.min((fatMes  / barraMax) * 100, 100);
   const pctProj = Math.min((projecao / barraMax) * 100, 100);
 
   return (
@@ -185,7 +186,7 @@ function MetasCascata({
         <div style={{ display: "flex", gap: 14 }}>
           <span>
             <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#4f8ef7", marginRight: 4, verticalAlign: "middle" }} />
-            Faturamento atual
+            Retorno atual
           </span>
           <span>
             <span style={{ display: "inline-block", width: 10, height: 4, borderRadius: 2, background: "rgba(255,255,255,.2)", marginRight: 4, verticalAlign: "middle", border: "1px dashed rgba(255,255,255,.3)" }} />
@@ -202,61 +203,96 @@ function MetasCascata({
   );
 }
 
-// ── Tabela de Margem por Anúncio ───────────────────────────────
+// ── Tabela de Lucro por Anúncio ────────────────────────────────
 function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
   if (!anuncios.length) {
     return (
       <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>
-        Nenhum anúncio vinculado no período.
+        Nenhum anúncio vinculado no período. Sincronize os pedidos e verifique os SKUs no Estoque.
       </div>
     );
   }
   return (
-    <div className="table-wrapper" style={{ marginTop: 4 }}>
-      <table>
+    <div className="table-wrapper" style={{ marginTop: 4, overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".84rem" }}>
         <thead>
           <tr>
-            <th>Anúncio</th>
-            <th style={{ textAlign: "right" }}>Qtd</th>
-            <th style={{ textAlign: "right" }}>Faturamento</th>
-            <th style={{ textAlign: "right" }}>Custo Prod.</th>
-            <th style={{ textAlign: "right" }}>Envio Full</th>
-            <th style={{ textAlign: "right" }}>ADS</th>
-            <th style={{ textAlign: "right" }}>Lucro Bruto</th>
-            <th style={{ textAlign: "right" }}>Margem</th>
+            <th style={{ textAlign: "left",  padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Anúncio</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Qtd</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Retorno</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>CMV</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Envio Full</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>ADS</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Lucro</th>
+            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Margem</th>
           </tr>
         </thead>
         <tbody>
-          {anuncios.map((a) => {
-            const margem = a.faturamento > 0 ? (a.lucroBruto / a.faturamento) * 100 : 0;
-            return (
-              <tr key={a.item_id}>
-                <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  <span title={a.title}>{a.title}</span>
-                  {a.item_id && (
-                    <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>
-                  )}
-                </td>
-                <td style={{ textAlign: "right", color: "var(--muted)" }}>{a.qty}</td>
-                <td style={{ textAlign: "right" }} className="positive">{fmtBRL(a.faturamento)}</td>
-                <td style={{ textAlign: "right" }} className="negative">{fmtBRL(a.custoProduto)}</td>
-                <td style={{ textAlign: "right" }} className="negative">{fmtBRL(a.envioFull)}</td>
-                <td style={{ textAlign: "right" }} className="negative">{fmtBRL(a.ads)}</td>
-                <td style={{ textAlign: "right" }} className={a.lucroBruto >= 0 ? "positive" : "negative"}>
-                  {fmtBRL(a.lucroBruto)}
-                </td>
-                <td style={{ textAlign: "right" }}>
-                  <span style={{
-                    fontWeight: 700,
-                    color: margem >= 20 ? "var(--green)" : margem >= 10 ? "#f7c948" : "var(--red)",
-                  }}>
-                    {margem.toFixed(1)}%
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
+          {anuncios.map((a) => (
+            <tr key={a.item_id} style={{ borderBottom: "1px solid var(--border)" }}>
+              <td style={{ padding: "8px 10px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span title={a.title} style={{ fontWeight: 600 }}>{a.title}</span>
+                {a.item_id && (
+                  <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>
+                )}
+              </td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)" }}>{a.qty}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
+                {fmtBRL(a.lucro)}
+              </td>
+              <td style={{ textAlign: "right", padding: "8px 10px" }}>
+                <span style={{
+                  fontWeight: 700,
+                  color: a.margem >= 20 ? "var(--green)" : a.margem >= 10 ? "#f7c948" : "var(--red)",
+                }}>
+                  {a.margem.toFixed(1)}%
+                </span>
+              </td>
+            </tr>
+          ))}
         </tbody>
+        <tfoot>
+          <tr style={{ borderTop: "2px solid var(--border)", background: "var(--surface2)" }}>
+            <td style={{ padding: "8px 10px", fontWeight: 700 }}>Total</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 700 }}>
+              {anuncios.reduce((s, a) => s + a.qty, 0)}
+            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 700 }}>
+              {fmtBRL(anuncios.reduce((s, a) => s + a.retorno, 0))}
+            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>
+              {fmtBRL(anuncios.reduce((s, a) => s + a.custoProduto, 0))}
+            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>
+              {fmtBRL(anuncios.reduce((s, a) => s + a.envioFull, 0))}
+            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>
+              {fmtBRL(anuncios.reduce((s, a) => s + a.ads, 0))}
+            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 800 }}>
+              {(() => {
+                const totalLucro = anuncios.reduce((s, a) => s + a.lucro, 0);
+                return <span style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</span>;
+              })()}
+            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px" }}>
+              {(() => {
+                const totalRet = anuncios.reduce((s, a) => s + a.retorno, 0);
+                const totalLuc = anuncios.reduce((s, a) => s + a.lucro, 0);
+                const m = totalRet > 0 ? (totalLuc / totalRet) * 100 : 0;
+                return (
+                  <span style={{ fontWeight: 700, color: m >= 20 ? "var(--green)" : m >= 10 ? "#f7c948" : "var(--red)" }}>
+                    {m.toFixed(1)}%
+                  </span>
+                );
+              })()}
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -266,15 +302,14 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
 export default function Dashboard({ data }: Props) {
   const mes = mesAtual();
 
-  // ── Filtro de período ──────────────────────────────────────
   type PeriodoMode = "hoje" | "semana" | "mes" | "custom";
-  const [periodoMode, setPeriodoMode]     = useState<PeriodoMode>("mes");
-  const [customFrom, setCustomFrom]       = useState("");
-  const [customTo,   setCustomTo]         = useState("");
-  const [mlRefreshing, setMlRefreshing]   = useState(false);
-  const [mlLoading,    setMlLoading]      = useState(false);
-  const [mlMetrics,    setMlMetrics]      = useState<MlMetrics | null>(null);
-  const [mlAccount,    setMlAccount]      = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
+  const [periodoMode, setPeriodoMode]   = useState<PeriodoMode>("mes");
+  const [customFrom,  setCustomFrom]    = useState("");
+  const [customTo,    setCustomTo]      = useState("");
+  const [mlRefreshing, setMlRefreshing] = useState(false);
+  const [mlLoading,    setMlLoading]    = useState(false);
+  const [mlMetrics,    setMlMetrics]    = useState<MlMetrics | null>(null);
+  const [mlAccount,    setMlAccount]    = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const mountedRef = useRef(true);
 
   const periodoRange = useMemo((): { from: string; to: string } => {
@@ -282,7 +317,6 @@ export default function Dashboard({ data }: Props) {
     if (periodoMode === "hoje")   return { from: today, to: today };
     if (periodoMode === "semana") return weekRange();
     if (periodoMode === "mes")    return monthRange(mes);
-    // custom
     if (customFrom && customTo)   return { from: customFrom, to: customTo };
     return monthRange(mes);
   }, [periodoMode, customFrom, customTo, mes]);
@@ -326,48 +360,43 @@ export default function Dashboard({ data }: Props) {
     finally { setMlRefreshing(false); }
   }
 
-  // ── Dados de metas ────────────────────────────────────────
+  // ── Metas ────────────────────────────────────────────────
   const activeGoalEntry = data.goalEntries.find((e) => e.mes === mes) ?? data.goalEntries[0] ?? null;
-const goals: Goals | null = activeGoalEntry
-  ? {
-      mes:         activeGoalEntry.mes,
-      meta1:       activeGoalEntry.meta1,
-      meta2:       activeGoalEntry.meta2 ?? null,
-      meta3:       activeGoalEntry.meta3 ?? null,
-      metaDiaria:  activeGoalEntry.metaDiaria ?? null,
-      meta2Diaria: activeGoalEntry.meta2Diaria ?? null,   // ← estava faltando
-      meta3Diaria: activeGoalEntry.meta3Diaria ?? null,   // ← estava faltando
-      label:       activeGoalEntry.label,
-    }
-  : data.goals;
+  const goals: Goals | null = activeGoalEntry
+    ? {
+        mes:         activeGoalEntry.mes,
+        meta1:       activeGoalEntry.meta1,
+        meta2:       activeGoalEntry.meta2 ?? null,
+        meta3:       activeGoalEntry.meta3 ?? null,
+        metaDiaria:  activeGoalEntry.metaDiaria ?? null,
+        meta2Diaria: activeGoalEntry.meta2Diaria ?? null,
+        meta3Diaria: activeGoalEntry.meta3Diaria ?? null,
+        label:       activeGoalEntry.label,
+      }
+    : data.goals;
 
-  // Projeção mensal (só faz sentido no modo mês)
+  // ── Valores derivados ─────────────────────────────────────
+  const retorno = mlMetrics?.totalRetorno ?? 0;
+
   const projecao = useMemo(() => {
     if (periodoMode !== "mes" || !mlMetrics) return 0;
-    const diaAtual = diaAtualNoMes();
+    const diaAtual  = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     if (diaAtual <= 0) return 0;
-    return (mlMetrics.faturamento / diaAtual) * totalDias;
-  }, [periodoMode, mlMetrics, mes]);
-
-  const faturamento = mlMetrics?.faturamento ?? 0;
+    return (retorno / diaAtual) * totalDias;
+  }, [periodoMode, mlMetrics, retorno, mes]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {/* ── Header: conta + filtro período ── */}
+      {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        {/* Conta ML */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            padding: "6px 14px", background: "var(--surface)",
-            border: "1px solid var(--border)", borderRadius: 8,
-          }}>
+          <div style={{ padding: "6px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
             <span style={{ fontSize: ".72rem", color: "var(--muted)" }}>Conta ML: </span>
             <span style={{ fontWeight: 700 }}>{mlAccount?.user?.nickname ?? "—"}</span>
           </div>
-          <button
-            type="button" className="btn btn-sm btn-ghost"
+          <button type="button" className="btn btn-sm btn-ghost"
             onClick={handleRefreshML} disabled={mlRefreshing}
             style={{ opacity: mlRefreshing ? 0.6 : 1 }}
           >
@@ -404,67 +433,70 @@ const goals: Goals | null = activeGoalEntry
         </div>
       </div>
 
-      {/* ── KPIs principais ── */}
+      {/* ── Conteúdo ── */}
       {mlLoading ? (
-        <div style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados ML…</div>
+        <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
       ) : (
         <>
+          {/* ── KPIs principais ── */}
           <div>
             <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 10 }}>
               💰 Resultado do Período
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <KpiCard label="Faturamento Bruto"           value={faturamento}                         isCurrency colorOverride="positive" />
-              <KpiCard label="Devoluções"                  value={mlMetrics?.devolucoes ?? 0}          isCurrency colorOverride="negative" />
-              <KpiCard label="Lucro Líq. (sem custos op.)" value={mlMetrics?.lucroSemCustos ?? 0}      isCurrency colorOverride={(mlMetrics?.lucroSemCustos ?? 0) >= 0 ? "positive" : "negative"} />
-              <KpiCard label="Lucro Líq. (com custos op.)" value={mlMetrics?.lucroComCustos ?? 0}      isCurrency colorOverride={(mlMetrics?.lucroComCustos ?? 0) >= 0 ? "positive" : "negative"} />
-              <KpiCard label="Margem (sem custos op.)"     value={mlMetrics?.margemSemCustos ?? 0}     isPercent  colorOverride="margin" percentValue={mlMetrics?.margemSemCustos ?? 0} />
-              <KpiCard label="Margem (com custos op.)"     value={mlMetrics?.margemComCustos ?? 0}     isPercent  colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
+              <KpiCard label="Retorno sobre Vendas"        value={retorno}                              isCurrency colorOverride="positive" />
+              <KpiCard label="Faturamento Bruto ML"        value={mlMetrics?.faturamentoBruto ?? 0}     isCurrency colorOverride="neutral" />
+              <KpiCard label="Devoluções"                  value={mlMetrics?.devolucoes ?? 0}           isCurrency colorOverride="negative" />
+              <KpiCard label="Lucro Líq. (sem custos op.)" value={mlMetrics?.lucroSemCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroSemCustos ?? 0) >= 0 ? "positive" : "negative"} />
+              <KpiCard label="Lucro Líq. (com custos op.)" value={mlMetrics?.lucroComCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroComCustos ?? 0) >= 0 ? "positive" : "negative"} />
+              <KpiCard label="Margem (sem custos op.)"     value={mlMetrics?.margemSemCustos ?? 0}      isPercent  colorOverride="margin" percentValue={mlMetrics?.margemSemCustos ?? 0} />
+              <KpiCard label="Margem (com custos op.)"     value={mlMetrics?.margemComCustos ?? 0}      isPercent  colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
             </div>
           </div>
 
-          {/* ── Breakdown de custos ── */}
+          {/* ── Composição de custos + pedidos ── */}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <div style={{
-              flex: 1, minWidth: 240, background: "var(--surface2)",
-              border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px",
-            }}>
+            {/* Custos */}
+            <div style={{ flex: 1, minWidth: 240, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
               <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
                 📊 Composição de Custos
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[
-                  { label: "Custo de Produto", value: mlMetrics?.totalCustoProduto ?? 0 },
-                  { label: "Envio Full",        value: mlMetrics?.totalEnvio ?? 0 },
-                  { label: "ADS (automático)",  value: mlMetrics?.totalAds ?? 0 },
-                  { label: "Custos Operacionais", value: mlMetrics?.custosOperacionais ?? 0 },
+                  { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0 },
+                  { label: "Envio Full",             value: mlMetrics?.totalEnvio ?? 0 },
+                  { label: "ADS (automático)",        value: mlMetrics?.totalAds ?? 0 },
+                  { label: "Custos Operacionais",     value: mlMetrics?.custosOperacionais ?? 0 },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".84rem" }}>
                     <span style={{ color: "var(--muted)" }}>{label}</span>
-                    <span className="negative" style={{ fontWeight: 700 }}>{fmtBRL(value)}</span>
+                    <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(value)}</span>
                   </div>
                 ))}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8, display: "flex", justifyContent: "space-between", fontSize: ".84rem" }}>
                   <span style={{ fontWeight: 700 }}>Total de Custos</span>
-                  <span className="negative" style={{ fontWeight: 800 }}>
-                    {fmtBRL((mlMetrics?.totalCustoProduto ?? 0) + (mlMetrics?.totalEnvio ?? 0) + (mlMetrics?.totalAds ?? 0) + (mlMetrics?.custosOperacionais ?? 0))}
+                  <span style={{ color: "var(--red)", fontWeight: 800 }}>
+                    {fmtBRL(
+                      (mlMetrics?.totalCMV ?? 0) +
+                      (mlMetrics?.totalEnvio ?? 0) +
+                      (mlMetrics?.totalAds ?? 0) +
+                      (mlMetrics?.custosOperacionais ?? 0)
+                    )}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div style={{
-              flex: 1, minWidth: 240, background: "var(--surface2)",
-              border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px",
-            }}>
+            {/* Pedidos */}
+            <div style={{ flex: 1, minWidth: 240, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
               <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
                 📦 Pedidos
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[
-                  { label: "Pedidos no período",        value: String(mlMetrics?.ordersCount ?? 0) },
-                  { label: "Sem produto vinculado",     value: String(mlMetrics?.pedidosSemVinculo ?? 0) },
-                  { label: "Ticket médio",              value: (mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(faturamento / (mlMetrics!.ordersCount)) : "—" },
+                  { label: "Pedidos no período",    value: String(mlMetrics?.ordersCount ?? 0) },
+                  { label: "Sem produto vinculado", value: String(mlMetrics?.pedidosSemVinculo ?? 0) },
+                  { label: "Ticket médio",          value: (mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(retorno / mlMetrics!.ordersCount) : "—" },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".84rem" }}>
                     <span style={{ color: "var(--muted)" }}>{label}</span>
@@ -477,22 +509,25 @@ const goals: Goals | null = activeGoalEntry
                     background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)",
                     borderRadius: 6, fontSize: ".73rem", color: "#f7c948",
                   }}>
-                    ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem SKU — cadastre o produto no Estoque
+                    ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — verifique os SKUs no Estoque
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* ── Margem por Anúncio ── */}
+          {/* ── Tabela lucro por anúncio ── */}
           <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
-            <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>
-              📢 Margem por Anúncio (ADS automático)
+            <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 6 }}>
+              📢 Lucro por Anúncio — Retorno − CMV − ADS
+            </div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 14 }}>
+              Retorno = valor recebido por venda · CMV = custo do produto · ADS = gasto em publicidade no período
             </div>
             <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
           </section>
 
-          {/* ── Metas (só no modo mês) ── */}
+          {/* ── Metas (só modo mês) ── */}
           {periodoMode === "mes" && (
             <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
               <div style={{
@@ -501,20 +536,18 @@ const goals: Goals | null = activeGoalEntry
                 display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8,
               }}>
                 <span>🎯 Metas — {formatMesBR(mes)}</span>
-                <span style={{ fontWeight: 400, fontSize: ".72rem" }}>
-                  Projeção: {fmtBRL(projecao)}
-                </span>
+                <span style={{ fontWeight: 400, fontSize: ".72rem" }}>Projeção: {fmtBRL(projecao)}</span>
               </div>
 
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <KpiCard label="Faturamento do Mês" value={faturamento}  isCurrency colorOverride="positive" />
-                <KpiCard label="Projeção"           value={projecao}     isCurrency colorOverride="neutral" />
-                <KpiCard label="Margem do Mês"      value={mlMetrics?.margemComCustos ?? 0} isPercent colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
+                <KpiCard label="Retorno do Mês" value={retorno}   isCurrency colorOverride="positive" />
+                <KpiCard label="Projeção"       value={projecao}  isCurrency colorOverride="neutral" />
+                <KpiCard label="Margem do Mês"  value={mlMetrics?.margemComCustos ?? 0} isPercent colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
               </div>
 
               {goals?.meta1 ? (
                 <MetasCascata
-                  fatMes={faturamento}
+                  fatMes={retorno}
                   projecao={projecao}
                   meta1={goals.meta1}
                   meta2={goals.meta2 ?? null}
@@ -531,13 +564,13 @@ const goals: Goals | null = activeGoalEntry
                 <GoalsProgressBars
                   goals={goals}
                   days={[]}
-                  liveRevenue={faturamento}
+                  liveRevenue={retorno}
                 />
               </div>
             </section>
           )}
 
-          {/* ── Gráfico de faturamento (apenas modo mês) ── */}
+          {/* ── Gráfico (modo mês) ── */}
           {periodoMode === "mes" && (
             <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
               <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>
@@ -547,13 +580,13 @@ const goals: Goals | null = activeGoalEntry
             </section>
           )}
 
-          {/* ── Doughnut de gastos ── */}
+          {/* ── Doughnut ── */}
           <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px", maxWidth: 480 }}>
             <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>
               🥧 Composição dos Gastos
             </div>
             <ExpensesDoughnut
-              produto={mlMetrics?.totalCustoProduto ?? 0}
+              produto={mlMetrics?.totalCMV ?? 0}
               taxasML={0}
               ads={mlMetrics?.totalAds ?? 0}
               operacional={mlMetrics?.custosOperacionais ?? 0}

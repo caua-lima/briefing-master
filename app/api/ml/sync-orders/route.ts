@@ -52,7 +52,10 @@ export async function POST() {
         return NextResponse.json({ error: "Erro ao buscar pedidos", details: text }, { status: response.status });
       }
 
-      const data = await response.json() as { results: Record<string, unknown>[]; paging: { total: number } };
+      const data = await response.json() as {
+        results: Record<string, unknown>[];
+        paging: { total: number };
+      };
       const results = data.results ?? [];
       allResults = allResults.concat(results);
 
@@ -67,24 +70,36 @@ export async function POST() {
       for (const order of allResults.slice(i, i + BATCH_SIZE)) {
         const o = order as Record<string, unknown>;
         const orderId = String(o.id);
+
+        const rawItems = (o.order_items as Record<string, unknown>[]) ?? [];
+
+        const items = rawItems.map((item) => {
+          const itemObj  = (item.item as Record<string, unknown>) ?? {};
+          const itemId   = String(itemObj.id ?? "").trim();          // MLB...
+          const sellerSku = String(itemObj.seller_sku ?? "").trim(); // SKU do seller
+
+          return {
+            item_id:    itemId,                          // ← MLB, usado para vincular por MLB
+            sku:        sellerSku || itemId,             // ← SKU do vendedor (preferência), fallback MLB
+            title:      String(itemObj.title ?? ""),
+            quantity:   Number(item.quantity ?? 0),
+            unit_price: Number(item.unit_price ?? 0),
+          };
+        });
+
         batch.set(
           adminDb.collection("ml_orders").doc(orderId),
           {
-            order_id: orderId,
-            status: o.status ?? null,
+            order_id:     orderId,
+            status:       o.status ?? null,
             date_created: String(o.date_created ?? ""),
             total_amount: Number(o.total_amount ?? 0),
-            currency: o.currency_id ?? "BRL",
-            buyer_id: (o.buyer as Record<string, unknown>)?.id
+            currency:     o.currency_id ?? "BRL",
+            buyer_id:     (o.buyer as Record<string, unknown>)?.id
               ? String((o.buyer as Record<string, unknown>).id)
               : null,
-            items: ((o.order_items as Record<string, unknown>[]) ?? []).map((item) => ({
-              sku: (item.item as Record<string, unknown>)?.seller_sku ?? (item.item as Record<string, unknown>)?.id ?? null,
-              title: (item.item as Record<string, unknown>)?.title ?? null,
-              quantity: Number(item.quantity ?? 0),
-              unit_price: Number(item.unit_price ?? 0),
-            })),
-            updatedAt: new Date().toISOString(),
+            items,
+            updatedAt:    new Date().toISOString(),
           },
           { merge: true }
         );
