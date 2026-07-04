@@ -3,37 +3,76 @@ import { getValidMlAccessToken } from "@/lib/ml/getToken";
 
 const ML_API = "https://api.mercadolibre.com";
 
+type Advertiser = { advertiser_id?: number | string; site_id?: string; account_name?: string };
+
 /**
- * Retorna o gasto de ADS (Product Ads) agregado por item_id (MLB) no período.
- * Chave do mapa = item_id normalizado em UPPERCASE (ex.: "MLB1234567890").
+ * Resolve o advertiser_id da conta (NÃO é o seller_id). O ML exige buscar o
+ * anunciante via /advertising/advertisers?product_id=PADS com header Api-Version.
+ * Prioriza o anunciante do site MLB (Brasil).
+ */
+async function getAdvertiserId(token: string): Promise<string | null> {
+  const res = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
+    headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { advertisers?: Advertiser[] };
+  const list = Array.isArray(j?.advertisers) ? j.advertisers : [];
+  if (list.length === 0) return null;
+  const mlb = list.find((a) => String(a.site_id ?? "").toUpperCase() === "MLB");
+  const chosen = mlb ?? list[0];
+  const id = chosen?.advertiser_id;
+  return id != null ? String(id) : null;
+}
+
+/**
+ * Gasto de ADS (Product Ads) por item_id (MLB) no período.
+ * Chave do mapa = item_id em UPPERCASE (ex.: "MLB1234567890").
+ *
+ * Endpoint: /advertising/advertisers/{advertiser_id}/product_ads/items
+ *   headers: Authorization + Api-Version: 1
+ *   query:   date_from, date_to (YYYY-MM-DD, limite de 90 dias), metrics, limit, offset
  */
 export async function getAdsSpendByItem(
   from: string,
   to: string,
 ): Promise<Record<string, number>> {
-  const sellerId = process.env.ML_SELLER_ID;
-  if (!sellerId) return {};
-
   const token = await getValidMlAccessToken();
+  const advertiserId = await getAdvertiserId(token);
+  if (!advertiserId) return {}; // conta sem anunciante/publicidade
 
-  const res = await fetch(
-    `${ML_API}/advertising/product_ads/metrics?` +
-      `advertiser_id=${sellerId}&date_from=${from}&date_to=${to}` +
-      `&group_by=ITEM_ID&fields=ITEM_ID,SPEND&limit=200`,
-    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
-  );
-
-  if (!res.ok) {
-    throw new Error(`ml_ads_failed: ${await res.text()}`);
-  }
-
-  const json = await res.json();
-  const rows = json?.data?.results ?? json?.results ?? [];
   const adsByItem: Record<string, number> = {};
-  for (const row of rows) {
-    const itemId = String(row.item_id ?? row.ITEM_ID ?? "").trim().toUpperCase();
-    const spend = Number(row.spend ?? row.SPEND ?? 0);
-    if (itemId) adsByItem[itemId] = (adsByItem[itemId] ?? 0) + spend;
+  let offset = 0;
+  const limit = 50;
+
+  while (true) {
+    const url =
+      `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
+      `date_from=${from}&date_to=${to}&metrics=cost&limit=${limit}&offset=${offset}`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`ml_ads_failed: ${await res.text()}`);
+
+    const j = (await res.json()) as {
+      results?: Record<string, unknown>[];
+      paging?: { total?: number };
+    };
+    const results = Array.isArray(j?.results) ? j.results : [];
+
+    for (const row of results) {
+      const itemId = String(row.id ?? row.item_id ?? "").trim().toUpperCase();
+      const metrics = (row.metrics as Record<string, unknown>) ?? {};
+      const cost = Number(metrics.cost ?? row.cost ?? 0);
+      if (itemId) adsByItem[itemId] = (adsByItem[itemId] ?? 0) + cost;
+    }
+
+    const total = j?.paging?.total ?? results.length;
+    offset += results.length;
+    if (offset >= total || results.length === 0) break;
   }
+
   return adsByItem;
 }
