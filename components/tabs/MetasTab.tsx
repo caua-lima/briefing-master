@@ -47,9 +47,7 @@ export default function MetasTab({
       meta1: activeEntry.meta1,
       meta2: activeEntry.meta2,
       meta3: activeEntry.meta3,
-      lucro1: activeEntry.lucro1 ?? null,
-      lucro2: activeEntry.lucro2 ?? null,
-      lucro3: activeEntry.lucro3 ?? null,
+      metaMargem: activeEntry.metaMargem ?? 10,
       metaDiaria: activeEntry.metaDiaria,
       meta2Diaria: activeEntry.meta2Diaria,
       meta3Diaria: activeEntry.meta3Diaria,
@@ -173,15 +171,8 @@ function GoalEntryRow({
           🥇 {fmtBRL(entry.meta1)}
           {entry.meta2 ? ` · 🥈 ${fmtBRL(entry.meta2)}` : ""}
           {entry.meta3 ? ` · 🥉 ${fmtBRL(entry.meta3)}` : ""}
-          {entry.metaDiaria ? ` · 📆 ${fmtBRL(entry.metaDiaria)}/dia` : ""}
+          {` · 📈 margem alvo ${entry.metaMargem ?? 10}%`}
         </div>
-        {(entry.lucro1 || entry.lucro2 || entry.lucro3) && (
-          <div style={{ fontSize: ".74rem", color: "var(--muted)", marginTop: 2 }}>
-            💰 Lucro alvo: {entry.lucro1 ? fmtBRL(entry.lucro1) : "—"}
-            {entry.lucro2 ? ` · ${fmtBRL(entry.lucro2)}` : ""}
-            {entry.lucro3 ? ` · ${fmtBRL(entry.lucro3)}` : ""}
-          </div>
-        )}
       </div>
       <div style={{ display: "flex", gap: 6 }}>
         <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>
@@ -210,12 +201,7 @@ function GoalEntryModal({
   const [m1, setM1] = useState(entry?.meta1 ? String(entry.meta1) : "");
   const [m2, setM2] = useState(entry?.meta2 ? String(entry.meta2) : "");
   const [m3, setM3] = useState(entry?.meta3 ? String(entry.meta3) : "");
-  const [ll1, setLl1] = useState(entry?.lucro1 ? String(entry.lucro1) : "");
-  const [ll2, setLl2] = useState(entry?.lucro2 ? String(entry.lucro2) : "");
-  const [ll3, setLl3] = useState(entry?.lucro3 ? String(entry.lucro3) : "");
-  const [md1, setMd1] = useState(entry?.metaDiaria ? String(entry.metaDiaria) : "");
-  const [md2, setMd2] = useState(entry?.meta2Diaria ? String(entry.meta2Diaria) : "");
-  const [md3, setMd3] = useState(entry?.meta3Diaria ? String(entry.meta3Diaria) : "");
+  const [margem, setMargem] = useState(entry?.metaMargem != null ? String(entry.metaMargem) : "10");
   const [label, setLabel] = useState(entry?.label ?? "");
 
   async function onSave() {
@@ -227,12 +213,11 @@ function GoalEntryModal({
       meta1: v1,
       meta2: parseFloat(m2) || null,
       meta3: parseFloat(m3) || null,
-      lucro1: parseFloat(ll1) || null,
-      lucro2: parseFloat(ll2) || null,
-      lucro3: parseFloat(ll3) || null,
-      metaDiaria: parseFloat(md1) || null,
-      meta2Diaria: parseFloat(md2) || null,
-      meta3Diaria: parseFloat(md3) || null,
+      metaMargem: parseFloat(margem) || 10,
+      // meta diária é derivada automaticamente da meta mensal (meta1 / dias)
+      metaDiaria: null,
+      meta2Diaria: null,
+      meta3Diaria: null,
       // Firebase setDoc não aceita undefined em campos — usar null para ausência
       label: label || undefined,
     };
@@ -284,36 +269,14 @@ function GoalEntryModal({
       </div>
 
       <hr className="config-sep" />
-      <div className="config-section-title">💰 Metas de Lucro Líquido (por meta)</div>
+      <div className="config-section-title">💰 Meta de Lucro Líquido</div>
 
       <div className="config-field">
-        <label>🥇 Lucro líquido na Meta 1 (R$)</label>
-        <input type="number" min="0" step="100" placeholder="Ex: 4000" value={ll1} onChange={(e) => setLl1(e.target.value)} />
-        <div className="hint">Lucro líquido que você quer alcançar ao bater a Meta 1 de faturamento</div>
-      </div>
-      <div className="config-field">
-        <label>🥈 Lucro líquido na Meta 2 (opcional, R$)</label>
-        <input type="number" min="0" step="100" placeholder="Ex: 6000" value={ll2} onChange={(e) => setLl2(e.target.value)} />
-      </div>
-      <div className="config-field">
-        <label>🥉 Lucro líquido na Meta 3 (opcional, R$)</label>
-        <input type="number" min="0" step="100" placeholder="Ex: 8000" value={ll3} onChange={(e) => setLl3(e.target.value)} />
-      </div>
-
-      <hr className="config-sep" />
-      <div className="config-section-title">📆 Metas Diárias</div>
-
-      <div className="config-field">
-        <label>🥇 Meta Diária 1 (R$)</label>
-        <input type="number" min="0" step="10" placeholder="Ex: 500" value={md1} onChange={(e) => setMd1(e.target.value)} />
-      </div>
-      <div className="config-field">
-        <label>🥈 Meta Diária 2 (opcional, R$)</label>
-        <input type="number" min="0" step="10" placeholder="Ex: 700" value={md2} onChange={(e) => setMd2(e.target.value)} />
-      </div>
-      <div className="config-field">
-        <label>🥉 Meta Diária 3 (opcional, R$)</label>
-        <input type="number" min="0" step="10" placeholder="Ex: 1000" value={md3} onChange={(e) => setMd3(e.target.value)} />
+        <label>📈 Margem de lucro líquido alvo (%)</label>
+        <input type="number" min="0" step="0.5" placeholder="10" value={margem} onChange={(e) => setMargem(e.target.value)} />
+        <div className="hint">
+          Padrão 10%. A meta diária é calculada automaticamente pela meta mensal (Meta 1 ÷ dias do mês).
+        </div>
       </div>
 
       <div className="modal-btns">

@@ -208,41 +208,27 @@ function MetaDiariaCard({
   );
 }
 
-// ── Metas de Lucro Líquido ─────────────────────────────────────
-function LucroMetasBars({
-  lucroAtual, lucro1, lucro2, lucro3,
-}: {
-  lucroAtual: number;
-  lucro1: number | null;
-  lucro2: number | null;
-  lucro3: number | null;
-}) {
-  const metas = [
-    lucro1 ? { nome: "🥇 Lucro Meta 1", valor: lucro1, cor: "#4f8ef7" } : null,
-    lucro2 ? { nome: "🥈 Lucro Meta 2", valor: lucro2, cor: "#f7c948" } : null,
-    lucro3 ? { nome: "🥉 Lucro Meta 3", valor: lucro3, cor: "#a855f7" } : null,
-  ].filter(Boolean) as { nome: string; valor: number; cor: string }[];
-
-  if (!metas.length) return null;
-
+// ── Meta de Lucro Líquido (margem %) ───────────────────────────
+function MetaMargemBar({ margemAtual, metaMargem, lucroAtual }: { margemAtual: number; metaMargem: number; lucroAtual: number }) {
+  const pct = metaMargem > 0 ? clamp((margemAtual / metaMargem) * 100, 0, 100) : 0;
+  const done = margemAtual >= metaMargem;
   return (
     <div style={{ marginTop: 22 }}>
-      <div className="panel-title" style={{ marginBottom: 12 }}>💰 Metas de Lucro Líquido</div>
-      {metas.map((m) => {
-        const pct = clamp((lucroAtual / m.valor) * 100, 0, 100);
-        const done = lucroAtual >= m.valor;
-        return (
-          <div key={m.nome} style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".8rem", marginBottom: 5 }}>
-              <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>{m.nome} {done ? "✓" : ""}</span>
-              <span style={{ color: "var(--muted)" }}>{fmtBRL(lucroAtual)} / {fmtBRL(m.valor)}</span>
-            </div>
-            <div className="dgoal-bar">
-              <div className="dgoal-fill" style={{ width: `${pct}%`, background: done ? "var(--green)" : m.cor }} />
-            </div>
-          </div>
-        );
-      })}
+      <div className="panel-title" style={{ marginBottom: 12 }}>💰 Meta de Lucro Líquido</div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".82rem", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+        <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>
+          Margem líquida atual {done ? "✓ meta batida!" : ""}
+        </span>
+        <span style={{ color: "var(--muted)" }}>
+          <b style={{ color: done ? "var(--green)" : margemAtual < 0 ? "var(--red)" : "var(--text)" }}>{margemAtual.toFixed(1)}%</b> / meta {metaMargem.toFixed(0)}% · {fmtBRL(lucroAtual)}
+        </span>
+      </div>
+      <div className="dgoal-bar" style={{ height: 12 }}>
+        <div className="dgoal-fill" style={{
+          width: `${pct}%`,
+          background: done ? "var(--green)" : margemAtual < 0 ? "var(--red)" : "linear-gradient(90deg,#4f8ef7,#a855f7)",
+        }} />
+      </div>
     </div>
   );
 }
@@ -518,9 +504,7 @@ export default function Dashboard({ data }: Props) {
         meta1:       activeGoalEntry.meta1,
         meta2:       activeGoalEntry.meta2 ?? null,
         meta3:       activeGoalEntry.meta3 ?? null,
-        lucro1:      activeGoalEntry.lucro1 ?? null,
-        lucro2:      activeGoalEntry.lucro2 ?? null,
-        lucro3:      activeGoalEntry.lucro3 ?? null,
+        metaMargem:  activeGoalEntry.metaMargem ?? 10,
         metaDiaria:  activeGoalEntry.metaDiaria ?? null,
         meta2Diaria: activeGoalEntry.meta2Diaria ?? null,
         meta3Diaria: activeGoalEntry.meta3Diaria ?? null,
@@ -540,7 +524,8 @@ export default function Dashboard({ data }: Props) {
     return (fatBruto / diaAtual) * totalDias;
   }, [periodoMode, mlMetrics, fatBruto, mes]);
 
-  const metaDiariaAtiva = goals?.metaDiaria ?? null;
+  // Meta diária automática = meta mensal (Meta 1) ÷ dias do mês
+  const metaDiariaAtiva = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
 
   const PERIOD_LABELS: Record<PeriodoMode, string> = {
     hoje: "Hoje", ontem: "Ontem", "3d": "3 dias", "7d": "7 dias",
@@ -702,12 +687,11 @@ export default function Dashboard({ data }: Props) {
                 <div style={{ color: "var(--muted)", fontSize: ".85rem" }}>Nenhuma meta configurada. Configure na aba Metas.</div>
               )}
 
-              {goals && (goals.lucro1 || goals.lucro2 || goals.lucro3) && (
-                <LucroMetasBars
+              {goals && (
+                <MetaMargemBar
+                  margemAtual={mlMetrics?.margemComCustos ?? 0}
+                  metaMargem={goals.metaMargem ?? 10}
                   lucroAtual={lucroLiquido}
-                  lucro1={goals.lucro1 ?? null}
-                  lucro2={goals.lucro2 ?? null}
-                  lucro3={goals.lucro3 ?? null}
                 />
               )}
 

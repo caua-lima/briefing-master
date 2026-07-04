@@ -287,17 +287,27 @@ export async function GET(req: Request) {
     const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
 
     // ── 6. Custos operacionais ────────────────────────────────
+    // Dias e meses cobertos pelo período selecionado
+    const dFrom = new Date(`${fromStr}T00:00:00Z`).getTime();
+    const dTo = new Date(`${toStr}T00:00:00Z`).getTime();
+    const daysInPeriod = Math.max(1, Math.round((dTo - dFrom) / 86400000) + 1);
+    const [fy, fm] = fromStr.split("-").map(Number);
+    const [ty, tm] = toStr.split("-").map(Number);
+    const monthsInPeriod = Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
+
     const custosSnap = await db.collection("custos").get();
     let custosOp = 0;
     for (const doc of custosSnap.docs) {
       const d = doc.data();
+      const valor = Number(d.valor ?? d.amount ?? 0);
       const data = String(d.data ?? d.date ?? "");
       const freq = String(d.freq ?? d.frequency ?? "avulso");
-      if (freq === "mensal" || freq === "monthly") {
-        if (data.slice(0, 7) >= fromStr.slice(0, 7) && data.slice(0, 7) <= toStr.slice(0, 7))
-          custosOp += Number(d.valor ?? d.amount ?? 0);
-      } else {
-        if (data >= fromStr && data <= toStr) custosOp += Number(d.valor ?? d.amount ?? 0);
+      if (freq === "diario" || freq === "daily") {
+        custosOp += valor * daysInPeriod;       // desconta todo dia
+      } else if (freq === "mensal" || freq === "monthly") {
+        custosOp += valor * monthsInPeriod;     // recorrente por mês
+      } else if (data >= fromStr && data <= toStr) {
+        custosOp += valor;                       // avulso: só na data
       }
     }
 

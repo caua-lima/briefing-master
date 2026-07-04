@@ -42,10 +42,9 @@ export type Goals = {
   meta1: number;
   meta2: number | null;
   meta3: number | null;
-  // Meta de lucro líquido correspondente a cada meta de faturamento
-  lucro1: number | null;
-  lucro2: number | null;
-  lucro3: number | null;
+  // Meta de margem de lucro líquido em % (padrão 10). A meta diária é derivada
+  // automaticamente da meta mensal (meta1 / dias do mês).
+  metaMargem: number | null;
   metaDiaria: number | null;
   meta2Diaria: number | null;
   meta3Diaria: number | null;
@@ -58,9 +57,7 @@ export type GoalEntry = {
   meta1: number;
   meta2: number | null;
   meta3: number | null;
-  lucro1: number | null;
-  lucro2: number | null;
-  lucro3: number | null;
+  metaMargem: number | null;
   metaDiaria: number | null;
   meta2Diaria: number | null;
   meta3Diaria: number | null;

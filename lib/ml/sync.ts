@@ -69,16 +69,30 @@ async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
  * Retorna null em caso de falha (para permitir nova tentativa no próximo sync).
  */
 async function fetchShipmentCost(accessToken: string, shipmentId: string): Promise<number | null> {
+  const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
   try {
-    const res = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const j = (await res.json()) as { senders?: { cost?: number }[] };
-    const senders = Array.isArray(j?.senders) ? j.senders : [];
-    // Custo do vendedor = soma dos custos dos remetentes (já com descontos aplicados)
-    return senders.reduce((s, x) => s + Number(x?.cost ?? 0), 0);
+    // 1) /costs → senders[].cost = custo líquido do vendedor (documentado)
+    const rc = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, { headers, cache: "no-store" });
+    if (rc.ok) {
+      const j = (await rc.json()) as { senders?: { cost?: number }[] };
+      const senders = Array.isArray(j?.senders) ? j.senders : [];
+      const sum = senders.reduce((s, x) => s + Number(x?.cost ?? 0), 0);
+      if (sum > 0) return sum;
+    }
+    // 2) fallback: /shipments/{id} → list_cost quando o comprador não pagou o
+    //    frete (frete grátis / Full → o vendedor absorve o custo)
+    const rs = await fetch(`${ML_API}/shipments/${shipmentId}`, { headers, cache: "no-store" });
+    if (rs.ok) {
+      const j = (await rs.json()) as { shipping_option?: { cost?: number; list_cost?: number }; base_cost?: number };
+      const opt = j?.shipping_option ?? {};
+      const buyerCost = Number(opt.cost ?? 0);
+      const listCost = Number(opt.list_cost ?? 0);
+      const baseCost = Number(j?.base_cost ?? 0);
+      if (buyerCost === 0 && listCost > 0) return listCost;
+      if (buyerCost === 0 && baseCost > 0) return baseCost;
+      return 0;
+    }
+    return null;
   } catch {
     return null;
   }
