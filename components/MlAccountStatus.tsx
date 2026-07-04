@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MLConnectButton } from "./MLConnectButton";
+import { authedFetch } from "@/lib/api/authed-fetch";
 
 type Account = {
   connected: boolean;
@@ -19,7 +20,7 @@ export function MlAccountStatus() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/ml/account', { cache: 'no-store' });
+        const res = await authedFetch('/api/ml/account', { cache: 'no-store' });
         if (!res.ok) { setData({ connected: false }); setLoading(false); return; }
         const json = await res.json();
         setData(json);
@@ -40,7 +41,7 @@ export function MlAccountStatus() {
     setSyncLoading(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/ml/sync-all', { method: 'POST' });
+      const res = await authedFetch('/api/ml/sync-all', { method: 'POST' });
       if (res.ok) {
         setFeedback({ type: 'success', message: '✅ Sincronização concluída!' });
         setTimeout(() => setFeedback(null), 4000);
@@ -59,7 +60,7 @@ export function MlAccountStatus() {
     setSwapLoading(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/ml/disconnect', { method: 'POST' });
+      const res = await authedFetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
         localStorage.setItem('ml_disconnected', 'true');
         window.location.href = '/api/ml/auth?login=true';

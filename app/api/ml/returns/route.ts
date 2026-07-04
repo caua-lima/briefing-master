@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "../../../../lib/firebase/admin";
 import { getMlAccessToken } from "../token";
+import { requireAccess } from "@/lib/api-auth";
 
 async function getSellerId() {
   const envSellerId = process.env.ML_SELLER_ID;
@@ -14,7 +15,10 @@ async function getSellerId() {
   return data?.user_id ? String(data.user_id) : null;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const gate = await requireAccess(req, { allowCron: true });
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const token = await getMlAccessToken();
 

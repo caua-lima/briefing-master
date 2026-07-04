@@ -47,6 +47,7 @@ export default function EstoqueTab({
       sku: "",
       ads: "",
       custo_envio_full: "",
+      imposto: "",
       mlb: "",
       ativo: true,
     });
@@ -112,6 +113,7 @@ export default function EstoqueTab({
                 <th>Custo</th>
                 <th>Ads/un</th>
                 <th>Envio Full/un</th>
+                <th>Imposto %</th>
                 <th>Retorno Líq.</th>
                 <th>Status</th>
                 <th>Ações</th>
@@ -165,6 +167,7 @@ function ProductRow({
   const custo    = parseFloat(product.custo) || 0;
   const ads      = parseFloat(product.ads ?? "0") || 0;
   const envio    = parseFloat(product.custo_envio_full ?? "0") || 0;
+  const imposto  = parseFloat(product.imposto ?? "0") || 0;
   const retorno  = parseFloat(product.retorno) || preco - custo;
 
   return (
@@ -200,6 +203,9 @@ function ProductRow({
       </td>
       <td className="negative">
         R$ {envio.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+      </td>
+      <td className={imposto > 0 ? "negative" : ""} style={{ color: imposto > 0 ? undefined : "var(--muted)" }}>
+        {imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}
       </td>
       <td className={retorno >= 0 ? "positive" : "negative"}>
         R$ {retorno.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
@@ -369,6 +375,21 @@ export function ProductModal({
         />
         <div className="hint">
           Custo médio do frete Full cobrado pelo ML por unidade (consulte o relatório financeiro do ML)
+        </div>
+      </div>
+
+      <div className="config-field">
+        <label>🧾 Imposto sobre a venda (%)</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Ex: 8"
+          value={p.imposto ?? ""}
+          onChange={(e) => set({ imposto: e.target.value })}
+        />
+        <div className="hint">
+          Percentual de imposto pago sobre o valor da venda (aplicado por SKU no cálculo do lucro líquido)
         </div>
       </div>
 

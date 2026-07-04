@@ -14,6 +14,7 @@ import KpiCard from "./KpiCard";
 import RevenueLineChart from "./RevenueLineChart";
 import ExpensesDoughnut from "./ExpensesDoughnut";
 import GoalsProgressBars from "./GoalsProgressBars";
+import { authedFetch } from "@/lib/api/authed-fetch";
 
 type Props = { data: UserData };
 
@@ -23,7 +24,10 @@ type AnuncioResult = {
   retorno:      number;
   custoProduto: number;
   envioFull:    number;
+  imposto:      number;
+  taxaML:       number;
   ads:          number;
+  lucroBruto:   number;
   lucro:        number;
   margem:       number;
   qty:          number;
@@ -39,6 +43,8 @@ type MlMetrics = {
   totalCMV:           number;
   totalAds:           number;
   totalEnvio:         number;
+  totalImposto:       number;
+  totalTaxasML:       number;
   custosOperacionais: number;
   lucroSemCustos:     number;
   lucroComCustos:     number;
@@ -50,9 +56,16 @@ type MlMetrics = {
   to:                 string;
 };
 
-function todayISO(): string {
-  const d = new Date();
+function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function todayISO(): string {
+  return isoOf(new Date());
+}
+function daysAgoISO(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return isoOf(d);
 }
 
 function weekRange(): { from: string; to: string } {
@@ -272,19 +285,30 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
       </div>
     );
   }
+  const th = { padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" as const };
+  const thR = { ...th, textAlign: "right" as const };
+  const sum = (f: (a: AnuncioResult) => number) => anuncios.reduce((s, a) => s + f(a), 0);
+  const totalRet    = sum((a) => a.retorno);
+  const totalBruto  = sum((a) => a.lucroBruto);
+  const totalLucro  = sum((a) => a.lucro);
+  const margemTotal = totalRet > 0 ? (totalLucro / totalRet) * 100 : 0;
+
   return (
     <div className="table-wrapper" style={{ marginTop: 4, overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".84rem" }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left",  padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Anúncio</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Qtd</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Retorno</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>CMV</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Envio Full</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>ADS</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Lucro</th>
-            <th style={{ textAlign: "right", padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Margem</th>
+            <th style={{ ...th, textAlign: "left" }}>Anúncio</th>
+            <th style={thR}>Qtd</th>
+            <th style={thR}>Retorno</th>
+            <th style={thR}>CMV</th>
+            <th style={thR}>Envio Full</th>
+            <th style={thR}>Taxa ML</th>
+            <th style={thR}>Imposto</th>
+            <th style={thR}>ADS</th>
+            <th style={thR}>Lucro Bruto</th>
+            <th style={thR}>Lucro Líq.</th>
+            <th style={thR}>Margem</th>
           </tr>
         </thead>
         <tbody>
@@ -300,7 +324,10 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
               <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
               <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
               <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
               <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
+              <td style={{ textAlign: "right", padding: "8px 10px", color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
               <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
                 {fmtBRL(a.lucro)}
               </td>
@@ -318,38 +345,19 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
         <tfoot>
           <tr style={{ borderTop: "2px solid var(--border)", background: "var(--surface2)" }}>
             <td style={{ padding: "8px 10px", fontWeight: 700 }}>Total</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 700 }}>
-              {anuncios.reduce((s, a) => s + a.qty, 0)}
-            </td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 700 }}>
-              {fmtBRL(anuncios.reduce((s, a) => s + a.retorno, 0))}
-            </td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>
-              {fmtBRL(anuncios.reduce((s, a) => s + a.custoProduto, 0))}
-            </td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>
-              {fmtBRL(anuncios.reduce((s, a) => s + a.envioFull, 0))}
-            </td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>
-              {fmtBRL(anuncios.reduce((s, a) => s + a.ads, 0))}
-            </td>
-            <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 800 }}>
-              {(() => {
-                const totalLucro = anuncios.reduce((s, a) => s + a.lucro, 0);
-                return <span style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</span>;
-              })()}
-            </td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 700 }}>{sum((a) => a.qty)}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 700 }}>{fmtBRL(totalRet)}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.custoProduto))}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.envioFull))}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.taxaML))}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.imposto))}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.ads))}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 700, color: totalBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalBruto)}</td>
+            <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 800, color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</td>
             <td style={{ textAlign: "right", padding: "8px 10px" }}>
-              {(() => {
-                const totalRet = anuncios.reduce((s, a) => s + a.retorno, 0);
-                const totalLuc = anuncios.reduce((s, a) => s + a.lucro, 0);
-                const m = totalRet > 0 ? (totalLuc / totalRet) * 100 : 0;
-                return (
-                  <span style={{ fontWeight: 700, color: m >= 20 ? "var(--green)" : m >= 10 ? "#f7c948" : "var(--red)" }}>
-                    {m.toFixed(1)}%
-                  </span>
-                );
-              })()}
+              <span style={{ fontWeight: 700, color: margemTotal >= 20 ? "var(--green)" : margemTotal >= 10 ? "#f7c948" : "var(--red)" }}>
+                {margemTotal.toFixed(1)}%
+              </span>
             </td>
           </tr>
         </tfoot>
@@ -362,7 +370,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
 export default function Dashboard({ data }: Props) {
   const mes = mesAtual();
 
-  type PeriodoMode = "hoje" | "semana" | "mes" | "custom";
+  type PeriodoMode = "hoje" | "ontem" | "3d" | "7d" | "semana" | "mes" | "custom";
   const [periodoMode, setPeriodoMode]   = useState<PeriodoMode>("mes");
   const [customFrom,  setCustomFrom]    = useState("");
   const [customTo,    setCustomTo]      = useState("");
@@ -375,6 +383,9 @@ export default function Dashboard({ data }: Props) {
   const periodoRange = useMemo((): { from: string; to: string } => {
     const today = todayISO();
     if (periodoMode === "hoje")   return { from: today, to: today };
+    if (periodoMode === "ontem")  return { from: daysAgoISO(1), to: daysAgoISO(1) };
+    if (periodoMode === "3d")     return { from: daysAgoISO(2), to: today };
+    if (periodoMode === "7d")     return { from: daysAgoISO(6), to: today };
     if (periodoMode === "semana") return weekRange();
     if (periodoMode === "mes")    return monthRange(mes);
     if (customFrom && customTo)   return { from: customFrom, to: customTo };
@@ -384,7 +395,7 @@ export default function Dashboard({ data }: Props) {
   const fetchMetrics = useCallback(async (from: string, to: string) => {
     setMlLoading(true);
     try {
-      const res  = await fetch(`/api/ml/metrics?from=${from}&to=${to}`, { cache: "no-store" });
+      const res  = await authedFetch(`/api/ml/metrics?from=${from}&to=${to}`, { cache: "no-store" });
       if (!res.ok) { setMlMetrics(null); return; }
       const json = await res.json();
       if (mountedRef.current) setMlMetrics(json);
@@ -405,7 +416,7 @@ export default function Dashboard({ data }: Props) {
   }, [periodoRange, fetchMetrics]);
 
   useEffect(() => {
-    fetch("/api/ml/account", { cache: "no-store" })
+    authedFetch("/api/ml/account", { cache: "no-store" })
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (mountedRef.current) setMlAccount(j); })
       .catch(() => {});
@@ -414,7 +425,7 @@ export default function Dashboard({ data }: Props) {
   async function handleRefreshML() {
     setMlRefreshing(true);
     try {
-      await fetch("/api/ml/sync-all", { method: "POST" });
+      await authedFetch("/api/ml/sync-all", { method: "POST" });
       await fetchMetrics(periodoRange.from, periodoRange.to);
     } catch (e) { console.error(e); }
     finally { setMlRefreshing(false); }
@@ -471,14 +482,20 @@ export default function Dashboard({ data }: Props) {
 
         {/* Filtro de período */}
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {(["hoje", "semana", "mes", "custom"] as PeriodoMode[]).map((mode) => (
-            <button key={mode} type="button"
-              className={`btn btn-sm ${periodoMode === mode ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setPeriodoMode(mode)}
-            >
-              {mode === "hoje" ? "📅 Hoje" : mode === "semana" ? "📆 Semana" : mode === "mes" ? "🗓 Mês" : "🔎 Personalizado"}
-            </button>
-          ))}
+          {(["hoje", "ontem", "3d", "7d", "semana", "mes", "custom"] as PeriodoMode[]).map((mode) => {
+            const labels: Record<PeriodoMode, string> = {
+              hoje: "📅 Hoje", ontem: "📅 Ontem", "3d": "3 dias", "7d": "7 dias",
+              semana: "📆 Semana", mes: "🗓 Mês", custom: "🔎 Personalizado",
+            };
+            return (
+              <button key={mode} type="button"
+                className={`btn btn-sm ${periodoMode === mode ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setPeriodoMode(mode)}
+              >
+                {labels[mode]}
+              </button>
+            );
+          })}
           {periodoMode === "custom" && (
             <>
               <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
@@ -539,6 +556,8 @@ export default function Dashboard({ data }: Props) {
                 {[
                   { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0 },
                   { label: "Envio Full",             value: mlMetrics?.totalEnvio ?? 0 },
+                  { label: "Taxas ML (comissão)",     value: mlMetrics?.totalTaxasML ?? 0 },
+                  { label: "Imposto sobre venda",     value: mlMetrics?.totalImposto ?? 0 },
                   { label: "ADS (automático)",        value: mlMetrics?.totalAds ?? 0 },
                   { label: "Custos Operacionais",     value: mlMetrics?.custosOperacionais ?? 0 },
                 ].map(({ label, value }) => (
@@ -553,6 +572,8 @@ export default function Dashboard({ data }: Props) {
                     {fmtBRL(
                       (mlMetrics?.totalCMV ?? 0) +
                       (mlMetrics?.totalEnvio ?? 0) +
+                      (mlMetrics?.totalTaxasML ?? 0) +
+                      (mlMetrics?.totalImposto ?? 0) +
                       (mlMetrics?.totalAds ?? 0) +
                       (mlMetrics?.custosOperacionais ?? 0)
                     )}
@@ -622,7 +643,7 @@ export default function Dashboard({ data }: Props) {
 
               {goals?.meta1 ? (
                 <MetasCascata
-                  fatMes={fatBruto}   {/* ← usa bruto */}
+                  fatMes={fatBruto}
                   projecao={projecao}
                   meta1={goals.meta1}
                   meta2={goals.meta2 ?? null}
@@ -639,7 +660,7 @@ export default function Dashboard({ data }: Props) {
                 <GoalsProgressBars
                   goals={goals}
                   days={[]}
-                  liveRevenue={fatBruto}  {/* ← usa bruto */}
+                  liveRevenue={fatBruto}
                 />
               </div>
             </section>
@@ -662,7 +683,9 @@ export default function Dashboard({ data }: Props) {
             </div>
             <ExpensesDoughnut
               produto={mlMetrics?.totalCMV ?? 0}
-              taxasML={0}
+              envio={mlMetrics?.totalEnvio ?? 0}
+              taxasML={mlMetrics?.totalTaxasML ?? 0}
+              imposto={mlMetrics?.totalImposto ?? 0}
               ads={mlMetrics?.totalAds ?? 0}
               operacional={mlMetrics?.custosOperacionais ?? 0}
             />

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { requireAccess } from "@/lib/api-auth";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const gate = await requireAccess(req, { adminOnly: true });
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const db = getAdminDb();
     await db.collection("ml_tokens").doc("main").set(

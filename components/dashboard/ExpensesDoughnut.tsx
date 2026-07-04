@@ -13,13 +13,15 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 
 type Props = {
   produto: number;
+  envio?: number;
   taxasML: number;
+  imposto?: number;
   ads: number;
   operacional: number;
 };
 
-export default function ExpensesDoughnut({ produto, taxasML, ads, operacional }: Props) {
-  const total = produto + taxasML + ads + operacional;
+export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto = 0, ads, operacional }: Props) {
+  const total = produto + envio + taxasML + imposto + ads + operacional;
 
   if (total === 0) {
     return (
@@ -39,13 +41,15 @@ export default function ExpensesDoughnut({ produto, taxasML, ads, operacional }:
   }
 
   const data = {
-    labels: ["Produto (CMV)", "Taxas ML", "Ads", "Operacional"],
+    labels: ["Produto (CMV)", "Envio Full", "Taxas ML", "Imposto", "Ads", "Operacional"],
     datasets: [
       {
-        data: [produto, taxasML, ads, operacional],
+        data: [produto, envio, taxasML, imposto, ads, operacional],
         backgroundColor: [
           "rgba(99,102,241,.8)",
+          "rgba(59,130,246,.8)",
           "rgba(245,158,11,.8)",
+          "rgba(234,179,8,.8)",
           "rgba(239,68,68,.8)",
           "rgba(167,139,250,.8)",
         ],

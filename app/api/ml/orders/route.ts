@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getMlAccessToken } from "../token";
+import { requireAccess } from "@/lib/api-auth";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const gate = await requireAccess(req, { allowCron: true });
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const adminDb = getAdminDb();
     const accessToken = await getMlAccessToken();

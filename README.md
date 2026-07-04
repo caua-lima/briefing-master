@@ -29,9 +29,36 @@ NEXT_PUBLIC_FIREBASE_APP_ID=...
 NEXT_PUBLIC_ALLOWED_EMAILS=
 ```
 
+Alem das variaveis publicas acima, o backend (rotas `/api/ml/*`) precisa destas
+variaveis **de servidor** (nunca com prefixo `NEXT_PUBLIC_`):
+
+```env
+# Firebase Admin (service account)
+FIREBASE_PROJECT_ID=briefing-76017
+FIREBASE_CLIENT_EMAIL=...@....iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Mercado Livre (app OAuth)
+ML_APP_ID=...
+ML_SECRET=...
+ML_REDIRECT_URI=https://SEU_DOMINIO/api/ml/callback
+ML_SELLER_ID=...            # user_id da sua conta ML
+
+# Sincronizacao automatica (Vercel Cron) e protecao das rotas /api/ml/*
+CRON_SECRET=uma-string-aleatoria-forte
+```
+
 Obs:
 - Prefixo `NEXT_PUBLIC_` expoe variavel no navegador. Isso e esperado para config cliente Firebase.
-- Nao coloque credenciais sensiveis (service account, secret admin) neste arquivo.
+- Nao coloque credenciais sensiveis (service account, secret admin) com prefixo `NEXT_PUBLIC_`.
+- `CRON_SECRET`: o Vercel injeta `Authorization: Bearer <CRON_SECRET>` nas chamadas do cron. As rotas `/api/ml/*` exigem login (ID token do Firebase) ou esse segredo. Gere com `openssl rand -hex 32`.
+
+## Sincronizacao automatica
+
+`vercel.json` define um cron que chama `GET /api/ml/cron` de hora em hora,
+sincronizando pedidos e devolucoes do mes atual (mantendo o dashboard atualizado
+sem depender do botao manual). Requer `CRON_SECRET` configurado na Vercel.
+Em planos Hobby o Vercel pode limitar a frequencia — ajuste o `schedule` se necessario.
 
 ## 4. Rodar projeto local
 

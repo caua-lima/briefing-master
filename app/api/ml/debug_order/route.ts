@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { requireAccess } from "@/lib/api-auth";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const gate = await requireAccess(req, { adminOnly: true });
+  if (gate instanceof NextResponse) return gate;
+
   const db = getAdminDb();
 
   const [ordersSnap, estoqueSnap] = await Promise.all([

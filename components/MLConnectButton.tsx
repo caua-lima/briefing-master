@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from "react";
+import { authedFetch } from "@/lib/api/authed-fetch";
 
 type MlStatus = {
   connected: boolean;
@@ -24,7 +25,7 @@ export function MLConnectButton() {
           return;
         }
 
-        const res = await fetch("/api/ml/status", { cache: "no-store" });
+        const res = await authedFetch("/api/ml/status", { cache: "no-store" });
         if (!res.ok) {
           const json = await res.json();
           throw new Error(json?.error || "Não foi possível verificar a conexão ML");
@@ -53,7 +54,7 @@ export function MLConnectButton() {
     setConnecting(true);
     try {
       // 1. Desconecta a conta ML atual (se houver)
-      await fetch('/api/ml/disconnect', { method: 'POST' });
+      await authedFetch('/api/ml/disconnect', { method: 'POST' });
       
       // 2. Limpa localStorage
       localStorage.setItem('ml_disconnected', 'true');

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMlAccessToken } from "../token";
+import { requireAccess } from "@/lib/api-auth";
 
 const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
@@ -20,7 +21,10 @@ function todayRangeISO() {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const gate = await requireAccess(req);
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const access = await getMlAccessToken();
     if (!access) return NextResponse.json({ error: "no_token", connected: false }, { status: 401 });
