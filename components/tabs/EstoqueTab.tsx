@@ -45,8 +45,6 @@ export default function EstoqueTab({
       retorno: "",
       custo: "",
       sku: "",
-      ads: "",
-      custo_envio_full: "",
       imposto: "",
       mlb: "",
       ativo: true,
@@ -111,8 +109,6 @@ export default function EstoqueTab({
                 <th>MLB</th>
                 <th>Preço</th>
                 <th>Custo</th>
-                <th>Ads/un</th>
-                <th>Envio Full/un</th>
                 <th>Imposto %</th>
                 <th>Retorno Líq.</th>
                 <th>Status</th>
@@ -165,8 +161,6 @@ function ProductRow({
 }) {
   const preco    = parseFloat(product.preco) || 0;
   const custo    = parseFloat(product.custo) || 0;
-  const ads      = parseFloat(product.ads ?? "0") || 0;
-  const envio    = parseFloat(product.custo_envio_full ?? "0") || 0;
   const imposto  = parseFloat(product.imposto ?? "0") || 0;
   const retorno  = parseFloat(product.retorno) || preco - custo;
 
@@ -197,12 +191,6 @@ function ProductRow({
       </td>
       <td className="negative">
         R$ {custo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-      </td>
-      <td className="negative">
-        R$ {ads.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-      </td>
-      <td className="negative">
-        R$ {envio.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
       </td>
       <td className={imposto > 0 ? "negative" : ""} style={{ color: imposto > 0 ? undefined : "var(--muted)" }}>
         {imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}
@@ -323,7 +311,7 @@ export function ProductModal({
           value={p.mlb ?? ""}
           onChange={(e) => set({ mlb: e.target.value })}
         />
-        <div className="hint">Opcional — apenas para referência visual</div>
+        <div className="hint">Usado para vincular as vendas ao produto (junto com o SKU). Recomendado preencher.</div>
       </div>
 
       <div className="config-field">
@@ -350,32 +338,12 @@ export function ProductModal({
         />
       </div>
 
-      <div className="config-field">
-        <label>📢 Custo de Ads/unidade (R$)</label>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          placeholder="0.00"
-          value={p.ads ?? ""}
-          onChange={(e) => set({ ads: e.target.value })}
-        />
-        <div className="hint">Gasto médio em anúncios ML por unidade vendida deste produto</div>
-      </div>
-
-      <div className="config-field">
-        <label>🚚 Custo Envio Full/unidade (R$)</label>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          placeholder="0.00"
-          value={p.custo_envio_full ?? ""}
-          onChange={(e) => set({ custo_envio_full: e.target.value })}
-        />
-        <div className="hint">
-          Custo médio do frete Full cobrado pelo ML por unidade (consulte o relatório financeiro do ML)
-        </div>
+      <div style={{
+        margin: "4px 0 8px", padding: "8px 12px", borderRadius: 8,
+        background: "rgba(79,142,247,.08)", border: "1px solid rgba(79,142,247,.2)",
+        fontSize: ".78rem", color: "var(--muted)",
+      }}>
+        📢 <strong>ADS</strong> e 🚚 <strong>Envio Full</strong> agora são puxados automaticamente do Mercado Livre — não precisa cadastrar.
       </div>
 
       <div className="config-field">

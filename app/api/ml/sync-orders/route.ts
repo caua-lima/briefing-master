@@ -3,6 +3,8 @@ import { getMlAccessToken } from "../token";
 import { requireAccess } from "@/lib/api-auth";
 import { currentMonthRangeBR, syncOrdersRange } from "@/lib/ml/sync";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;

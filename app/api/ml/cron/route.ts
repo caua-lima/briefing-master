@@ -3,6 +3,8 @@ import { getMlAccessToken } from "../token";
 import { isCronRequest } from "@/lib/api-auth";
 import { currentMonthRangeBR, syncOrdersRange, syncReturnsRange } from "@/lib/ml/sync";
 
+export const maxDuration = 60;
+
 /**
  * Endpoint de sincronização automática, chamado pelo Vercel Cron.
  * O Vercel injeta `Authorization: Bearer <CRON_SECRET>` quando a env

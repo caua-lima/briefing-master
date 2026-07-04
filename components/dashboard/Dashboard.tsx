@@ -8,6 +8,7 @@ import {
   mesAtual,
   diaAtualNoMes,
   diasNoMes,
+  clamp,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
 import KpiCard from "./KpiCard";
@@ -52,8 +53,20 @@ type MlMetrics = {
   margemComCustos:    number;
   anuncios:           AnuncioResult[];
   pedidosSemVinculo:  number;
+  hoje:               HojeBreakdown;
   from:               string;
   to:                 string;
+};
+
+type HojeBreakdown = {
+  faturamentoBruto: number;
+  totalCMV:         number;
+  totalAds:         number;
+  totalEnvio:       number;
+  totalTaxasML:     number;
+  totalImposto:     number;
+  lucroLiquido:     number;
+  pedidos:          number;
 };
 
 function isoOf(d: Date): string {
@@ -144,6 +157,97 @@ function MetaDiariaCard({
           Configure uma meta diária na aba Metas
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Vendas do Dia ──────────────────────────────────────────────
+function VendasDoDiaCard({ hoje }: { hoje?: HojeBreakdown }) {
+  const h: HojeBreakdown = hoje ?? {
+    faturamentoBruto: 0, totalCMV: 0, totalAds: 0, totalEnvio: 0,
+    totalTaxasML: 0, totalImposto: 0, lucroLiquido: 0, pedidos: 0,
+  };
+  const margem = h.faturamentoBruto > 0 ? (h.lucroLiquido / h.faturamentoBruto) * 100 : 0;
+
+  const stats: { label: string; value: number; color: string }[] = [
+    { label: "Faturamento bruto", value: h.faturamentoBruto, color: "var(--green)" },
+    { label: "CMV (produto)",     value: h.totalCMV,         color: "var(--red)" },
+    { label: "Gasto com ADS",     value: h.totalAds,         color: "var(--red)" },
+    { label: "Lucro líquido",     value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
+  ];
+
+  return (
+    <section style={{
+      background: "linear-gradient(135deg, var(--surface), var(--surface2))",
+      border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700 }}>
+          ⚡ Vendas do Dia
+        </div>
+        <div style={{ fontSize: ".74rem", color: "var(--muted)" }}>
+          {h.pedidos} pedido(s) · margem {margem.toFixed(1)}%
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+        {stats.map((s) => (
+          <div key={s.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: s.color }}>{fmtBRL(s.value)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: ".7rem", color: "var(--muted)", marginTop: 10 }}>
+        Lucro líquido = retorno − CMV − ADS − Full − taxas ML − imposto
+      </div>
+    </section>
+  );
+}
+
+// ── Metas de Lucro Líquido ─────────────────────────────────────
+function LucroMetasBars({
+  lucroAtual, lucro1, lucro2, lucro3,
+}: {
+  lucroAtual: number;
+  lucro1: number | null;
+  lucro2: number | null;
+  lucro3: number | null;
+}) {
+  const metas = [
+    lucro1 ? { nome: "🥇 Lucro Meta 1", valor: lucro1, cor: "#4f8ef7" } : null,
+    lucro2 ? { nome: "🥈 Lucro Meta 2", valor: lucro2, cor: "#f7c948" } : null,
+    lucro3 ? { nome: "🥉 Lucro Meta 3", valor: lucro3, cor: "#a855f7" } : null,
+  ].filter(Boolean) as { nome: string; valor: number; cor: string }[];
+
+  if (!metas.length) return null;
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ fontSize: ".74rem", textTransform: "uppercase", letterSpacing: ".05em", color: "var(--muted)", fontWeight: 700, marginBottom: 12 }}>
+        💰 Metas de Lucro Líquido
+      </div>
+      {metas.map((m) => {
+        const pct = clamp((lucroAtual / m.valor) * 100, 0, 100);
+        const done = lucroAtual >= m.valor;
+        return (
+          <div key={m.nome} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".78rem", marginBottom: 5 }}>
+              <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>
+                {m.nome} {done ? "✓" : ""}
+              </span>
+              <span style={{ color: "var(--muted)" }}>
+                {fmtBRL(lucroAtual)} / {fmtBRL(m.valor)}
+              </span>
+            </div>
+            <div style={{ height: 12, borderRadius: 999, background: "var(--surface2)", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${pct}%`, borderRadius: 999, transition: "width .5s ease",
+                background: done ? "var(--green)" : m.cor,
+              }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -439,6 +543,9 @@ export default function Dashboard({ data }: Props) {
         meta1:       activeGoalEntry.meta1,
         meta2:       activeGoalEntry.meta2 ?? null,
         meta3:       activeGoalEntry.meta3 ?? null,
+        lucro1:      activeGoalEntry.lucro1 ?? null,
+        lucro2:      activeGoalEntry.lucro2 ?? null,
+        lucro3:      activeGoalEntry.lucro3 ?? null,
         metaDiaria:  activeGoalEntry.metaDiaria ?? null,
         meta2Diaria: activeGoalEntry.meta2Diaria ?? null,
         meta3Diaria: activeGoalEntry.meta3Diaria ?? null,
@@ -519,6 +626,9 @@ export default function Dashboard({ data }: Props) {
         <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
       ) : (
         <>
+          {/* ── Vendas do Dia (sempre visível) ── */}
+          <VendasDoDiaCard hoje={mlMetrics?.hoje} />
+
           {/* ── KPIs principais ── */}
           <div>
             <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 10 }}>
@@ -651,6 +761,15 @@ export default function Dashboard({ data }: Props) {
                 <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>
                   Nenhuma meta configurada. Configure na aba Metas.
                 </div>
+              )}
+
+              {goals && (goals.lucro1 || goals.lucro2 || goals.lucro3) && (
+                <LucroMetasBars
+                  lucroAtual={mlMetrics?.lucroComCustos ?? 0}
+                  lucro1={goals.lucro1 ?? null}
+                  lucro2={goals.lucro2 ?? null}
+                  lucro3={goals.lucro3 ?? null}
+                />
               )}
 
               <div style={{ marginTop: 20 }}>

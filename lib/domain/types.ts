@@ -42,6 +42,10 @@ export type Goals = {
   meta1: number;
   meta2: number | null;
   meta3: number | null;
+  // Meta de lucro líquido correspondente a cada meta de faturamento
+  lucro1: number | null;
+  lucro2: number | null;
+  lucro3: number | null;
   metaDiaria: number | null;
   meta2Diaria: number | null;
   meta3Diaria: number | null;
@@ -54,6 +58,9 @@ export type GoalEntry = {
   meta1: number;
   meta2: number | null;
   meta3: number | null;
+  lucro1: number | null;
+  lucro2: number | null;
+  lucro3: number | null;
   metaDiaria: number | null;
   meta2Diaria: number | null;
   meta3Diaria: number | null;
@@ -85,12 +92,13 @@ export type Product = {
   custo: string;
   retorno: string;
   sku?: string;              // bate com items[].sku dos pedidos ML
-  ads?: string;              // custo de ads por unidade vendida (R$)
-  custo_envio_full?: string; // custo médio de envio Full por unidade (R$)
   imposto?: string;          // % de imposto sobre a venda (ex: "8" = 8%)
   mlb?: string;
   ativo: boolean;
   createdBy?: string;
+  // @deprecated — ADS e Full agora são puxados automaticamente do ML
+  ads?: string;
+  custo_envio_full?: string;
 };
 
 export type AccessEntry = {

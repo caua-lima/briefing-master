@@ -5,7 +5,6 @@ import { getAdsSpendByItem } from "@/lib/ml/ads";
 
 type ProdutoData = {
   custo: number;
-  envioFull: number;
   imposto: number; // % sobre a venda
   mlb: string;
   name: string;
@@ -34,6 +33,19 @@ type AnuncioResult = {
   lucro: number;
   margem: number;
   qty: number;
+};
+
+type Aggregates = {
+  faturamentoBruto: number;
+  totalRetorno: number;
+  totalCMV: number;
+  totalEnvio: number;
+  totalImposto: number;
+  totalTaxasML: number;
+  totalAds: number;
+  anuncios: AnuncioResult[];
+  pedidosSemVinculo: number;
+  ordersCount: number;
 };
 
 function parseDateParam(p: string | null) {
@@ -80,6 +92,137 @@ function buildRange(from?: string, to?: string, month?: string) {
   };
 }
 
+/** Lê os pedidos de um intervalo (UTC e BR) deduplicando por order_id. */
+async function loadOrders(
+  db: FirebaseFirestore.Firestore,
+  start: string,
+  end: string,
+  startBR: string,
+  endBR: string,
+) {
+  const [snapUTC, snapBR] = await Promise.all([
+    db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+    db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+  ]);
+  const map = new Map<string, FirebaseFirestore.DocumentData>();
+  for (const snap of [snapUTC, snapBR])
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      map.set(d.order_id ?? doc.id, d);
+    }
+  return Array.from(map.values());
+}
+
+/**
+ * Agrega pedidos: faturamento, CMV, Full (frete do pedido distribuído por
+ * unidade), taxas ML, imposto e ADS por anúncio. Só itens vinculados a um
+ * produto entram no cálculo de lucro.
+ */
+function computeAggregates(
+  orders: FirebaseFirestore.DocumentData[],
+  porMlb: Map<string, ProdutoData>,
+  porSku: Map<string, ProdutoData>,
+  adsByItem: Record<string, number>,
+): Aggregates {
+  let faturamentoBruto = 0;
+  let totalRetorno = 0;
+  let totalCMV = 0;
+  let totalEnvio = 0;
+  let totalImposto = 0;
+  let totalTaxasML = 0;
+  let pedidosSemVinculo = 0;
+
+  const anunciosMap = new Map<string, AnuncioResult>();
+
+  for (const o of orders) {
+    faturamentoBruto += Number(o.total_amount ?? 0);
+    const items = (o.items as OrderItem[]) ?? [];
+
+    // Frete Full do pedido distribuído por unidade (envio é por pedido)
+    const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
+    const orderShipping = Number(o.shipping_cost ?? 0);
+    const envioPerUnit = totalUnits > 0 ? orderShipping / totalUnits : 0;
+
+    let vinculado = false;
+
+    for (const item of items) {
+      const qty = Number(item.quantity ?? 1);
+      const skuRaw = String(item.sku ?? "").trim();
+      const itemId = String(item.item_id ?? "").trim();
+      const title = String(item.title ?? skuRaw);
+      const retorno = Number(item.unit_price ?? 0) * qty;
+      const taxaML = Number(item.sale_fee ?? 0) * qty; // sale_fee é por unidade
+      const envio = envioPerUnit * qty;
+
+      const mlbNumPedido = normalizeItemId(itemId);
+      const produto = porMlb.get(mlbNumPedido) ?? porSku.get(normalizeSku(skuRaw));
+
+      if (produto) {
+        vinculado = true;
+        const cmv = produto.custo * qty;
+        const imposto = retorno * (produto.imposto / 100);
+        totalRetorno += retorno;
+        totalCMV += cmv;
+        totalEnvio += envio;
+        totalImposto += imposto;
+        totalTaxasML += taxaML;
+
+        const chave = mlbNumPedido || skuRaw;
+        const prev = anunciosMap.get(chave);
+        if (prev) {
+          prev.retorno += retorno;
+          prev.custoProduto += cmv;
+          prev.envioFull += envio;
+          prev.imposto += imposto;
+          prev.taxaML += taxaML;
+          prev.qty += qty;
+        } else {
+          anunciosMap.set(chave, {
+            item_id: itemId || skuRaw,
+            title: produto.name || title,
+            retorno,
+            custoProduto: cmv,
+            envioFull: envio,
+            imposto,
+            taxaML,
+            ads: 0,
+            lucroBruto: 0,
+            lucro: 0,
+            margem: 0,
+            qty,
+          });
+        }
+      }
+    }
+    if (!vinculado && items.length > 0) pedidosSemVinculo++;
+  }
+
+  let totalAds = 0;
+  for (const [chave, a] of anunciosMap) {
+    // ADS pode vir como "6577305336" ou "MLB6577305336"
+    a.ads = adsByItem[chave] ?? adsByItem[`MLB${chave}`] ?? adsByItem[a.item_id.toUpperCase()] ?? 0;
+    totalAds += a.ads;
+    a.lucroBruto = a.retorno - a.custoProduto - a.envioFull;
+    a.lucro = a.lucroBruto - a.ads - a.imposto - a.taxaML;
+    a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
+  }
+
+  const anuncios = Array.from(anunciosMap.values()).sort((a, b) => b.retorno - a.retorno);
+
+  return {
+    faturamentoBruto,
+    totalRetorno,
+    totalCMV,
+    totalEnvio,
+    totalImposto,
+    totalTaxasML,
+    totalAds,
+    anuncios,
+    pedidosSemVinculo,
+    ordersCount: orders.length,
+  };
+}
+
 export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
@@ -92,139 +235,44 @@ export async function GET(req: Request) {
     const { start, end, startBR, endBR, fromStr, toStr } = buildRange(from, to, month);
     const db = getAdminDb();
 
-    // ── 1. Pedidos ────────────────────────────────────────────
-    const [snapUTC, snapBR] = await Promise.all([
-      db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
-    ]);
-    const ordersMap = new Map<string, FirebaseFirestore.DocumentData>();
-    for (const snap of [snapUTC, snapBR])
-      for (const doc of snap.docs) {
-        const d = doc.data();
-        ordersMap.set(d.order_id ?? doc.id, d);
-      }
-    const orders = Array.from(ordersMap.values());
-
-    // ── 2. Estoque: indexar por MLB (sem prefixo) e por SKU ───
+    // ── 1. Estoque: indexar por MLB (sem prefixo) e por SKU ───
     const prodSnap = await db.collection("estoque").get();
-    const porMlb = new Map<string, ProdutoData>(); // chave: "6577305336"
-    const porSku = new Map<string, ProdutoData>(); // chave: sku normalizado
-
+    const porMlb = new Map<string, ProdutoData>();
+    const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const entry: ProdutoData = {
         custo: Number(d.custo ?? d.cost ?? 0),
-        envioFull: Number(d.custo_envio_full ?? d.shipping_cost ?? 0),
         imposto: Number(d.imposto ?? d.tax ?? 0),
         mlb: String(d.mlb ?? "").trim(),
         name: String(d.name ?? ""),
         sku: String(d.sku ?? "").trim(),
       };
-      // Indexar pelo MLB sem prefixo (ex: "6577305336")
       const mlbNum = normalizeItemId(entry.mlb);
       if (mlbNum) porMlb.set(mlbNum, entry);
-      // Indexar pelo SKU como fallback
       if (entry.sku) porSku.set(normalizeSku(entry.sku), entry);
     }
 
-    // ── 3. ADS por item_id (chamada direta, sem hop HTTP) ─────
-    let adsByItem: Record<string, number> = {};
-    try {
-      adsByItem = await getAdsSpendByItem(fromStr, toStr);
-    } catch {
-      /* ADS indisponível (conta sem publicidade), segue sem */
-    }
+    // ── 2. Data de hoje (BR) para o breakdown do dia ──────────
+    const brNow = new Date(Date.now() - 3 * 3600 * 1000);
+    const hj = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}-${String(brNow.getUTCDate()).padStart(2, "0")}`;
 
-    // ── 4. Loop de pedidos ────────────────────────────────────
-    let faturamentoBruto = 0;
-    let totalRetorno = 0;
-    let totalCMV = 0;
-    let totalEnvio = 0;
-    let totalImposto = 0;
-    let totalTaxasML = 0;
-    let pedidosSemVinculo = 0;
+    // ── 3. ADS por item_id (período + hoje) ───────────────────
+    const [adsByItem, adsHoje] = await Promise.all([
+      getAdsSpendByItem(fromStr, toStr).catch(() => ({} as Record<string, number>)),
+      getAdsSpendByItem(hj, hj).catch(() => ({} as Record<string, number>)),
+    ]);
 
-    const anunciosMap = new Map<string, AnuncioResult>();
+    // ── 4. Pedidos do período + de hoje ───────────────────────
+    const [orders, ordersHoje] = await Promise.all([
+      loadOrders(db, start, end, startBR, endBR),
+      loadOrders(db, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, `${hj}T00:00:00.000-03:00`, `${hj}T23:59:59.999-03:00`),
+    ]);
 
-    for (const o of orders) {
-      faturamentoBruto += Number(o.total_amount ?? 0);
-      const items = (o.items as OrderItem[]) ?? [];
-      let vinculado = false;
+    const agg = computeAggregates(orders, porMlb, porSku, adsByItem);
+    const aggHoje = computeAggregates(ordersHoje, porMlb, porSku, adsHoje);
 
-      for (const item of items) {
-        const qty = Number(item.quantity ?? 1);
-        const skuRaw = String(item.sku ?? "").trim();
-        const itemId = String(item.item_id ?? "").trim(); // ex: "MLB6577305336"
-        const title = String(item.title ?? skuRaw);
-        const retorno = Number(item.unit_price ?? 0) * qty;
-        // Taxa de venda do ML (sale_fee é por unidade → multiplica pela qtd)
-        const taxaML = Number(item.sale_fee ?? 0) * qty;
-
-        // Vínculo 1: MLB sem prefixo (mais confiável, independe do SKU)
-        const mlbNumPedido = normalizeItemId(itemId);
-        const produto = porMlb.get(mlbNumPedido)
-          // Vínculo 2: SKU do pedido bate com SKU do estoque
-          ?? porSku.get(normalizeSku(skuRaw));
-
-        if (produto) {
-          vinculado = true;
-          const cmv = produto.custo * qty;
-          const envio = produto.envioFull * qty;
-          const imposto = retorno * (produto.imposto / 100);
-          totalRetorno += retorno;
-          totalCMV += cmv;
-          totalEnvio += envio;
-          totalImposto += imposto;
-          totalTaxasML += taxaML;
-
-          // Chave de agrupamento: MLB sem prefixo (estável)
-          const chave = mlbNumPedido || skuRaw;
-          const prev = anunciosMap.get(chave);
-          if (prev) {
-            prev.retorno += retorno;
-            prev.custoProduto += cmv;
-            prev.envioFull += envio;
-            prev.imposto += imposto;
-            prev.taxaML += taxaML;
-            prev.qty += qty;
-          } else {
-            anunciosMap.set(chave, {
-              item_id: itemId || skuRaw,
-              title: produto.name || title,
-              retorno,
-              custoProduto: cmv,
-              envioFull: envio,
-              imposto,
-              taxaML,
-              ads: 0,
-              lucroBruto: 0,
-              lucro: 0,
-              margem: 0,
-              qty,
-            });
-          }
-        }
-      }
-      if (!vinculado && items.length > 0) pedidosSemVinculo++;
-    }
-
-    // ── 5. ADS e lucro por anúncio ────────────────────────────
-    let totalAds = 0;
-    for (const [chave, a] of anunciosMap) {
-      // ADS pode vir como "6577305336" ou "MLB6577305336"
-      a.ads = adsByItem[chave]
-        ?? adsByItem[`MLB${chave}`]
-        ?? adsByItem[a.item_id.toUpperCase()]
-        ?? 0;
-      totalAds += a.ads;
-      a.lucroBruto = a.retorno - a.custoProduto - a.envioFull;
-      a.lucro = a.lucroBruto - a.ads - a.imposto - a.taxaML;
-      a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
-    }
-
-    const anuncios = Array.from(anunciosMap.values()).sort((a, b) => b.retorno - a.retorno);
-
-    // ── 6. Devoluções ─────────────────────────────────────────
+    // ── 5. Devoluções ─────────────────────────────────────────
     const [retUTC, retBR] = await Promise.all([
       db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
       db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
@@ -233,7 +281,7 @@ export async function GET(req: Request) {
     for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
     const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
 
-    // ── 7. Custos operacionais ────────────────────────────────
+    // ── 6. Custos operacionais ────────────────────────────────
     const custosSnap = await db.collection("custos").get();
     let custosOp = 0;
     for (const doc of custosSnap.docs) {
@@ -248,47 +296,47 @@ export async function GET(req: Request) {
       }
     }
 
-    // ── 8. Faturamento de hoje ────────────────────────────────
-    const brNow = new Date(Date.now() - 3 * 3600 * 1000);
-    const hj = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}-${String(brNow.getUTCDate()).padStart(2, "0")}`;
-    const [snapHjUTC, snapHjBR] = await Promise.all([
-      db.collection("ml_orders").where("date_created", ">=", `${hj}T00:00:00.000Z`).where("date_created", "<=", `${hj}T23:59:59.999Z`).get(),
-      db.collection("ml_orders").where("date_created", ">=", `${hj}T00:00:00.000-03:00`).where("date_created", "<=", `${hj}T23:59:59.999-03:00`).get(),
-    ]);
-    const hjMap = new Map<string, FirebaseFirestore.DocumentData>();
-    for (const snap of [snapHjUTC, snapHjBR])
-      for (const doc of snap.docs) {
-        const d = doc.data();
-        hjMap.set(d.order_id ?? doc.id, d);
-      }
-    const faturamentoHoje = Array.from(hjMap.values()).reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-    const pedidosHoje = hjMap.size;
+    // ── 7. Lucro líquido do dia (retorno − cmv − full − ads − taxas − imposto) ──
+    const lucroLiquidoHoje =
+      aggHoje.totalRetorno - aggHoje.totalCMV - aggHoje.totalEnvio - aggHoje.totalAds - aggHoje.totalTaxasML - aggHoje.totalImposto;
 
-    // ── 9. Totais finais ──────────────────────────────────────
-    const lucroSemCustos = totalRetorno - totalCMV - totalEnvio - totalAds - totalImposto - totalTaxasML - devolucoes;
+    // ── 8. Totais finais do período ───────────────────────────
+    const lucroSemCustos =
+      agg.totalRetorno - agg.totalCMV - agg.totalEnvio - agg.totalAds - agg.totalImposto - agg.totalTaxasML - devolucoes;
     const lucroComCustos = lucroSemCustos - custosOp;
-    const margemSemCustos = totalRetorno > 0 ? (lucroSemCustos / totalRetorno) * 100 : 0;
-    const margemComCustos = totalRetorno > 0 ? (lucroComCustos / totalRetorno) * 100 : 0;
+    const margemSemCustos = agg.totalRetorno > 0 ? (lucroSemCustos / agg.totalRetorno) * 100 : 0;
+    const margemComCustos = agg.totalRetorno > 0 ? (lucroComCustos / agg.totalRetorno) * 100 : 0;
 
     return NextResponse.json({
-      faturamentoBruto,
-      totalRetorno,
-      faturamentoHoje,
-      pedidosHoje,
-      ordersCount: orders.length,
+      faturamentoBruto: agg.faturamentoBruto,
+      totalRetorno: agg.totalRetorno,
+      faturamentoHoje: aggHoje.faturamentoBruto,
+      pedidosHoje: aggHoje.ordersCount,
+      ordersCount: agg.ordersCount,
       devolucoes,
-      totalCMV,
-      totalAds,
-      totalEnvio,
-      totalImposto,
-      totalTaxasML,
+      totalCMV: agg.totalCMV,
+      totalAds: agg.totalAds,
+      totalEnvio: agg.totalEnvio,
+      totalImposto: agg.totalImposto,
+      totalTaxasML: agg.totalTaxasML,
       custosOperacionais: custosOp,
       lucroSemCustos,
       lucroComCustos,
       margemSemCustos,
       margemComCustos,
-      anuncios,
-      pedidosSemVinculo,
+      anuncios: agg.anuncios,
+      pedidosSemVinculo: agg.pedidosSemVinculo,
+      // Breakdown do dia para o card "Vendas do Dia"
+      hoje: {
+        faturamentoBruto: aggHoje.faturamentoBruto,
+        totalCMV: aggHoje.totalCMV,
+        totalAds: aggHoje.totalAds,
+        totalEnvio: aggHoje.totalEnvio,
+        totalTaxasML: aggHoje.totalTaxasML,
+        totalImposto: aggHoje.totalImposto,
+        lucroLiquido: lucroLiquidoHoje,
+        pedidos: aggHoje.ordersCount,
+      },
       from: fromStr,
       to: toStr,
     });

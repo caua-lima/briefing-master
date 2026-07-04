@@ -9,6 +9,8 @@ import {
   type SyncRange,
 } from "@/lib/ml/sync";
 
+export const maxDuration = 60;
+
 function rangeFromRequest(req: Request): SyncRange {
   const url = new URL(req.url);
   const from = url.searchParams.get("from");

@@ -52,6 +52,57 @@ export function mapOrderItems(order: Record<string, unknown>) {
   });
 }
 
+/** Executa `fn` sobre `items` com no máximo `limit` chamadas simultâneas. */
+async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * Busca o custo de frete que o VENDEDOR paga por um envio (senders[].cost).
+ * Retorna null em caso de falha (para permitir nova tentativa no próximo sync).
+ */
+async function fetchShipmentCost(accessToken: string, shipmentId: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { senders?: { cost?: number }[] };
+    const senders = Array.isArray(j?.senders) ? j.senders : [];
+    // Custo do vendedor = soma dos custos dos remetentes (já com descontos aplicados)
+    return senders.reduce((s, x) => s + Number(x?.cost ?? 0), 0);
+  } catch {
+    return null;
+  }
+}
+
+/** Lê `shipping_cost` já salvo dos pedidos informados (evita refetch de envios). */
+async function existingShippingCosts(
+  db: FirebaseFirestore.Firestore,
+  orderIds: string[],
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const CHUNK = 300;
+  for (let i = 0; i < orderIds.length; i += CHUNK) {
+    const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
+    if (refs.length === 0) continue;
+    const snaps = await db.getAll(...refs);
+    for (const snap of snaps) {
+      const v = snap.get("shipping_cost");
+      if (typeof v === "number") map.set(snap.id, v);
+    }
+  }
+  return map;
+}
+
 async function fetchAllOrders(
   accessToken: string,
   range: SyncRange,
@@ -84,33 +135,53 @@ async function fetchAllOrders(
   return all;
 }
 
-/** Busca pedidos do período no ML e grava/atualiza em `ml_orders`. */
+/** Busca pedidos do período no ML (com custo de frete real) e grava em `ml_orders`. */
 export async function syncOrdersRange(accessToken: string, range: SyncRange): Promise<number> {
   const db = getAdminDb();
   const all = await fetchAllOrders(accessToken, range);
 
+  // ── Custo de frete (Full) por pedido, via API de envios ──
+  const orderIds = all.map((o) => String((o as Record<string, unknown>).id));
+  const shippingByOrder = await existingShippingCosts(db, orderIds);
+
+  const toFetch: { orderId: string; shipmentId: string }[] = [];
+  for (const o of all) {
+    const orderId = String((o as Record<string, unknown>).id);
+    const shipmentId = String((o.shipping as Record<string, unknown>)?.id ?? "").trim();
+    if (shipmentId && !shippingByOrder.has(orderId)) {
+      toFetch.push({ orderId, shipmentId });
+    }
+  }
+
+  await mapPool(toFetch, 8, async ({ orderId, shipmentId }) => {
+    const cost = await fetchShipmentCost(accessToken, shipmentId);
+    if (cost != null) shippingByOrder.set(orderId, cost);
+  });
+
+  // ── Gravação em lote ──
   const BATCH_SIZE = 400;
   for (let i = 0; i < all.length; i += BATCH_SIZE) {
     const batch = db.batch();
     for (const order of all.slice(i, i + BATCH_SIZE)) {
       const o = order as Record<string, unknown>;
       const orderId = String(o.id);
-      batch.set(
-        db.collection("ml_orders").doc(orderId),
-        {
-          order_id: orderId,
-          status: o.status ?? null,
-          date_created: String(o.date_created ?? ""),
-          total_amount: Number(o.total_amount ?? 0),
-          currency: o.currency_id ?? "BRL",
-          buyer_id: (o.buyer as Record<string, unknown>)?.id
-            ? String((o.buyer as Record<string, unknown>).id)
-            : null,
-          items: mapOrderItems(o),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true },
-      );
+      const doc: Record<string, unknown> = {
+        order_id: orderId,
+        status: o.status ?? null,
+        date_created: String(o.date_created ?? ""),
+        total_amount: Number(o.total_amount ?? 0),
+        currency: o.currency_id ?? "BRL",
+        buyer_id: (o.buyer as Record<string, unknown>)?.id
+          ? String((o.buyer as Record<string, unknown>).id)
+          : null,
+        items: mapOrderItems(o),
+        updatedAt: new Date().toISOString(),
+      };
+      // Só grava shipping_cost quando temos valor (falha na API não zera o existente)
+      const ship = shippingByOrder.get(orderId);
+      if (typeof ship === "number") doc.shipping_cost = ship;
+
+      batch.set(db.collection("ml_orders").doc(orderId), doc, { merge: true });
     }
     await batch.commit();
   }

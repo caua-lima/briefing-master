@@ -5,22 +5,17 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { useUserData } from "@/components/useUserData";
 import { AccessGuard } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
-import HojeTab from "@/components/tabs/HojeTab";
-import HistoricoTab from "@/components/tabs/HistoricoTab";
 import MetasTab from "@/components/tabs/MetasTab";
 import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
-import { MLConnectButton } from "@/components/MLConnectButton";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 
-type Tab = "dashboard" | "hoje" | "historico" | "metas" | "custos" | "estoque" | "acesso";
+type Tab = "dashboard" | "metas" | "custos" | "estoque" | "acesso";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "hoje", label: "Hoje", icon: "⚡" },
-  { id: "historico", label: "Historico", icon: "🗂" },
   { id: "metas", label: "Metas", icon: "🎯" },
   { id: "custos", label: "Custos", icon: "💸" },
   { id: "estoque", label: "Estoque", icon: "📦" },
@@ -325,8 +320,6 @@ function AppShell() {
             ) : (
               <>
                 {tab === "dashboard" && <Dashboard data={data} />}
-                {tab === "hoje" && <HojeTab uid={user.uid} data={data} />}
-                {tab === "historico" && <HistoricoTab uid={user.uid} data={data} />}
                 {tab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {tab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {tab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
