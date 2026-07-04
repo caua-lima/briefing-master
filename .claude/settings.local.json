@@ -3,7 +3,18 @@
     "allow": [
       "Bash(npm install *)",
       "Bash(npx tsc *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --base main --head feat/ml-dashboard-security-imposto --title 'Dashboard ML: segurança das rotas, imposto/taxa no lucro e sincronização automática' --body ' *)",
+      "PowerShell($g = Get-Command gh -ErrorAction SilentlyContinue; if \\($g\\) { $g.Source } else { \"gh not found\" })",
+      "Bash(git credential *)",
+      "Bash(cat > *)",
+      "Bash(command -v vercel)",
+      "Bash(vercel --version)",
+      "Bash(echo \"vercel CLI: $\\(vercel --version 2>/dev/null\\)\")"
     ]
   }
 }
