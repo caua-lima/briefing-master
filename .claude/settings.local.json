@@ -14,7 +14,9 @@
       "Bash(cat > *)",
       "Bash(command -v vercel)",
       "Bash(vercel --version)",
-      "Bash(echo \"vercel CLI: $\\(vercel --version 2>/dev/null\\)\")"
+      "Bash(echo \"vercel CLI: $\\(vercel --version 2>/dev/null\\)\")",
+      "Bash(git fetch *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
