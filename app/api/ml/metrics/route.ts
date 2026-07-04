@@ -43,6 +43,7 @@ type Aggregates = {
   totalImposto: number;
   totalTaxasML: number;
   totalAds: number;
+  adsNaoVinculado: number;
   anuncios: AnuncioResult[];
   pedidosSemVinculo: number;
   ordersCount: number;
@@ -197,15 +198,18 @@ function computeAggregates(
     if (!vinculado && items.length > 0) pedidosSemVinculo++;
   }
 
-  let totalAds = 0;
   for (const [chave, a] of anunciosMap) {
     // ADS pode vir como "6577305336" ou "MLB6577305336"
     a.ads = adsByItem[chave] ?? adsByItem[`MLB${chave}`] ?? adsByItem[a.item_id.toUpperCase()] ?? 0;
-    totalAds += a.ads;
     a.lucroBruto = a.retorno - a.custoProduto - a.envioFull;
     a.lucro = a.lucroBruto - a.ads - a.imposto - a.taxaML;
     a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
   }
+
+  // ADS total = TODO o investimento do período (inclui itens anunciados sem venda)
+  const totalAdsFull = Object.values(adsByItem).reduce((s, v) => s + v, 0);
+  const totalAdsMatched = Array.from(anunciosMap.values()).reduce((s, a) => s + a.ads, 0);
+  const adsNaoVinculado = Math.max(totalAdsFull - totalAdsMatched, 0);
 
   const anuncios = Array.from(anunciosMap.values()).sort((a, b) => b.retorno - a.retorno);
 
@@ -216,7 +220,8 @@ function computeAggregates(
     totalEnvio,
     totalImposto,
     totalTaxasML,
-    totalAds,
+    totalAds: totalAdsFull,
+    adsNaoVinculado,
     anuncios,
     pedidosSemVinculo,
     ordersCount: orders.length,
@@ -316,6 +321,7 @@ export async function GET(req: Request) {
       devolucoes,
       totalCMV: agg.totalCMV,
       totalAds: agg.totalAds,
+      adsNaoVinculado: agg.adsNaoVinculado,
       totalEnvio: agg.totalEnvio,
       totalImposto: agg.totalImposto,
       totalTaxasML: agg.totalTaxasML,

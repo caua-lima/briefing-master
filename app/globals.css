@@ -212,6 +212,89 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
+/* ================= Dashboard v2 (redesign) ================= */
+.dash{display:flex;flex-direction:column;gap:22px}
+
+/* Topbar */
+.dash-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.dash-top-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.acct-chip{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 14px;font-size:.8rem;color:var(--muted)}
+.acct-chip b{color:var(--text);font-weight:700}
+.acct-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,.15)}
+
+/* Segmented period control */
+.seg{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px;gap:2px;flex-wrap:wrap}
+.seg-btn{border:none;background:transparent;color:var(--muted);font-size:.8rem;font-weight:600;padding:7px 13px;border-radius:7px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.seg-btn.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--accent-glow)}
+.seg-btn:not(.active):hover{background:var(--surface2);color:var(--text)}
+.date-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:.82rem}
+
+/* Panels */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.panel-title{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800}
+.panel-sub{font-size:.74rem;color:var(--muted)}
+
+/* Hero (Vendas do dia) */
+.hero{background:radial-gradient(1200px 400px at 0% 0%,rgba(79,142,247,.10),transparent),linear-gradient(135deg,#181c29,#20263c);border:1px solid var(--border);border-radius:16px;padding:22px 24px;box-shadow:var(--shadow)}
+.hero-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.hero-title{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--text)}
+.hero-badge{font-size:.74rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px}
+.hero-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.hero-stat{background:rgba(15,17,23,.5);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.hero-stat .lbl{font-size:.72rem;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.hero-stat .val{font-size:1.5rem;font-weight:800;line-height:1.05}
+.hero-foot{font-size:.72rem;color:var(--muted);margin-top:12px}
+
+/* KPI grid */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.kpi{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px 16px 22px;overflow:hidden;transition:transform .15s,border-color .15s}
+.kpi:hover{transform:translateY(-2px);border-color:var(--accent)}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--muted)}
+.kpi.k-pos::before{background:linear-gradient(180deg,var(--green),#34d399)}
+.kpi.k-neg::before{background:linear-gradient(180deg,var(--red),#f87171)}
+.kpi.k-acc::before{background:linear-gradient(180deg,var(--accent),#a78bfa)}
+.kpi.k-warn::before{background:linear-gradient(180deg,var(--yellow),#fbbf24)}
+.kpi .k-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+.kpi .k-val{font-size:1.4rem;font-weight:800;line-height:1.1}
+.kpi .k-sub{font-size:.72rem;color:var(--muted);margin-top:4px}
+
+/* two-column dashboard grid */
+.dash-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.dash-2col{grid-template-columns:1fr}}
+
+/* cost breakdown rows */
+.cost-row{display:flex;align-items:center;justify-content:space-between;font-size:.86rem;padding:9px 0;border-bottom:1px solid rgba(46,51,80,.45)}
+.cost-row:last-of-type{border-bottom:none}
+.cost-row .c-lbl{color:var(--muted);display:flex;align-items:center;gap:9px}
+.cost-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0}
+.cost-total{display:flex;align-items:center;justify-content:space-between;margin-top:6px;padding-top:12px;border-top:1px solid var(--border);font-weight:800}
+
+/* mini stat rows */
+.stat-row{display:flex;align-items:center;justify-content:space-between;font-size:.86rem;padding:9px 0;border-bottom:1px solid rgba(46,51,80,.45)}
+.stat-row:last-of-type{border-bottom:none}
+.stat-row .s-lbl{color:var(--muted)}
+.stat-row .s-val{font-weight:700}
+
+/* modern table */
+.tbl-modern{width:100%;border-collapse:collapse;font-size:.84rem}
+.tbl-modern thead th{background:var(--surface2);color:var(--muted);font-weight:700;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;white-space:nowrap;text-align:right}
+.tbl-modern thead th:first-child{text-align:left;border-radius:8px 0 0 0}
+.tbl-modern thead th:last-child{border-radius:0 8px 0 0}
+.tbl-modern tbody td{padding:11px 12px;border-bottom:1px solid rgba(46,51,80,.45);white-space:nowrap;text-align:right}
+.tbl-modern tbody td:first-child{text-align:left}
+.tbl-modern tbody tr:hover{background:var(--surface2)}
+.tbl-modern tfoot td{padding:11px 12px;border-top:2px solid var(--border);background:var(--surface2);font-weight:800;text-align:right}
+.tbl-modern tfoot td:first-child{text-align:left}
+.tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:800}
+.tag-g{background:var(--green-bg);color:var(--green)}
+.tag-y{background:rgba(245,158,11,.14);color:var(--yellow)}
+.tag-r{background:var(--red-bg);color:var(--red)}
+
+/* daily goal bar */
+.dgoal-bar{height:10px;border-radius:99px;background:var(--surface2);overflow:hidden}
+.dgoal-fill{height:100%;border-radius:99px;transition:width .6s ease}
+
 /* Sidebar layout */
 .app-sidebar{display:flex}
 .sidebar-toggle{display:none}

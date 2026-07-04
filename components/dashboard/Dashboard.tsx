@@ -11,7 +11,6 @@ import {
   clamp,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
-import KpiCard from "./KpiCard";
 import RevenueLineChart from "./RevenueLineChart";
 import ExpensesDoughnut from "./ExpensesDoughnut";
 import GoalsProgressBars from "./GoalsProgressBars";
@@ -34,6 +33,17 @@ type AnuncioResult = {
   qty:          number;
 };
 
+type HojeBreakdown = {
+  faturamentoBruto: number;
+  totalCMV:         number;
+  totalAds:         number;
+  totalEnvio:       number;
+  totalTaxasML:     number;
+  totalImposto:     number;
+  lucroLiquido:     number;
+  pedidos:          number;
+};
+
 type MlMetrics = {
   faturamentoBruto:   number;
   totalRetorno:       number;
@@ -43,6 +53,7 @@ type MlMetrics = {
   devolucoes:         number;
   totalCMV:           number;
   totalAds:           number;
+  adsNaoVinculado:    number;
   totalEnvio:         number;
   totalImposto:       number;
   totalTaxasML:       number;
@@ -58,15 +69,14 @@ type MlMetrics = {
   to:                 string;
 };
 
-type HojeBreakdown = {
-  faturamentoBruto: number;
-  totalCMV:         number;
-  totalAds:         number;
-  totalEnvio:       number;
-  totalTaxasML:     number;
-  totalImposto:     number;
-  lucroLiquido:     number;
-  pedidos:          number;
+// cores usadas na composição de custos (batem com o doughnut)
+const COST_COLORS = {
+  cmv:  "rgba(99,102,241,.9)",
+  full: "rgba(59,130,246,.9)",
+  taxa: "rgba(245,158,11,.9)",
+  imp:  "rgba(234,179,8,.9)",
+  ads:  "rgba(239,68,68,.9)",
+  op:   "rgba(167,139,250,.9)",
 };
 
 function isoOf(d: Date): string {
@@ -80,7 +90,6 @@ function daysAgoISO(n: number): string {
   d.setDate(d.getDate() - n);
   return isoOf(d);
 }
-
 function weekRange(): { from: string; to: string } {
   const now = new Date();
   const day = now.getDay();
@@ -88,11 +97,8 @@ function weekRange(): { from: string; to: string } {
   const mon = new Date(now.setDate(diff));
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return { from: fmt(mon), to: fmt(sun) };
+  return { from: isoOf(mon), to: isoOf(sun) };
 }
-
 function monthRange(mes: string): { from: string; to: string } {
   const [y, m] = mes.split("-").map(Number);
   const last = new Date(y, m, 0).getDate();
@@ -101,106 +107,104 @@ function monthRange(mes: string): { from: string; to: string } {
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${ld}` };
 }
 
-// ── Meta Diária Card ───────────────────────────────────────────
-function MetaDiariaCard({
-  faturamentoHoje,
-  pedidosHoje,
-  metaDiaria,
+// ── KPI ────────────────────────────────────────────────────────
+function Kpi({
+  label, value, tone, isPct, sub,
 }: {
-  faturamentoHoje: number;
-  pedidosHoje: number;
-  metaDiaria: number | null;
+  label: string;
+  value: number;
+  tone: "pos" | "neg" | "acc" | "warn";
+  isPct?: boolean;
+  sub?: string;
 }) {
-  const pct = metaDiaria && metaDiaria > 0
-    ? Math.min((faturamentoHoje / metaDiaria) * 100, 100)
-    : 0;
-  const batida = metaDiaria ? faturamentoHoje >= metaDiaria : false;
-  const falta  = metaDiaria ? Math.max(metaDiaria - faturamentoHoje, 0) : 0;
-
+  const color =
+    tone === "pos" ? "var(--green)" :
+    tone === "neg" ? "var(--red)" :
+    tone === "warn" ? "var(--yellow)" : "var(--text)";
   return (
-    <div style={{
-      background: "var(--surface2)", border: `1px solid ${batida ? "var(--green)" : "var(--border)"}`,
-      borderRadius: 10, padding: "14px 16px", flex: 1, minWidth: 220,
-    }}>
-      <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
-        📅 Meta Diária de Hoje
+    <div className={`kpi k-${tone}`}>
+      <div className="k-lbl">{label}</div>
+      <div className="k-val" style={{ color }}>
+        {isPct ? `${value.toFixed(1)}%` : fmtBRL(value)}
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-        <span style={{ fontSize: "1.3rem", fontWeight: 800, color: batida ? "var(--green)" : "var(--text)" }}>
-          {fmtBRL(faturamentoHoje)}
-        </span>
-        {metaDiaria && (
-          <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
-            / {fmtBRL(metaDiaria)}
-          </span>
-        )}
-      </div>
-      {metaDiaria && (
-        <>
-          <div style={{ height: 8, borderRadius: 999, background: "var(--surface)", overflow: "hidden", marginBottom: 8 }}>
-            <div style={{
-              height: "100%", borderRadius: 999, transition: "width .5s ease",
-              width: `${pct}%`,
-              background: batida ? "var(--green)" : "linear-gradient(90deg, #4f8ef7, #60a5fa)",
-            }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".75rem", color: "var(--muted)" }}>
-            <span>{pedidosHoje} pedido(s) hoje</span>
-            <span style={{ color: batida ? "var(--green)" : undefined }}>
-              {batida ? "✅ Meta batida!" : `Faltam ${fmtBRL(falta)}`}
-            </span>
-          </div>
-        </>
-      )}
-      {!metaDiaria && (
-        <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>
-          Configure uma meta diária na aba Metas
-        </div>
-      )}
+      {sub && <div className="k-sub">{sub}</div>}
     </div>
   );
 }
 
-// ── Vendas do Dia ──────────────────────────────────────────────
-function VendasDoDiaCard({ hoje }: { hoje?: HojeBreakdown }) {
+// ── Vendas do Dia (hero) ───────────────────────────────────────
+function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   const h: HojeBreakdown = hoje ?? {
     faturamentoBruto: 0, totalCMV: 0, totalAds: 0, totalEnvio: 0,
     totalTaxasML: 0, totalImposto: 0, lucroLiquido: 0, pedidos: 0,
   };
   const margem = h.faturamentoBruto > 0 ? (h.lucroLiquido / h.faturamentoBruto) * 100 : 0;
 
-  const stats: { label: string; value: number; color: string }[] = [
-    { label: "Faturamento bruto", value: h.faturamentoBruto, color: "var(--green)" },
-    { label: "CMV (produto)",     value: h.totalCMV,         color: "var(--red)" },
-    { label: "Gasto com ADS",     value: h.totalAds,         color: "var(--red)" },
-    { label: "Lucro líquido",     value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
+  const stats: { label: string; icon: string; value: number; color: string }[] = [
+    { label: "Faturamento bruto", icon: "💵", value: h.faturamentoBruto, color: "var(--green)" },
+    { label: "CMV (produto)",     icon: "📦", value: h.totalCMV,         color: "var(--red)" },
+    { label: "Gasto com ADS",     icon: "📢", value: h.totalAds,         color: "var(--red)" },
+    { label: "Lucro líquido",     icon: "✅", value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
   return (
-    <section style={{
-      background: "linear-gradient(135deg, var(--surface), var(--surface2))",
-      border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-        <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700 }}>
-          ⚡ Vendas do Dia
-        </div>
-        <div style={{ fontSize: ".74rem", color: "var(--muted)" }}>
-          {h.pedidos} pedido(s) · margem {margem.toFixed(1)}%
-        </div>
+    <section className="hero">
+      <div className="hero-head">
+        <span className="hero-title">⚡ Vendas do Dia</span>
+        <span className="hero-badge">
+          {h.pedidos} pedido(s) · margem <b style={{ color: margem >= 0 ? "var(--green)" : "var(--red)" }}>{margem.toFixed(1)}%</b>
+        </span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+      <div className="hero-grid">
         {stats.map((s) => (
-          <div key={s.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
-            <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: s.color }}>{fmtBRL(s.value)}</div>
+          <div key={s.label} className="hero-stat">
+            <div className="lbl">{s.icon} {s.label}</div>
+            <div className="val" style={{ color: s.color }}>{fmtBRL(s.value)}</div>
           </div>
         ))}
       </div>
-      <div style={{ fontSize: ".7rem", color: "var(--muted)", marginTop: 10 }}>
-        Lucro líquido = retorno − CMV − ADS − Full − taxas ML − imposto
-      </div>
+      <div className="hero-foot">Lucro líquido = retorno − CMV − ADS − Full − taxas ML − imposto</div>
     </section>
+  );
+}
+
+// ── Meta Diária ────────────────────────────────────────────────
+function MetaDiariaCard({
+  faturamentoHoje, pedidosHoje, metaDiaria,
+}: {
+  faturamentoHoje: number;
+  pedidosHoje: number;
+  metaDiaria: number | null;
+}) {
+  const pct = metaDiaria && metaDiaria > 0 ? Math.min((faturamentoHoje / metaDiaria) * 100, 100) : 0;
+  const batida = metaDiaria ? faturamentoHoje >= metaDiaria : false;
+  const falta = metaDiaria ? Math.max(metaDiaria - faturamentoHoje, 0) : 0;
+
+  return (
+    <div className="panel" style={{ borderColor: batida ? "var(--green)" : undefined }}>
+      <div className="panel-title" style={{ marginBottom: 12 }}>📅 Meta Diária de Hoje</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+        <span style={{ fontSize: "1.6rem", fontWeight: 800, color: batida ? "var(--green)" : "var(--text)" }}>
+          {fmtBRL(faturamentoHoje)}
+        </span>
+        {metaDiaria ? <span style={{ fontSize: ".85rem", color: "var(--muted)" }}>/ {fmtBRL(metaDiaria)}</span> : null}
+      </div>
+      {metaDiaria ? (
+        <>
+          <div className="dgoal-bar" style={{ marginBottom: 10 }}>
+            <div className="dgoal-fill" style={{ width: `${pct}%`, background: batida ? "var(--green)" : "linear-gradient(90deg,#4f8ef7,#60a5fa)" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".78rem", color: "var(--muted)" }}>
+            <span>{pedidosHoje} pedido(s) hoje</span>
+            <span style={{ color: batida ? "var(--green)" : undefined, fontWeight: 600 }}>
+              {batida ? "✅ Meta batida!" : `Faltam ${fmtBRL(falta)}`}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Configure uma meta diária na aba Metas.</div>
+      )}
+    </div>
   );
 }
 
@@ -222,28 +226,19 @@ function LucroMetasBars({
   if (!metas.length) return null;
 
   return (
-    <div style={{ marginTop: 20 }}>
-      <div style={{ fontSize: ".74rem", textTransform: "uppercase", letterSpacing: ".05em", color: "var(--muted)", fontWeight: 700, marginBottom: 12 }}>
-        💰 Metas de Lucro Líquido
-      </div>
+    <div style={{ marginTop: 22 }}>
+      <div className="panel-title" style={{ marginBottom: 12 }}>💰 Metas de Lucro Líquido</div>
       {metas.map((m) => {
         const pct = clamp((lucroAtual / m.valor) * 100, 0, 100);
         const done = lucroAtual >= m.valor;
         return (
           <div key={m.nome} style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".78rem", marginBottom: 5 }}>
-              <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>
-                {m.nome} {done ? "✓" : ""}
-              </span>
-              <span style={{ color: "var(--muted)" }}>
-                {fmtBRL(lucroAtual)} / {fmtBRL(m.valor)}
-              </span>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".8rem", marginBottom: 5 }}>
+              <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>{m.nome} {done ? "✓" : ""}</span>
+              <span style={{ color: "var(--muted)" }}>{fmtBRL(lucroAtual)} / {fmtBRL(m.valor)}</span>
             </div>
-            <div style={{ height: 12, borderRadius: 999, background: "var(--surface2)", overflow: "hidden" }}>
-              <div style={{
-                height: "100%", width: `${pct}%`, borderRadius: 999, transition: "width .5s ease",
-                background: done ? "var(--green)" : m.cor,
-              }} />
+            <div className="dgoal-bar">
+              <div className="dgoal-fill" style={{ width: `${pct}%`, background: done ? "var(--green)" : m.cor }} />
             </div>
           </div>
         );
@@ -271,15 +266,15 @@ function MetasCascata({
   }
   const maxValor = metas[metas.length - 1].valor;
   const barraMax = Math.max(maxValor * 1.05, fatMes * 1.05, projecao * 1.05);
-  const pctFat  = Math.min((fatMes  / barraMax) * 100, 100);
+  const pctFat = Math.min((fatMes / barraMax) * 100, 100);
   const pctProj = Math.min((projecao / barraMax) * 100, 100);
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         {metasVisiveis.map((m, i) => {
           const batida = fatMes >= m.valor;
-          const ativa  = !batida && (i === 0 || fatMes >= metas[i - 1].valor);
+          const ativa = !batida && (i === 0 || fatMes >= metas[i - 1].valor);
           return (
             <div key={m.nome} style={{
               display: "flex", alignItems: "center", gap: 6, padding: "5px 12px",
@@ -310,9 +305,9 @@ function MetasCascata({
         )}
       </div>
 
-      <div style={{ position: "relative", height: 36, borderRadius: 999, background: "var(--surface2)", overflow: "visible" }}>
+      <div style={{ position: "relative", height: 36, borderRadius: 999, background: "var(--surface2)", overflow: "visible", marginTop: 26 }}>
         {metasVisiveis.map((m) => {
-          const pct    = Math.min((m.valor / barraMax) * 100, 99.5);
+          const pct = Math.min((m.valor / barraMax) * 100, 99.5);
           const batida = fatMes >= m.valor;
           return (
             <div key={m.valor} style={{
@@ -349,17 +344,12 @@ function MetasCascata({
           paddingRight: 10, minWidth: fatMes > 0 ? 60 : 0,
         }}>
           {fatMes > 0 && (
-            <span style={{ fontSize: ".72rem", fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
-              {fmtBRL(fatMes)}
-            </span>
+            <span style={{ fontSize: ".72rem", fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{fmtBRL(fatMes)}</span>
           )}
         </div>
       </div>
 
-      <div style={{
-        display: "flex", justifyContent: "space-between",
-        fontSize: ".7rem", color: "var(--muted)", marginTop: 8, flexWrap: "wrap", gap: 4,
-      }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".7rem", color: "var(--muted)", marginTop: 10, flexWrap: "wrap", gap: 4 }}>
         <div style={{ display: "flex", gap: 14 }}>
           <span>
             <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#4f8ef7", marginRight: 4, verticalAlign: "middle" }} />
@@ -381,88 +371,73 @@ function MetasCascata({
 }
 
 // ── Tabela de Lucro por Anúncio ────────────────────────────────
-function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
+function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult[]; adsNaoVinculado: number }) {
   if (!anuncios.length) {
     return (
-      <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>
-        Nenhum anúncio vinculado no período. Corrija os SKUs no Estoque.
+      <div style={{ color: "var(--muted)", fontSize: ".85rem", padding: "16px 0", textAlign: "center" }}>
+        Nenhum anúncio vinculado no período. Cadastre os produtos (SKU/MLB) no Estoque.
       </div>
     );
   }
-  const th = { padding: "6px 10px", color: "var(--muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" as const };
-  const thR = { ...th, textAlign: "right" as const };
   const sum = (f: (a: AnuncioResult) => number) => anuncios.reduce((s, a) => s + f(a), 0);
-  const totalRet    = sum((a) => a.retorno);
-  const totalBruto  = sum((a) => a.lucroBruto);
-  const totalLucro  = sum((a) => a.lucro);
+  const totalRet = sum((a) => a.retorno);
+  const totalBruto = sum((a) => a.lucroBruto);
+  const totalLucro = sum((a) => a.lucro);
   const margemTotal = totalRet > 0 ? (totalLucro / totalRet) * 100 : 0;
+  const margemTag = (m: number) => (m >= 20 ? "tag-g" : m >= 10 ? "tag-y" : "tag-r");
 
   return (
-    <div className="table-wrapper" style={{ marginTop: 4, overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".84rem" }}>
+    <div className="table-wrapper" style={{ border: "none" }}>
+      <table className="tbl-modern">
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: "left" }}>Anúncio</th>
-            <th style={thR}>Qtd</th>
-            <th style={thR}>Retorno</th>
-            <th style={thR}>CMV</th>
-            <th style={thR}>Envio Full</th>
-            <th style={thR}>Taxa ML</th>
-            <th style={thR}>Imposto</th>
-            <th style={thR}>ADS</th>
-            <th style={thR}>Lucro Bruto</th>
-            <th style={thR}>Lucro Líq.</th>
-            <th style={thR}>Margem</th>
+            <th>Anúncio</th><th>Qtd</th><th>Retorno</th><th>CMV</th><th>Envio Full</th>
+            <th>Taxa ML</th><th>Imposto</th><th>ADS</th><th>Lucro Bruto</th><th>Lucro Líq.</th><th>Margem</th>
           </tr>
         </thead>
         <tbody>
           {anuncios.map((a) => (
-            <tr key={a.item_id} style={{ borderBottom: "1px solid var(--border)" }}>
-              <td style={{ padding: "8px 10px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <tr key={a.item_id}>
+              <td>
                 <span title={a.title} style={{ fontWeight: 600 }}>{a.title}</span>
-                {a.item_id && (
-                  <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>
-                )}
+                {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
               </td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)" }}>{a.qty}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
-              <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
-                {fmtBRL(a.lucro)}
-              </td>
-              <td style={{ textAlign: "right", padding: "8px 10px" }}>
-                <span style={{
-                  fontWeight: 700,
-                  color: a.margem >= 20 ? "var(--green)" : a.margem >= 10 ? "#f7c948" : "var(--red)",
-                }}>
-                  {a.margem.toFixed(1)}%
-                </span>
-              </td>
+              <td style={{ color: "var(--muted)" }}>{a.qty}</td>
+              <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
+              <td style={{ color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
+              <td style={{ color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
+              <td style={{ color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
+              <td style={{ color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
+              <td style={{ color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
+              <td style={{ color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
+              <td style={{ fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucro)}</td>
+              <td><span className={`tag ${margemTag(a.margem)}`}>{a.margem.toFixed(1)}%</span></td>
             </tr>
           ))}
+          {adsNaoVinculado > 0.01 && (
+            <tr>
+              <td style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                ADS de itens sem venda no período
+              </td>
+              <td colSpan={6}></td>
+              <td style={{ color: "var(--red)" }}>{fmtBRL(adsNaoVinculado)}</td>
+              <td></td><td style={{ color: "var(--red)" }}>−{fmtBRL(adsNaoVinculado)}</td><td></td>
+            </tr>
+          )}
         </tbody>
         <tfoot>
-          <tr style={{ borderTop: "2px solid var(--border)", background: "var(--surface2)" }}>
-            <td style={{ padding: "8px 10px", fontWeight: 700 }}>Total</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 700 }}>{sum((a) => a.qty)}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--green)", fontWeight: 700 }}>{fmtBRL(totalRet)}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.custoProduto))}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.envioFull))}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.taxaML))}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.imposto))}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", color: "var(--red)", fontWeight: 700 }}>{fmtBRL(sum((a) => a.ads))}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 700, color: totalBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalBruto)}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 800, color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</td>
-            <td style={{ textAlign: "right", padding: "8px 10px" }}>
-              <span style={{ fontWeight: 700, color: margemTotal >= 20 ? "var(--green)" : margemTotal >= 10 ? "#f7c948" : "var(--red)" }}>
-                {margemTotal.toFixed(1)}%
-              </span>
-            </td>
+          <tr>
+            <td>Total</td>
+            <td style={{ color: "var(--muted)" }}>{sum((a) => a.qty)}</td>
+            <td style={{ color: "var(--green)" }}>{fmtBRL(totalRet)}</td>
+            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.custoProduto))}</td>
+            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.envioFull))}</td>
+            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.taxaML))}</td>
+            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.imposto))}</td>
+            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.ads) + Math.max(adsNaoVinculado, 0))}</td>
+            <td style={{ color: totalBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalBruto)}</td>
+            <td style={{ color: (totalLucro - adsNaoVinculado) >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro - adsNaoVinculado)}</td>
+            <td><span className={`tag ${margemTag(margemTotal)}`}>{margemTotal.toFixed(1)}%</span></td>
           </tr>
         </tfoot>
       </table>
@@ -475,31 +450,31 @@ export default function Dashboard({ data }: Props) {
   const mes = mesAtual();
 
   type PeriodoMode = "hoje" | "ontem" | "3d" | "7d" | "semana" | "mes" | "custom";
-  const [periodoMode, setPeriodoMode]   = useState<PeriodoMode>("mes");
-  const [customFrom,  setCustomFrom]    = useState("");
-  const [customTo,    setCustomTo]      = useState("");
+  const [periodoMode, setPeriodoMode] = useState<PeriodoMode>("mes");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [mlRefreshing, setMlRefreshing] = useState(false);
-  const [mlLoading,    setMlLoading]    = useState(false);
-  const [mlMetrics,    setMlMetrics]    = useState<MlMetrics | null>(null);
-  const [mlAccount,    setMlAccount]    = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [mlMetrics, setMlMetrics] = useState<MlMetrics | null>(null);
+  const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const mountedRef = useRef(true);
 
   const periodoRange = useMemo((): { from: string; to: string } => {
     const today = todayISO();
-    if (periodoMode === "hoje")   return { from: today, to: today };
-    if (periodoMode === "ontem")  return { from: daysAgoISO(1), to: daysAgoISO(1) };
-    if (periodoMode === "3d")     return { from: daysAgoISO(2), to: today };
-    if (periodoMode === "7d")     return { from: daysAgoISO(6), to: today };
+    if (periodoMode === "hoje") return { from: today, to: today };
+    if (periodoMode === "ontem") return { from: daysAgoISO(1), to: daysAgoISO(1) };
+    if (periodoMode === "3d") return { from: daysAgoISO(2), to: today };
+    if (periodoMode === "7d") return { from: daysAgoISO(6), to: today };
     if (periodoMode === "semana") return weekRange();
-    if (periodoMode === "mes")    return monthRange(mes);
-    if (customFrom && customTo)   return { from: customFrom, to: customTo };
+    if (periodoMode === "mes") return monthRange(mes);
+    if (customFrom && customTo) return { from: customFrom, to: customTo };
     return monthRange(mes);
   }, [periodoMode, customFrom, customTo, mes]);
 
   const fetchMetrics = useCallback(async (from: string, to: string) => {
     setMlLoading(true);
     try {
-      const res  = await authedFetch(`/api/ml/metrics?from=${from}&to=${to}`, { cache: "no-store" });
+      const res = await authedFetch(`/api/ml/metrics?from=${from}&to=${to}`, { cache: "no-store" });
       if (!res.ok) { setMlMetrics(null); return; }
       const json = await res.json();
       if (mountedRef.current) setMlMetrics(json);
@@ -521,7 +496,7 @@ export default function Dashboard({ data }: Props) {
 
   useEffect(() => {
     authedFetch("/api/ml/account", { cache: "no-store" })
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (mountedRef.current) setMlAccount(j); })
       .catch(() => {});
   }, []);
@@ -553,14 +528,13 @@ export default function Dashboard({ data }: Props) {
       }
     : data.goals;
 
-  // faturamento bruto (base das metas) e retorno líquido
   const fatBruto = mlMetrics?.faturamentoBruto ?? 0;
-  const retorno  = mlMetrics?.totalRetorno ?? 0;
+  const retorno = mlMetrics?.totalRetorno ?? 0;
+  const lucroLiquido = mlMetrics?.lucroComCustos ?? 0;
 
-  // projeção baseada no faturamento bruto
   const projecao = useMemo(() => {
     if (periodoMode !== "mes" || !mlMetrics) return 0;
-    const diaAtual  = diaAtualNoMes();
+    const diaAtual = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     if (diaAtual <= 0) return 0;
     return (fatBruto / diaAtual) * totalDias;
@@ -568,184 +542,151 @@ export default function Dashboard({ data }: Props) {
 
   const metaDiariaAtiva = goals?.metaDiaria ?? null;
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+  const PERIOD_LABELS: Record<PeriodoMode, string> = {
+    hoje: "Hoje", ontem: "Ontem", "3d": "3 dias", "7d": "7 dias",
+    semana: "Semana", mes: "Mês", custom: "Personalizado",
+  };
 
-      {/* ── Header ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ padding: "6px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
-            <span style={{ fontSize: ".72rem", color: "var(--muted)" }}>Conta ML: </span>
-            <span style={{ fontWeight: 700 }}>{mlAccount?.user?.nickname ?? "—"}</span>
-          </div>
-          <button type="button" className="btn btn-sm btn-ghost"
-            onClick={handleRefreshML} disabled={mlRefreshing}
-            style={{ opacity: mlRefreshing ? 0.6 : 1 }}
-          >
+  const totalCustos =
+    (mlMetrics?.totalCMV ?? 0) + (mlMetrics?.totalEnvio ?? 0) + (mlMetrics?.totalTaxasML ?? 0) +
+    (mlMetrics?.totalImposto ?? 0) + (mlMetrics?.totalAds ?? 0) + (mlMetrics?.custosOperacionais ?? 0);
+
+  const custoRows: { label: string; value: number; color: string }[] = [
+    { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0, color: COST_COLORS.cmv },
+    { label: "Envio Full", value: mlMetrics?.totalEnvio ?? 0, color: COST_COLORS.full },
+    { label: "Taxas ML (comissão)", value: mlMetrics?.totalTaxasML ?? 0, color: COST_COLORS.taxa },
+    { label: "Imposto sobre venda", value: mlMetrics?.totalImposto ?? 0, color: COST_COLORS.imp },
+    { label: "ADS (publicidade)", value: mlMetrics?.totalAds ?? 0, color: COST_COLORS.ads },
+    { label: "Custos operacionais", value: mlMetrics?.custosOperacionais ?? 0, color: COST_COLORS.op },
+  ];
+
+  return (
+    <div className="dash">
+      {/* ── Topbar ── */}
+      <div className="dash-top">
+        <div className="dash-top-left">
+          <span className="acct-chip">
+            <span className="acct-dot" /> Conta ML <b>{mlAccount?.user?.nickname ?? "—"}</b>
+          </span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={handleRefreshML} disabled={mlRefreshing} style={{ opacity: mlRefreshing ? 0.6 : 1 }}>
             {mlRefreshing ? "⏳ Sincronizando..." : "⟳ Atualizar ML"}
           </button>
         </div>
 
-        {/* Filtro de período */}
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {(["hoje", "ontem", "3d", "7d", "semana", "mes", "custom"] as PeriodoMode[]).map((mode) => {
-            const labels: Record<PeriodoMode, string> = {
-              hoje: "📅 Hoje", ontem: "📅 Ontem", "3d": "3 dias", "7d": "7 dias",
-              semana: "📆 Semana", mes: "🗓 Mês", custom: "🔎 Personalizado",
-            };
-            return (
-              <button key={mode} type="button"
-                className={`btn btn-sm ${periodoMode === mode ? "btn-primary" : "btn-ghost"}`}
-                onClick={() => setPeriodoMode(mode)}
-              >
-                {labels[mode]}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div className="seg">
+            {(["hoje", "ontem", "3d", "7d", "semana", "mes", "custom"] as PeriodoMode[]).map((mode) => (
+              <button key={mode} type="button" className={`seg-btn ${periodoMode === mode ? "active" : ""}`} onClick={() => setPeriodoMode(mode)}>
+                {PERIOD_LABELS[mode]}
               </button>
-            );
-          })}
+            ))}
+          </div>
           {periodoMode === "custom" && (
-            <>
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-                style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", padding: "4px 8px", fontSize: ".82rem" }}
-              />
-              <span style={{ color: "var(--muted)" }}>até</span>
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
-                style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", padding: "4px 8px", fontSize: ".82rem" }}
-              />
-            </>
-          )}
-          {mlMetrics && (
-            <span style={{ fontSize: ".72rem", color: "var(--muted)" }}>
-              {mlMetrics.from} → {mlMetrics.to}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="date" className="date-input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+              <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>até</span>
+              <input type="date" className="date-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            </div>
           )}
         </div>
       </div>
 
       {/* ── Conteúdo ── */}
       {mlLoading ? (
-        <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
+        <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
       ) : (
         <>
-          {/* ── Vendas do Dia (sempre visível) ── */}
-          <VendasDoDiaCard hoje={mlMetrics?.hoje} />
+          {/* Vendas do dia */}
+          <VendasDoDiaHero hoje={mlMetrics?.hoje} />
 
-          {/* ── KPIs principais ── */}
-          <div>
-            <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 10 }}>
-              💰 Resultado do Período
+          {/* Resultado do período */}
+          <section>
+            <div className="panel-head">
+              <span className="panel-title">💰 Resultado do período</span>
+              {mlMetrics && <span className="panel-sub">{mlMetrics.from} → {mlMetrics.to} · {PERIOD_LABELS[periodoMode]}</span>}
             </div>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <KpiCard label="Faturamento Bruto ML"        value={fatBruto}                             isCurrency colorOverride="positive" />
-              <KpiCard label="Retorno sobre Vendas"        value={retorno}                              isCurrency colorOverride="neutral" />
-              <KpiCard label="Faturamento Hoje"            value={mlMetrics?.faturamentoHoje ?? 0}      isCurrency colorOverride="positive" />
-              <KpiCard label="Pedidos Hoje"                value={mlMetrics?.pedidosHoje ?? 0}          isCurrency={false} colorOverride="neutral" />
-              <KpiCard label="Devoluções"                  value={mlMetrics?.devolucoes ?? 0}           isCurrency colorOverride="negative" />
-              <KpiCard label="Lucro Líq. (sem custos op.)" value={mlMetrics?.lucroSemCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroSemCustos ?? 0) >= 0 ? "positive" : "negative"} />
-              <KpiCard label="Lucro Líq. (com custos op.)" value={mlMetrics?.lucroComCustos ?? 0}       isCurrency colorOverride={(mlMetrics?.lucroComCustos ?? 0) >= 0 ? "positive" : "negative"} />
-              <KpiCard label="Margem (sem custos op.)"     value={mlMetrics?.margemSemCustos ?? 0}      isPercent  colorOverride="margin" percentValue={mlMetrics?.margemSemCustos ?? 0} />
-              <KpiCard label="Margem (com custos op.)"     value={mlMetrics?.margemComCustos ?? 0}      isPercent  colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
+            <div className="kpi-grid">
+              <Kpi label="Faturamento bruto" value={fatBruto} tone="acc" />
+              <Kpi label="Retorno sobre vendas" value={retorno} tone="acc" />
+              <Kpi label="Lucro líquido" value={lucroLiquido} tone={lucroLiquido >= 0 ? "pos" : "neg"} sub="já com custos operacionais" />
+              <Kpi label="Margem líquida" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct />
+              <Kpi label="Gasto com ADS" value={mlMetrics?.totalAds ?? 0} tone="neg" />
+              <Kpi label="Devoluções" value={mlMetrics?.devolucoes ?? 0} tone="neg" />
             </div>
-          </div>
+          </section>
 
-          {/* ── Meta Diária + Composição de custos + Pedidos ── */}
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {/* Meta diária + Pedidos */}
+          <div className="dash-2col">
             <MetaDiariaCard
               faturamentoHoje={mlMetrics?.faturamentoHoje ?? 0}
               pedidosHoje={mlMetrics?.pedidosHoje ?? 0}
               metaDiaria={metaDiariaAtiva}
             />
-
-            {/* Custos */}
-            <div style={{ flex: 1, minWidth: 240, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
-              <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
-                📊 Composição de Custos
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[
-                  { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0 },
-                  { label: "Envio Full",             value: mlMetrics?.totalEnvio ?? 0 },
-                  { label: "Taxas ML (comissão)",     value: mlMetrics?.totalTaxasML ?? 0 },
-                  { label: "Imposto sobre venda",     value: mlMetrics?.totalImposto ?? 0 },
-                  { label: "ADS (automático)",        value: mlMetrics?.totalAds ?? 0 },
-                  { label: "Custos Operacionais",     value: mlMetrics?.custosOperacionais ?? 0 },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".84rem" }}>
-                    <span style={{ color: "var(--muted)" }}>{label}</span>
-                    <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(value)}</span>
-                  </div>
-                ))}
-                <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8, display: "flex", justifyContent: "space-between", fontSize: ".84rem" }}>
-                  <span style={{ fontWeight: 700 }}>Total de Custos</span>
-                  <span style={{ color: "var(--red)", fontWeight: 800 }}>
-                    {fmtBRL(
-                      (mlMetrics?.totalCMV ?? 0) +
-                      (mlMetrics?.totalEnvio ?? 0) +
-                      (mlMetrics?.totalTaxasML ?? 0) +
-                      (mlMetrics?.totalImposto ?? 0) +
-                      (mlMetrics?.totalAds ?? 0) +
-                      (mlMetrics?.custosOperacionais ?? 0)
-                    )}
-                  </span>
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 12 }}>📦 Pedidos</div>
+              <div className="stat-row"><span className="s-lbl">Pedidos no período</span><span className="s-val">{mlMetrics?.ordersCount ?? 0}</span></div>
+              <div className="stat-row"><span className="s-lbl">Sem produto vinculado</span><span className="s-val" style={{ color: (mlMetrics?.pedidosSemVinculo ?? 0) > 0 ? "var(--yellow)" : undefined }}>{mlMetrics?.pedidosSemVinculo ?? 0}</span></div>
+              <div className="stat-row"><span className="s-lbl">Ticket médio</span><span className="s-val">{(mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(fatBruto / mlMetrics!.ordersCount) : "—"}</span></div>
+              {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)", borderRadius: 8, fontSize: ".76rem", color: "#f7c948" }}>
+                  ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — cadastre o SKU/MLB no Estoque.
                 </div>
-              </div>
-            </div>
-
-            {/* Pedidos */}
-            <div style={{ flex: 1, minWidth: 240, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
-              <div style={{ fontSize: ".7rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
-                📦 Pedidos
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[
-                  { label: "Pedidos no período",    value: String(mlMetrics?.ordersCount ?? 0) },
-                  { label: "Sem produto vinculado", value: String(mlMetrics?.pedidosSemVinculo ?? 0) },
-                  { label: "Ticket médio",          value: (mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(fatBruto / mlMetrics!.ordersCount) : "—" },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".84rem" }}>
-                    <span style={{ color: "var(--muted)" }}>{label}</span>
-                    <span style={{ fontWeight: 700 }}>{value}</span>
-                  </div>
-                ))}
-                {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
-                  <div style={{
-                    marginTop: 4, padding: "6px 10px",
-                    background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)",
-                    borderRadius: 6, fontSize: ".73rem", color: "#f7c948",
-                  }}>
-                    ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — corrija os SKUs no Estoque
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
 
-          {/* ── Tabela lucro por anúncio ── */}
-          <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
-            <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 6 }}>
-              📢 Lucro por Anúncio — Retorno − CMV − ADS
+          {/* Composição de custos + Doughnut */}
+          <div className="dash-2col">
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 14 }}>📊 Composição de Custos</div>
+              {custoRows.map((r) => (
+                <div key={r.label} className="cost-row">
+                  <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
+                  <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>
+                </div>
+              ))}
+              <div className="cost-total">
+                <span>Total de custos</span>
+                <span style={{ color: "var(--red)" }}>{fmtBRL(totalCustos)}</span>
+              </div>
             </div>
-            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 14 }}>
-              Retorno = valor recebido por venda · CMV = custo do produto · ADS = gasto em publicidade no período
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 14 }}>🥧 Distribuição dos Gastos</div>
+              <ExpensesDoughnut
+                produto={mlMetrics?.totalCMV ?? 0}
+                envio={mlMetrics?.totalEnvio ?? 0}
+                taxasML={mlMetrics?.totalTaxasML ?? 0}
+                imposto={mlMetrics?.totalImposto ?? 0}
+                ads={mlMetrics?.totalAds ?? 0}
+                operacional={mlMetrics?.custosOperacionais ?? 0}
+              />
             </div>
-            <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
-          </section>
+          </div>
 
-          {/* ── Metas (só modo mês) ── */}
+          {/* Lucro por anúncio */}
+          <div className="panel">
+            <div className="panel-head" style={{ marginBottom: 8 }}>
+              <span className="panel-title">📢 Lucro por Anúncio</span>
+            </div>
+            <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 14 }}>
+              Lucro líq. = Retorno − CMV − Envio Full − Taxa ML − Imposto − ADS · valores puxados do Mercado Livre
+            </div>
+            <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} adsNaoVinculado={mlMetrics?.adsNaoVinculado ?? 0} />
+          </div>
+
+          {/* Metas (mês) */}
           {periodoMode === "mes" && (
-            <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
-              <div style={{
-                fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em",
-                color: "var(--muted)", fontWeight: 700, marginBottom: 16,
-                display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8,
-              }}>
-                <span>🎯 Metas — {formatMesBR(mes)}</span>
-                <span style={{ fontWeight: 400, fontSize: ".72rem" }}>Projeção: {fmtBRL(projecao)}</span>
+            <div className="panel">
+              <div className="panel-head">
+                <span className="panel-title">🎯 Metas — {formatMesBR(mes)}</span>
+                <span className="panel-sub">Projeção de fechamento: {fmtBRL(projecao)}</span>
               </div>
 
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <KpiCard label="Faturamento do Mês" value={fatBruto}  isCurrency colorOverride="positive" />
-                <KpiCard label="Projeção"           value={projecao}  isCurrency colorOverride="neutral" />
-                <KpiCard label="Margem do Mês"      value={mlMetrics?.margemComCustos ?? 0} isPercent colorOverride="margin" percentValue={mlMetrics?.margemComCustos ?? 0} />
+              <div className="kpi-grid" style={{ marginBottom: 22 }}>
+                <Kpi label="Faturamento do mês" value={fatBruto} tone="acc" />
+                <Kpi label="Projeção" value={projecao} tone="pos" />
+                <Kpi label="Lucro líquido do mês" value={lucroLiquido} tone={lucroLiquido >= 0 ? "pos" : "neg"} />
+                <Kpi label="Margem do mês" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct />
               </div>
 
               {goals?.meta1 ? (
@@ -758,54 +699,31 @@ export default function Dashboard({ data }: Props) {
                   label={goals.label}
                 />
               ) : (
-                <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>
-                  Nenhuma meta configurada. Configure na aba Metas.
-                </div>
+                <div style={{ color: "var(--muted)", fontSize: ".85rem" }}>Nenhuma meta configurada. Configure na aba Metas.</div>
               )}
 
               {goals && (goals.lucro1 || goals.lucro2 || goals.lucro3) && (
                 <LucroMetasBars
-                  lucroAtual={mlMetrics?.lucroComCustos ?? 0}
+                  lucroAtual={lucroLiquido}
                   lucro1={goals.lucro1 ?? null}
                   lucro2={goals.lucro2 ?? null}
                   lucro3={goals.lucro3 ?? null}
                 />
               )}
 
-              <div style={{ marginTop: 20 }}>
-                <GoalsProgressBars
-                  goals={goals}
-                  days={[]}
-                  liveRevenue={fatBruto}
-                />
+              <div style={{ marginTop: 22 }}>
+                <GoalsProgressBars goals={goals} days={[]} liveRevenue={fatBruto} />
               </div>
-            </section>
-          )}
-
-          {/* ── Gráfico (modo mês) ── */}
-          {periodoMode === "mes" && (
-            <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px" }}>
-              <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>
-                📈 Evolução do Faturamento
-              </div>
-              <RevenueLineChart days={[]} windowDays={30} />
-            </section>
-          )}
-
-          {/* ── Doughnut ── */}
-          <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "18px 20px", maxWidth: 480 }}>
-            <div style={{ fontSize: ".78rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700, marginBottom: 14 }}>
-              🥧 Composição dos Gastos
             </div>
-            <ExpensesDoughnut
-              produto={mlMetrics?.totalCMV ?? 0}
-              envio={mlMetrics?.totalEnvio ?? 0}
-              taxasML={mlMetrics?.totalTaxasML ?? 0}
-              imposto={mlMetrics?.totalImposto ?? 0}
-              ads={mlMetrics?.totalAds ?? 0}
-              operacional={mlMetrics?.custosOperacionais ?? 0}
-            />
-          </section>
+          )}
+
+          {/* Gráfico (mês) */}
+          {periodoMode === "mes" && (
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 14 }}>📈 Evolução do Faturamento</div>
+              <RevenueLineChart days={[]} windowDays={30} />
+            </div>
+          )}
         </>
       )}
     </div>
