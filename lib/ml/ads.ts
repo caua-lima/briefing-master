@@ -89,3 +89,40 @@ export async function getAdsSpendByItem(
 
   return adsByItem;
 }
+
+/** Diagnóstico da API de ADS: mostra advertiser, status e amostra dos itens. */
+export async function probeAds(from: string, to: string): Promise<Record<string, unknown>> {
+  try {
+    const token = await getValidMlAccessToken();
+    const advRes = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
+      headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
+      cache: "no-store",
+    });
+    const advBody = await advRes.json().catch(() => null);
+    const advertisers = (advBody as { advertisers?: Advertiser[] })?.advertisers ?? [];
+    const mlb = advertisers.find((a) => String(a?.site_id ?? "").toUpperCase() === "MLB");
+    const advertiserId = (mlb ?? advertisers[0])?.advertiser_id ?? null;
+
+    let itemsStatus: number | null = null;
+    let itemsSample: unknown = null;
+    if (advertiserId != null) {
+      const r = await fetch(
+        `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?date_from=${from}&date_to=${to}&metrics=cost&limit=3`,
+        { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" },
+      );
+      itemsStatus = r.status;
+      itemsSample = await r.json().catch(() => null);
+    }
+
+    return {
+      periodo: { from, to },
+      advertisersStatus: advRes.status,
+      advertisersCount: advertisers.length,
+      advertiserId,
+      itemsStatus,
+      itemsSample,
+    };
+  } catch (e) {
+    return { error: String(e) };
+  }
+}

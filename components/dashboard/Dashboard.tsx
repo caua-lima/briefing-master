@@ -65,6 +65,7 @@ type MlMetrics = {
   pedidosSemVinculo:  number;
   hoje:               HojeBreakdown;
   serieDiaria:        { data: string; faturamento: number }[];
+  adsDiag?:           unknown;
   from:               string;
   to:                 string;
 };
@@ -326,14 +327,9 @@ export default function Dashboard({ data }: Props) {
   const [diag, setDiag] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  async function runDiagAds() {
-    setDiag("⏳ Consultando a API de ADS…");
-    try {
-      const r = await authedFetch("/api/ml/debug-ads", { cache: "no-store" });
-      setDiag(JSON.stringify(await r.json(), null, 2));
-    } catch (e) {
-      setDiag("Erro: " + String(e));
-    }
+  function runDiagAds() {
+    const d = mlMetrics?.adsDiag;
+    setDiag(d ? JSON.stringify(d, null, 2) : "Sem diagnóstico disponível (ADS pode estar OK ou período sem dados).");
   }
 
   const periodoRange = useMemo((): { from: string; to: string } => {
