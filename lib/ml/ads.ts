@@ -27,8 +27,18 @@ async function getAdvertiserId(token: string): Promise<string | null> {
   const mlb = list.find((a) => String(a.site_id ?? "").toUpperCase() === "MLB");
   const chosen = mlb ?? list[0];
   const id = chosen?.advertiser_id != null ? String(chosen.advertiser_id) : null;
-  advCache = { id, at: Date.now() };
+  if (id) advCache = { id, at: Date.now() }; // NÃO cacheia null (evita travar em 0)
   return id;
+}
+
+async function fetchJsonRetry(url: string, token: string, tries = 3): Promise<Response> {
+  let res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" });
+  // 429 (rate limit) / 5xx → espera curta e tenta de novo
+  for (let i = 1; i < tries && (res.status === 429 || res.status >= 500); i++) {
+    await new Promise((r) => setTimeout(r, 400 * i));
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" });
+  }
+  return res;
 }
 
 /**
@@ -56,10 +66,7 @@ export async function getAdsSpendByItem(
       `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
       `date_from=${from}&date_to=${to}&metrics=cost&limit=${limit}&offset=${offset}`;
 
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
-      cache: "no-store",
-    });
+    const res = await fetchJsonRetry(url, token);
     if (!res.ok) throw new Error(`ml_ads_failed: ${await res.text()}`);
 
     const j = (await res.json()) as {

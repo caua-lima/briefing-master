@@ -12,7 +12,7 @@ import {
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
 import ExpensesDoughnut from "./ExpensesDoughnut";
-import GoalsChart from "./GoalsChart";
+import MetasGauge from "./MetasGauge";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
 type Props = { data: UserData };
@@ -236,117 +236,6 @@ function MetaMargemBar({ margemAtual, metaMargem, lucroAtual }: { margemAtual: n
   );
 }
 
-// ── Metas em Cascata ───────────────────────────────────────────
-function MetasCascata({
-  fatMes, projecao, meta1, meta2, meta3, label,
-}: {
-  fatMes: number; projecao: number; meta1: number;
-  meta2: number | null; meta3: number | null; label?: string;
-}) {
-  const metas = [
-    { valor: meta1, emoji: "🥇", nome: label || "Meta 1", cor: "#4f8ef7", corBg: "rgba(79,142,247,.13)" },
-    ...(meta2 ? [{ valor: meta2, emoji: "🥈", nome: "Meta 2", cor: "#f7c948", corBg: "rgba(247,201,72,.13)" }] : []),
-    ...(meta3 ? [{ valor: meta3, emoji: "🥉", nome: "Meta 3", cor: "#a855f7", corBg: "rgba(168,85,247,.13)" }] : []),
-  ];
-  const metasVisiveis: typeof metas = [];
-  for (let i = 0; i < metas.length; i++) {
-    metasVisiveis.push(metas[i]);
-    if (fatMes < metas[i].valor) break;
-  }
-  const maxValor = metas[metas.length - 1].valor;
-  const barraMax = Math.max(maxValor * 1.05, fatMes * 1.05, projecao * 1.05);
-  const pctFat = Math.min((fatMes / barraMax) * 100, 100);
-  const pctProj = Math.min((projecao / barraMax) * 100, 100);
-
-  return (
-    <div style={{ width: "100%" }}>
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        {metasVisiveis.map((m, i) => {
-          const batida = fatMes >= m.valor;
-          const ativa = !batida && (i === 0 || fatMes >= metas[i - 1].valor);
-          return (
-            <div key={m.nome} style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "5px 12px",
-              background: batida || ativa ? m.corBg : "var(--surface2)",
-              border: `1px solid ${batida || ativa ? m.cor : "var(--border)"}`,
-              borderRadius: 999, fontSize: ".78rem",
-              opacity: batida || ativa ? 1 : 0.5, transition: "all .3s",
-            }}>
-              <span>{m.emoji}</span>
-              <span style={{ fontWeight: 700, color: batida || ativa ? m.cor : "var(--muted)" }}>{m.nome}</span>
-              <span style={{ color: "var(--muted)" }}>{fmtBRL(m.valor)}</span>
-              {batida && <span style={{ color: m.cor, fontWeight: 800 }}>✓</span>}
-              {ativa && !batida && <span style={{ color: m.cor, fontSize: ".7rem" }}>← em curso</span>}
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ position: "relative", height: 36, borderRadius: 999, background: "var(--surface2)", overflow: "visible", marginTop: 26 }}>
-        {metasVisiveis.map((m) => {
-          const pct = Math.min((m.valor / barraMax) * 100, 99.5);
-          const batida = fatMes >= m.valor;
-          return (
-            <div key={m.valor} style={{
-              position: "absolute", left: `${pct}%`, top: 0, bottom: 0,
-              width: 2, background: m.cor, opacity: batida ? 1 : 0.5, zIndex: 3, borderRadius: 2,
-            }}>
-              <div style={{
-                position: "absolute", bottom: "calc(100% + 4px)", left: "50%",
-                transform: "translateX(-50%)", fontSize: ".65rem", color: m.cor,
-                fontWeight: 700, whiteSpace: "nowrap", background: "var(--bg)",
-                padding: "1px 4px", borderRadius: 4, border: `1px solid ${m.cor}`,
-              }}>
-                {m.emoji} {fmtBRL(m.valor)}
-              </div>
-            </div>
-          );
-        })}
-        <div style={{
-          position: "absolute", left: 0, top: "25%", height: "50%",
-          width: `${pctProj}%`, background: "rgba(255,255,255,.06)",
-          borderRadius: 999, border: "1px dashed rgba(255,255,255,.15)",
-          zIndex: 1, transition: "width .5s ease",
-        }} />
-        <div style={{
-          position: "absolute", left: 0, top: 0, bottom: 0,
-          width: `${pctFat}%`,
-          background: fatMes >= (meta3 ?? meta2 ?? meta1)
-            ? "linear-gradient(90deg, #4f8ef7, #a855f7)"
-            : fatMes >= (meta2 ?? meta1)
-              ? "linear-gradient(90deg, #4f8ef7, #f7c948)"
-              : "linear-gradient(90deg, #4f8ef7, #60a5fa)",
-          borderRadius: 999, zIndex: 2, transition: "width .5s ease",
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
-          paddingRight: 10, minWidth: fatMes > 0 ? 60 : 0,
-        }}>
-          {fatMes > 0 && (
-            <span style={{ fontSize: ".72rem", fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{fmtBRL(fatMes)}</span>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".7rem", color: "var(--muted)", marginTop: 10, flexWrap: "wrap", gap: 4 }}>
-        <div style={{ display: "flex", gap: 14 }}>
-          <span>
-            <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "#4f8ef7", marginRight: 4, verticalAlign: "middle" }} />
-            Faturamento bruto
-          </span>
-          <span>
-            <span style={{ display: "inline-block", width: 10, height: 4, borderRadius: 2, background: "rgba(255,255,255,.2)", marginRight: 4, verticalAlign: "middle", border: "1px dashed rgba(255,255,255,.3)" }} />
-            Projeção ({fmtBRL(projecao)})
-          </span>
-        </div>
-        {projecao >= meta1 && (
-          <span style={{ color: "#4ade80", fontWeight: 600 }}>
-            📈 Projeção bate {projecao >= (meta3 ?? meta2 ?? meta1) ? "a Meta 3!" : projecao >= (meta2 ?? meta1) ? "a Meta 2!" : "a Meta 1!"}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Tabela de Lucro por Anúncio ────────────────────────────────
 function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult[]; adsNaoVinculado: number }) {
   if (!anuncios.length) {
@@ -434,7 +323,18 @@ export default function Dashboard({ data }: Props) {
   const [mlLoading, setMlLoading] = useState(false);
   const [mlMetrics, setMlMetrics] = useState<MlMetrics | null>(null);
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
+  const [diag, setDiag] = useState<string | null>(null);
   const mountedRef = useRef(true);
+
+  async function runDiagAds() {
+    setDiag("⏳ Consultando a API de ADS…");
+    try {
+      const r = await authedFetch("/api/ml/debug-ads", { cache: "no-store" });
+      setDiag(JSON.stringify(await r.json(), null, 2));
+    } catch (e) {
+      setDiag("Erro: " + String(e));
+    }
+  }
 
   const periodoRange = useMemo((): { from: string; to: string } => {
     const today = todayISO();
@@ -562,6 +462,9 @@ export default function Dashboard({ data }: Props) {
           <button type="button" className="btn btn-sm btn-ghost" onClick={handleRefreshML} disabled={mlRefreshing} style={{ opacity: mlRefreshing ? 0.6 : 1 }}>
             {mlRefreshing ? "⏳ Sincronizando..." : "⟳ Atualizar ML"}
           </button>
+          {(mlMetrics && mlMetrics.totalAds === 0) && (
+            <button type="button" className="btn btn-xs btn-ghost" onClick={runDiagAds} title="Diagnóstico do ADS">🐞 ADS</button>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -581,6 +484,17 @@ export default function Dashboard({ data }: Props) {
           )}
         </div>
       </div>
+
+      {diag && (
+        <pre style={{
+          position: "relative", background: "var(--surface)", border: "1px solid var(--border)",
+          borderRadius: 8, padding: "12px 14px", fontSize: ".72rem", maxHeight: 300, overflow: "auto",
+          whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--text)",
+        }}>
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => setDiag(null)} style={{ position: "absolute", right: 8, top: 8 }}>✕</button>
+          {diag}
+        </pre>
+      )}
 
       {/* ── Conteúdo ── */}
       {mlLoading ? (
@@ -665,60 +579,39 @@ export default function Dashboard({ data }: Props) {
             <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} adsNaoVinculado={mlMetrics?.adsNaoVinculado ?? 0} />
           </div>
 
-          {/* Metas (mês) */}
+          {/* Acompanhamento das metas (mês) — painel com velocímetro */}
           {periodoMode === "mes" && (
-            <div className="panel">
-              <div className="panel-head">
-                <span className="panel-title">🎯 Metas — {formatMesBR(mes)}</span>
+            <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="panel-head" style={{ marginBottom: 0 }}>
+                <span className="panel-title">🎯 Acompanhamento das Metas — {formatMesBR(mes)}</span>
                 <span className="panel-sub">Projeção de fechamento: {fmtBRL(projecao)}</span>
               </div>
 
-              <div className="kpi-grid" style={{ marginBottom: 22 }}>
-                <Kpi label="Faturamento do mês" value={fatBruto} tone="acc" />
-                <Kpi label="Projeção" value={projecao} tone="pos" />
-                <Kpi label="Lucro líquido do mês" value={lucroLiquido} tone={lucroLiquido >= 0 ? "pos" : "neg"} />
-                <Kpi label="Margem do mês" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct />
-              </div>
-
               {goals?.meta1 ? (
-                <MetasCascata
-                  fatMes={fatBruto}
-                  projecao={projecao}
-                  meta1={goals.meta1}
-                  meta2={goals.meta2 ?? null}
-                  meta3={goals.meta3 ?? null}
-                  label={goals.label}
-                />
+                <>
+                  <MetasGauge
+                    fatBruto={fatBruto}
+                    meta1={goals.meta1}
+                    meta2={goals.meta2 ?? null}
+                    meta3={goals.meta3 ?? null}
+                    projecao={projecao}
+                    diaAtual={diaAtualNoMes()}
+                    totalDias={diasNoMes(mes)}
+                  />
+                  <div className="panel">
+                    <MetaMargemBar
+                      margemAtual={mlMetrics?.margemComCustos ?? 0}
+                      metaMargem={goals.metaMargem ?? 10}
+                      lucroAtual={lucroLiquido}
+                    />
+                  </div>
+                </>
               ) : (
-                <div style={{ color: "var(--muted)", fontSize: ".85rem" }}>Nenhuma meta configurada. Configure na aba Metas.</div>
+                <div className="panel" style={{ color: "var(--muted)", fontSize: ".85rem" }}>
+                  Nenhuma meta configurada. Configure na aba Metas.
+                </div>
               )}
-
-              {goals && (
-                <MetaMargemBar
-                  margemAtual={mlMetrics?.margemComCustos ?? 0}
-                  metaMargem={goals.metaMargem ?? 10}
-                  lucroAtual={lucroLiquido}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Gráfico de acompanhamento das metas (mês) */}
-          {periodoMode === "mes" && goals?.meta1 && (
-            <div className="panel">
-              <div className="panel-head">
-                <span className="panel-title">📊 Acompanhamento das Metas</span>
-                <span className="panel-sub">Acumulado vs ritmo ideal · projeção {fmtBRL(projecao)}</span>
-              </div>
-              <GoalsChart
-                serieDiaria={mlMetrics?.serieDiaria ?? []}
-                mes={mes}
-                meta1={goals.meta1}
-                meta2={goals.meta2 ?? null}
-                meta3={goals.meta3 ?? null}
-                projecao={projecao}
-              />
-            </div>
+            </section>
           )}
         </>
       )}

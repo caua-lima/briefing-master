@@ -263,14 +263,13 @@ export async function GET(req: Request) {
     const hj = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}-${String(brNow.getUTCDate()).padStart(2, "0")}`;
 
     // ── 3. ADS por item_id (período + hoje) ───────────────────
-    // A API de ADS rejeita datas futuras → limita o fim ao dia de hoje
+    // A API de ADS rejeita datas futuras → limita o fim ao dia de hoje.
+    // Chamadas SEQUENCIAIS: a 1ª aquece o cache do advertiser e evita o burst
+    // paralelo que causava rate limit (ADS zerado).
     const adsTo = toStr > hj ? hj : toStr;
-    const [adsByItem, adsHoje] = await Promise.all([
-      fromStr <= adsTo
-        ? getAdsSpendByItem(fromStr, adsTo).catch(() => ({} as Record<string, number>))
-        : Promise.resolve({} as Record<string, number>),
-      getAdsSpendByItem(hj, hj).catch(() => ({} as Record<string, number>)),
-    ]);
+    const adsByItem: Record<string, number> =
+      fromStr <= adsTo ? await getAdsSpendByItem(fromStr, adsTo).catch(() => ({})) : {};
+    const adsHoje: Record<string, number> = await getAdsSpendByItem(hj, hj).catch(() => ({}));
 
     // ── 4. Pedidos do período + de hoje ───────────────────────
     const [orders, ordersHoje] = await Promise.all([
