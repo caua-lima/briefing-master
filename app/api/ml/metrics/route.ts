@@ -39,6 +39,7 @@ type AnuncioResult = {
   lucro: number;
   margem: number;
   qty: number;
+  semVenda?: boolean;
 };
 
 type Aggregates = {
@@ -278,20 +279,41 @@ function computeAggregates(
     if (!vinculado && items.length > 0) pedidosSemVinculo++;
   }
 
+  const usedAdKeys = new Set<string>();
   for (const [chave, a] of anunciosMap) {
-    // ADS pode vir como "6577305336" ou "MLB6577305336"
-    a.ads = adsByItem[chave] ?? adsByItem[`MLB${chave}`] ?? adsByItem[a.item_id.toUpperCase()] ?? 0;
+    // adsByItem tem chaves em MLB uppercase (ex.: "MLB6577305336")
+    const candidates = [chave, `MLB${chave}`, a.item_id.toUpperCase()];
+    let ads = 0;
+    for (const c of candidates) {
+      if (adsByItem[c] != null) { ads = adsByItem[c]; usedAdKeys.add(c); break; }
+    }
+    a.ads = ads;
     a.lucroBruto = a.retorno - a.custoProduto - a.envioFull;
     a.lucro = a.lucroBruto - a.ads - a.imposto - a.taxaML;
     a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
   }
 
-  // ADS total = TODO o investimento do período (inclui itens anunciados sem venda)
-  const totalAdsFull = Object.values(adsByItem).reduce((s, v) => s + v, 0);
-  const totalAdsMatched = Array.from(anunciosMap.values()).reduce((s, a) => s + a.ads, 0);
-  const adsNaoVinculado = Math.max(totalAdsFull - totalAdsMatched, 0);
+  // Anúncios com gasto de ADS mas SEM venda no período → viram linhas próprias
+  for (const [key, cost] of Object.entries(adsByItem)) {
+    if (cost <= 0 || usedAdKeys.has(key)) continue;
+    const prod = porMlb.get(normalizeItemId(key));
+    anunciosMap.set(`__semvenda_${key}`, {
+      item_id: key,
+      title: prod?.name || `Anúncio ${key}`,
+      retorno: 0, custoProduto: 0, envioFull: 0, imposto: 0, taxaML: 0,
+      ads: cost, lucroBruto: 0, lucro: -cost, margem: 0, qty: 0,
+      semVenda: true,
+    });
+  }
 
-  const anuncios = Array.from(anunciosMap.values()).sort((a, b) => b.retorno - a.retorno);
+  // ADS total = TODO o investimento do período (agora todo representado em linhas)
+  const totalAdsFull = Object.values(adsByItem).reduce((s, v) => s + v, 0);
+  const adsNaoVinculado = 0;
+
+  // vendidos primeiro (por retorno), depois os "sem venda" (por ADS)
+  const anuncios = Array.from(anunciosMap.values()).sort(
+    (a, b) => (b.retorno - a.retorno) || (b.ads - a.ads),
+  );
 
   return {
     faturamentoBruto,

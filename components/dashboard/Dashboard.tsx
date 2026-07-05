@@ -31,6 +31,7 @@ type AnuncioResult = {
   lucro:        number;
   margem:       number;
   qty:          number;
+  semVenda?:    boolean;
 };
 
 type HojeBreakdown = {
@@ -200,11 +201,18 @@ function MetaDiariaCard({
 }
 
 // ── Tabela de Lucro por Anúncio ────────────────────────────────
-function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult[]; adsNaoVinculado: number }) {
+function fmtRoas(retorno: number, ads: number): { txt: string; color: string } {
+  if (ads <= 0) return { txt: "—", color: "var(--muted)" };
+  const r = retorno / ads;
+  const color = r >= 3 ? "var(--green)" : r >= 1.5 ? "var(--yellow)" : "var(--red)";
+  return { txt: `${r.toFixed(2)}x`, color };
+}
+
+function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
   if (!anuncios.length) {
     return (
       <div style={{ color: "var(--muted)", fontSize: ".85rem", padding: "16px 0", textAlign: "center" }}>
-        Nenhum anúncio vinculado no período. Cadastre os produtos (SKU/MLB) no Estoque.
+        Nenhum anúncio no período. Cadastre os produtos (SKU/MLB) no Estoque.
       </div>
     );
   }
@@ -212,8 +220,10 @@ function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult
   const totalRet = sum((a) => a.retorno);
   const totalBruto = sum((a) => a.lucroBruto);
   const totalLucro = sum((a) => a.lucro);
+  const totalAds = sum((a) => a.ads);
   const margemTotal = totalRet > 0 ? (totalLucro / totalRet) * 100 : 0;
   const margemTag = (m: number) => (m >= 20 ? "tag-g" : m >= 10 ? "tag-y" : "tag-r");
+  const totalRoas = fmtRoas(totalRet, totalAds);
 
   return (
     <div className="table-wrapper" style={{ border: "none" }}>
@@ -221,38 +231,33 @@ function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult
         <thead>
           <tr>
             <th>Anúncio</th><th>Qtd</th><th>Retorno</th><th>CMV</th><th>Envio Full</th>
-            <th>Taxa ML</th><th>Imposto</th><th>ADS</th><th>Lucro Bruto</th><th>Lucro Líq.</th><th>Margem</th>
+            <th>Taxa ML</th><th>Imposto</th><th>ADS</th><th>ROAS</th><th>Lucro Bruto</th><th>Lucro Líq.</th><th>Margem</th>
           </tr>
         </thead>
         <tbody>
-          {anuncios.map((a) => (
-            <tr key={a.item_id}>
-              <td>
-                <span title={a.title} style={{ fontWeight: 600 }}>{a.title}</span>
-                {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
-              </td>
-              <td style={{ color: "var(--muted)" }}>{a.qty}</td>
-              <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
-              <td style={{ color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
-              <td style={{ color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
-              <td style={{ color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
-              <td style={{ color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
-              <td style={{ color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
-              <td style={{ color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
-              <td style={{ fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucro)}</td>
-              <td><span className={`tag ${margemTag(a.margem)}`}>{a.margem.toFixed(1)}%</span></td>
-            </tr>
-          ))}
-          {adsNaoVinculado > 0.01 && (
-            <tr>
-              <td style={{ color: "var(--muted)", fontStyle: "italic" }}>
-                ADS de itens sem venda no período
-              </td>
-              <td colSpan={6}></td>
-              <td style={{ color: "var(--red)" }}>{fmtBRL(adsNaoVinculado)}</td>
-              <td></td><td style={{ color: "var(--red)" }}>−{fmtBRL(adsNaoVinculado)}</td><td></td>
-            </tr>
-          )}
+          {anuncios.map((a) => {
+            const roas = fmtRoas(a.retorno, a.ads);
+            return (
+              <tr key={a.item_id} style={a.semVenda ? { opacity: 0.72 } : undefined}>
+                <td>
+                  <span title={a.title} style={{ fontWeight: 600 }}>{a.title}</span>
+                  {a.semVenda && <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5 }}>SEM VENDA</span>}
+                  {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
+                </td>
+                <td style={{ color: "var(--muted)" }}>{a.qty}</td>
+                <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
+                <td style={{ color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
+                <td style={{ color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
+                <td style={{ color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
+                <td style={{ color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
+                <td style={{ color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
+                <td style={{ color: roas.color, fontWeight: 700 }}>{roas.txt}</td>
+                <td style={{ color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
+                <td style={{ fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucro)}</td>
+                <td>{a.semVenda ? <span style={{ color: "var(--muted)" }}>—</span> : <span className={`tag ${margemTag(a.margem)}`}>{a.margem.toFixed(1)}%</span>}</td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr>
@@ -263,9 +268,10 @@ function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult
             <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.envioFull))}</td>
             <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.taxaML))}</td>
             <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.imposto))}</td>
-            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.ads) + Math.max(adsNaoVinculado, 0))}</td>
+            <td style={{ color: "var(--red)" }}>{fmtBRL(totalAds)}</td>
+            <td style={{ color: totalRoas.color }}>{totalRoas.txt}</td>
             <td style={{ color: totalBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalBruto)}</td>
-            <td style={{ color: (totalLucro - adsNaoVinculado) >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro - adsNaoVinculado)}</td>
+            <td style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</td>
             <td><span className={`tag ${margemTag(margemTotal)}`}>{margemTotal.toFixed(1)}%</span></td>
           </tr>
         </tfoot>
@@ -561,7 +567,7 @@ export default function Dashboard({ data }: Props) {
             <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 14 }}>
               Lucro líq. = Retorno − CMV − Envio Full − Taxa ML − Imposto − ADS · valores puxados do Mercado Livre
             </div>
-            <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} adsNaoVinculado={mlMetrics?.adsNaoVinculado ?? 0} />
+            <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
           </div>
         </>
       )}
