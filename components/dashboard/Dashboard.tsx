@@ -485,6 +485,33 @@ export default function Dashboard({ data }: Props) {
         <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
       ) : (
         <>
+          {/* Acompanhamento das metas (topo, modo mês) */}
+          {periodoMode === "mes" && (
+            <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="panel-head" style={{ marginBottom: 0 }}>
+                <span className="panel-title">🎯 Acompanhamento das Metas — {formatMesBR(mes)}</span>
+                <span className="panel-sub">Projeção de fechamento: {fmtBRL(projecao)}</span>
+              </div>
+              {goals?.meta1 ? (
+                <MetasGauge
+                  fatBruto={fatBruto}
+                  meta1={goals.meta1}
+                  meta2={goals.meta2 ?? null}
+                  meta3={goals.meta3 ?? null}
+                  projecao={projecao}
+                  diaAtual={diaAtualNoMes()}
+                  totalDias={diasNoMes(mes)}
+                  margemAtual={mlMetrics?.margemComCustos ?? 0}
+                  metaMargem={goals.metaMargem ?? 10}
+                />
+              ) : (
+                <div className="panel" style={{ color: "var(--muted)", fontSize: ".85rem" }}>
+                  Nenhuma meta configurada. Configure na aba Metas.
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Vendas do dia */}
           <VendasDoDiaHero hoje={mlMetrics?.hoje} />
 
@@ -562,34 +589,6 @@ export default function Dashboard({ data }: Props) {
             </div>
             <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} adsNaoVinculado={mlMetrics?.adsNaoVinculado ?? 0} />
           </div>
-
-          {/* Acompanhamento das metas (mês) — painel com velocímetro */}
-          {periodoMode === "mes" && (
-            <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div className="panel-head" style={{ marginBottom: 0 }}>
-                <span className="panel-title">🎯 Acompanhamento das Metas — {formatMesBR(mes)}</span>
-                <span className="panel-sub">Projeção de fechamento: {fmtBRL(projecao)}</span>
-              </div>
-
-              {goals?.meta1 ? (
-                <MetasGauge
-                  fatBruto={fatBruto}
-                  meta1={goals.meta1}
-                  meta2={goals.meta2 ?? null}
-                  meta3={goals.meta3 ?? null}
-                  projecao={projecao}
-                  diaAtual={diaAtualNoMes()}
-                  totalDias={diasNoMes(mes)}
-                  margemAtual={mlMetrics?.margemComCustos ?? 0}
-                  metaMargem={goals.metaMargem ?? 10}
-                />
-              ) : (
-                <div className="panel" style={{ color: "var(--muted)", fontSize: ".85rem" }}>
-                  Nenhuma meta configurada. Configure na aba Metas.
-                </div>
-              )}
-            </section>
-          )}
         </>
       )}
     </div>

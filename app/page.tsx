@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useUserData } from "@/components/useUserData";
-import { AccessGuard } from "@/components/tabs/AccessGuard";
+import { AccessGuard, useAccess } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
 import MetasTab from "@/components/tabs/MetasTab";
 import CustosTab from "@/components/tabs/CustosTab";
@@ -14,12 +14,12 @@ import { MlAccountStatus } from "@/components/MlAccountStatus";
 
 type Tab = "dashboard" | "metas" | "custos" | "estoque" | "acesso";
 
-const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
+const NAV_ITEMS: { id: Tab; label: string; icon: string; adminOnly?: boolean }[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "metas", label: "Metas", icon: "🎯" },
-  { id: "custos", label: "Custos", icon: "💸" },
-  { id: "estoque", label: "Estoque", icon: "📦" },
-  { id: "acesso", label: "Acesso", icon: "🔐" },
+  { id: "metas", label: "Metas", icon: "🎯", adminOnly: true },
+  { id: "custos", label: "Custos", icon: "💸", adminOnly: true },
+  { id: "estoque", label: "Estoque", icon: "📦", adminOnly: true },
+  { id: "acesso", label: "Acesso", icon: "🔐", adminOnly: true },
 ];
 
 export default function Page() {
@@ -58,6 +58,10 @@ function AppShell() {
   const [swappingAccount, setSwappingAccount] = useState(false);
 
   const data = useUserData(user?.uid);
+  const { isAdmin } = useAccess();
+  const navItems = NAV_ITEMS.filter((item) => isAdmin || !item.adminOnly);
+  // aba efetiva: não-admin fica sempre no dashboard
+  const activeTab: Tab = isAdmin ? tab : "dashboard";
 
   if (!user) return null;
 
@@ -157,7 +161,7 @@ function AppShell() {
 
           {/* Nav items */}
           <nav style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -173,23 +177,23 @@ function AppShell() {
                   padding: "9px 14px",
                   borderRadius: 8,
                   border: "none",
-                  background: tab === item.id ? "var(--accent)" : "transparent",
-                  color: tab === item.id ? "#fff" : "var(--muted)",
+                  background: activeTab === item.id ? "var(--accent)" : "transparent",
+                  color: activeTab === item.id ? "#fff" : "var(--muted)",
                   fontSize: ".88rem",
-                  fontWeight: tab === item.id ? 700 : 500,
+                  fontWeight: activeTab === item.id ? 700 : 500,
                   cursor: "pointer",
                   marginBottom: 2,
                   transition: "background .15s, color .15s",
                   textAlign: "left",
                 }}
                 onMouseEnter={(e) => {
-                  if (tab !== item.id) {
+                  if (activeTab !== item.id) {
                     (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)";
                     (e.currentTarget as HTMLButtonElement).style.color = "var(--text)";
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (tab !== item.id) {
+                  if (activeTab !== item.id) {
                     (e.currentTarget as HTMLButtonElement).style.background = "transparent";
                     (e.currentTarget as HTMLButtonElement).style.color = "var(--muted)";
                   }
@@ -295,8 +299,8 @@ function AppShell() {
             </button>
 
             <div style={{ fontWeight: 600, fontSize: ".95rem" }}>
-              {NAV_ITEMS.find((n) => n.id === tab)?.icon}{" "}
-              {NAV_ITEMS.find((n) => n.id === tab)?.label}
+              {NAV_ITEMS.find((n) => n.id === activeTab)?.icon}{" "}
+              {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -319,11 +323,11 @@ function AppShell() {
               </div>
             ) : (
               <>
-                {tab === "dashboard" && <Dashboard data={data} />}
-                {tab === "metas" && <MetasTab uid={user.uid} data={data} />}
-                {tab === "custos" && <CustosTab uid={user.uid} data={data} />}
-                {tab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
-                {tab === "acesso" && (
+                {activeTab === "dashboard" && <Dashboard data={data} />}
+                {activeTab === "metas" && isAdmin && <MetasTab uid={user.uid} data={data} />}
+                {activeTab === "custos" && isAdmin && <CustosTab uid={user.uid} data={data} />}
+                {activeTab === "estoque" && isAdmin && <EstoqueTab uid={user.uid} data={data} />}
+                {activeTab === "acesso" && isAdmin && (
                   <AccessControlTab uid={user.uid} data={data} />
                 )}
               </>

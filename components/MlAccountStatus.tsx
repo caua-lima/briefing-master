@@ -13,7 +13,6 @@ type Account = {
 export function MlAccountStatus() {
   const [data, setData] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncLoading, setSyncLoading] = useState(false);
   const [swapLoading, setSwapLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -37,26 +36,8 @@ export function MlAccountStatus() {
   if (loading) return <MLConnectButton />;
   if (!data || !data.connected) return <MLConnectButton />;
 
-  async function sync() {
-    setSyncLoading(true);
-    setFeedback(null);
-    try {
-      const res = await authedFetch('/api/ml/sync-all', { method: 'POST' });
-      if (res.ok) {
-        setFeedback({ type: 'success', message: '✅ Sincronização concluída!' });
-        setTimeout(() => setFeedback(null), 4000);
-      } else {
-        setFeedback({ type: 'error', message: '❌ Erro ao sincronizar' });
-      }
-    } catch {
-      setFeedback({ type: 'error', message: '❌ Erro ao sincronizar' });
-    } finally {
-      setSyncLoading(false);
-    }
-  }
-
   async function swapAccount() {
-    if (!confirm('Trocar conta do Mercado Livre?\n\nVocê será redirecionado para o login do ML.')) return;
+    if (!confirm('Reconectar o Mercado Livre?\n\nVocê será redirecionado para o login do ML e deve autorizar todas as permissões (inclusive Publicidade).')) return;
     setSwapLoading(true);
     setFeedback(null);
     try {
@@ -82,30 +63,17 @@ export function MlAccountStatus() {
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button
-          onClick={sync}
-          disabled={syncLoading}
-          className="btn btn-xs"
-          style={{
-            padding: '6px 10px', borderRadius: 8,
-            background: syncLoading ? '#f5f5f5' : '#fff',
-            border: '1px solid var(--border)',
-            opacity: syncLoading ? 0.6 : 1,
-            cursor: syncLoading ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {syncLoading ? '⏳ Sincronizando...' : '🔄 Sincronizar'}
-        </button>
-        <button
           onClick={swapAccount}
           disabled={swapLoading}
           className="btn btn-xs btn-primary"
+          title="Reconectar o Mercado Livre (renova permissões, inclusive Publicidade)"
           style={{
             padding: '6px 10px', borderRadius: 8,
             opacity: swapLoading ? 0.6 : 1,
             cursor: swapLoading ? 'not-allowed' : 'pointer'
           }}
         >
-          {swapLoading ? '⏳ Trocando...' : '🔄 Trocar conta ML'}
+          {swapLoading ? '⏳ Reconectando...' : '🔌 Reconectar ML'}
         </button>
         {feedback && (
           <div style={{

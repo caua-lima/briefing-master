@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import { useAuth } from "@/lib/firebase/auth-context";
 import {
@@ -9,6 +9,12 @@ import {
   getAccessBootstrap,
 } from "@/lib/firebase/data";
 import type { AccessEntry } from "@/lib/domain/types";
+
+type AccessInfo = { role: AccessEntry["role"]; email: string; isAdmin: boolean };
+const AccessCtx = createContext<AccessInfo>({ role: "user", email: "", isAdmin: false });
+export function useAccess() {
+  return useContext(AccessCtx);
+}
 
 type AccessResult = {
   email: string;
@@ -191,7 +197,12 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   if (!access.granted)
     return <DeniedScreen onLogout={signOut} userEmail={user.email ?? ""} />;
 
-  return <>{children}</>;
+  const role = access.entry?.role ?? "user";
+  return (
+    <AccessCtx.Provider value={{ role, email: currentEmail, isAdmin: role === "owner" || role === "admin" }}>
+      {children}
+    </AccessCtx.Provider>
+  );
 }
 
 function LoadingScreen() {

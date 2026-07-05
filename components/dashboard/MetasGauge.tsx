@@ -44,7 +44,7 @@ export default function MetasGauge({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="panel" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 24 }}>
+      <div className="panel" style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 48, padding: "24px 24px 18px" }}>
         <Gauge
           caption={`Meta do Mês ${metaIndex}`}
           pct={pctMes}

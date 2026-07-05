@@ -50,20 +50,26 @@ service cloud.firestore {
       allow read, write: if isAuthorized();
     }
 
+    // Configurações internas: leitura por autorizados (o dashboard lê),
+    // escrita somente por admin/owner.
     match /metas/{docId} {
-      allow read, write: if isAuthorized();
+      allow read: if isAuthorized();
+      allow write: if isOwnerOrAdmin();
     }
 
     match /metasHistorico/{docId} {
-      allow read, write: if isAuthorized();
+      allow read: if isAuthorized();
+      allow write: if isOwnerOrAdmin();
     }
 
     match /custos/{docId} {
-      allow read, write: if isAuthorized();
+      allow read: if isAuthorized();
+      allow write: if isOwnerOrAdmin();
     }
 
     match /estoque/{docId} {
-      allow read, write: if isAuthorized();
+      allow read: if isAuthorized();
+      allow write: if isOwnerOrAdmin();
     }
 
     // Legacy: Allow authorized users read old data, writes only own uid

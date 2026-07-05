@@ -9,6 +9,7 @@ import {
   watchAccessList,
 } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
+import { authedFetch } from "@/lib/api/authed-fetch";
 
 export default function AccessControlTab({
   uid,
@@ -29,6 +30,7 @@ export default function AccessControlTab({
   const [role, setRole] = useState<AccessEntry["role"]>("user");
   const [displayName, setDisplayName] = useState("");
   const [photoURL, setPhotoURL] = useState("");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     const unsubscribe = watchAccessList((nextEntries) => {
@@ -62,6 +64,7 @@ export default function AccessControlTab({
     setRole("user");
     setDisplayName("");
     setPhotoURL("");
+    setPassword("");
     setError("");
   }
 
@@ -71,6 +74,7 @@ export default function AccessControlTab({
     setRole(entry.role);
     setDisplayName(entry.displayName ?? "");
     setPhotoURL(entry.photoURL ?? "");
+    setPassword("");
     setError("");
   }
 
@@ -78,6 +82,10 @@ export default function AccessControlTab({
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail) {
       setError("Informe um e-mail válido.");
+      return;
+    }
+    if (password && password.length < 6) {
+      setError("A senha precisa ter pelo menos 6 caracteres.");
       return;
     }
 
@@ -98,6 +106,20 @@ export default function AccessControlTab({
         await updateAccessEntry(normalizedEmail, payload);
       } else {
         await addAccessEntry(payload);
+      }
+
+      // Se informou senha, cria/atualiza o login por e-mail/senha
+      if (password) {
+        const res = await authedFetch("/api/admin/create-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail, password }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          setError("Acesso salvo, mas falhou criar o login: " + (j?.error ?? res.status));
+          return;
+        }
       }
 
       resetForm();
@@ -172,6 +194,20 @@ export default function AccessControlTab({
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Nome opcional"
               />
+            </div>
+
+            <div className="config-field" style={{ margin: 0 }}>
+              <label>Senha de login (opcional)</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Deixe em branco para só Google · mín. 6 caracteres"
+                autoComplete="new-password"
+              />
+              <div className="hint">
+                Preenchendo, cria um login por e-mail/senha (além do Google). Reeditar troca a senha.
+              </div>
             </div>
 
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>

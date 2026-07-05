@@ -3,6 +3,7 @@
 import {
   type User,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
 } from "firebase/auth";
@@ -14,6 +15,7 @@ type AuthState = {
   loading: boolean;
   signIn: () => Promise<void>;
   signInWithAccountSelection: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -42,13 +44,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithPopup(auth, provider);
   }
 
+  async function signInWithEmail(email: string, password: string) {
+    const { auth } = getFirebase();
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+  }
+
   async function signOut() {
     const { auth } = getFirebase();
     await firebaseSignOut(auth);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signInWithAccountSelection, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signInWithAccountSelection, signInWithEmail, signOut }}>
       {children}
     </AuthContext.Provider>
   );
