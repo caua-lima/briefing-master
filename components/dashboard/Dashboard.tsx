@@ -13,6 +13,7 @@ import {
 import type { UserData } from "@/components/useUserData";
 import ExpensesDoughnut from "./ExpensesDoughnut";
 import MetasGauge from "./MetasGauge";
+import Gauge from "./Gauge";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
 type Props = { data: UserData };
@@ -172,7 +173,7 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   );
 }
 
-// ── Meta Diária ────────────────────────────────────────────────
+// ── Meta Diária (velocímetro) ──────────────────────────────────
 function MetaDiariaCard({
   faturamentoHoje, pedidosHoje, metaDiaria,
 }: {
@@ -180,59 +181,34 @@ function MetaDiariaCard({
   pedidosHoje: number;
   metaDiaria: number | null;
 }) {
-  const pct = metaDiaria && metaDiaria > 0 ? Math.min((faturamentoHoje / metaDiaria) * 100, 100) : 0;
+  const pct = metaDiaria && metaDiaria > 0 ? clamp((faturamentoHoje / metaDiaria) * 100, 0, 100) : 0;
   const batida = metaDiaria ? faturamentoHoje >= metaDiaria : false;
   const falta = metaDiaria ? Math.max(metaDiaria - faturamentoHoje, 0) : 0;
 
   return (
-    <div className="panel" style={{ borderColor: batida ? "var(--green)" : undefined }}>
-      <div className="panel-title" style={{ marginBottom: 12 }}>📅 Meta Diária de Hoje</div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-        <span style={{ fontSize: "1.6rem", fontWeight: 800, color: batida ? "var(--green)" : "var(--text)" }}>
-          {fmtBRL(faturamentoHoje)}
-        </span>
-        {metaDiaria ? <span style={{ fontSize: ".85rem", color: "var(--muted)" }}>/ {fmtBRL(metaDiaria)}</span> : null}
-      </div>
+    <div className="panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
       {metaDiaria ? (
-        <>
-          <div className="dgoal-bar" style={{ marginBottom: 10 }}>
-            <div className="dgoal-fill" style={{ width: `${pct}%`, background: batida ? "var(--green)" : "linear-gradient(90deg,#4f8ef7,#60a5fa)" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".78rem", color: "var(--muted)" }}>
-            <span>{pedidosHoje} pedido(s) hoje</span>
-            <span style={{ color: batida ? "var(--green)" : undefined, fontWeight: 600 }}>
-              {batida ? "✅ Meta batida!" : `Faltam ${fmtBRL(falta)}`}
-            </span>
-          </div>
-        </>
+        <Gauge
+          caption="📅 Meta Diária de Hoje"
+          pct={pct}
+          centerText={`${pct.toFixed(0)}%`}
+          leftLabel="R$ 0"
+          rightLabel={fmtBRL(metaDiaria)}
+          footer={
+            <>
+              <b style={{ color: "var(--text)" }}>{fmtBRL(faturamentoHoje)}</b> · {pedidosHoje} pedido(s) ·{" "}
+              <span style={{ color: batida ? "var(--green)" : "var(--muted)" }}>
+                {batida ? "✅ batida!" : `faltam ${fmtBRL(falta)}`}
+              </span>
+            </>
+          }
+        />
       ) : (
-        <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Configure uma meta diária na aba Metas.</div>
+        <>
+          <div className="panel-title" style={{ marginBottom: 8 }}>📅 Meta Diária de Hoje</div>
+          <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Configure uma meta (Meta 1) na aba Metas.</div>
+        </>
       )}
-    </div>
-  );
-}
-
-// ── Meta de Lucro Líquido (margem %) ───────────────────────────
-function MetaMargemBar({ margemAtual, metaMargem, lucroAtual }: { margemAtual: number; metaMargem: number; lucroAtual: number }) {
-  const pct = metaMargem > 0 ? clamp((margemAtual / metaMargem) * 100, 0, 100) : 0;
-  const done = margemAtual >= metaMargem;
-  return (
-    <div style={{ marginTop: 22 }}>
-      <div className="panel-title" style={{ marginBottom: 12 }}>💰 Meta de Lucro Líquido</div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".82rem", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-        <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>
-          Margem líquida atual {done ? "✓ meta batida!" : ""}
-        </span>
-        <span style={{ color: "var(--muted)" }}>
-          <b style={{ color: done ? "var(--green)" : margemAtual < 0 ? "var(--red)" : "var(--text)" }}>{margemAtual.toFixed(1)}%</b> / meta {metaMargem.toFixed(0)}% · {fmtBRL(lucroAtual)}
-        </span>
-      </div>
-      <div className="dgoal-bar" style={{ height: 12 }}>
-        <div className="dgoal-fill" style={{
-          width: `${pct}%`,
-          background: done ? "var(--green)" : margemAtual < 0 ? "var(--red)" : "linear-gradient(90deg,#4f8ef7,#a855f7)",
-        }} />
-      </div>
     </div>
   );
 }
@@ -492,6 +468,18 @@ export default function Dashboard({ data }: Props) {
         </pre>
       )}
 
+      {mlMetrics && mlMetrics.totalAds === 0 && (() => {
+        const d = mlMetrics.adsDiag as { advertisersStatus?: number; advertiserId?: unknown } | null;
+        const blocked = !!d && (d.advertisersStatus === 401 || d.advertisersStatus === 403 || d.advertiserId == null);
+        if (!blocked) return null;
+        return (
+          <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
+            ⚠️ <b>ADS não autorizado (HTTP {d?.advertisersStatus ?? "—"}).</b> O token do Mercado Livre não tem permissão de Publicidade.{" "}
+            Reconecte o ML em <b>Trocar conta ML</b> concedendo acesso a <b>Publicidade / Mercado Ads</b> para o gasto com Ads voltar a aparecer.
+          </div>
+        );
+      })()}
+
       {/* ── Conteúdo ── */}
       {mlLoading ? (
         <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
@@ -584,24 +572,17 @@ export default function Dashboard({ data }: Props) {
               </div>
 
               {goals?.meta1 ? (
-                <>
-                  <MetasGauge
-                    fatBruto={fatBruto}
-                    meta1={goals.meta1}
-                    meta2={goals.meta2 ?? null}
-                    meta3={goals.meta3 ?? null}
-                    projecao={projecao}
-                    diaAtual={diaAtualNoMes()}
-                    totalDias={diasNoMes(mes)}
-                  />
-                  <div className="panel">
-                    <MetaMargemBar
-                      margemAtual={mlMetrics?.margemComCustos ?? 0}
-                      metaMargem={goals.metaMargem ?? 10}
-                      lucroAtual={lucroLiquido}
-                    />
-                  </div>
-                </>
+                <MetasGauge
+                  fatBruto={fatBruto}
+                  meta1={goals.meta1}
+                  meta2={goals.meta2 ?? null}
+                  meta3={goals.meta3 ?? null}
+                  projecao={projecao}
+                  diaAtual={diaAtualNoMes()}
+                  totalDias={diasNoMes(mes)}
+                  margemAtual={mlMetrics?.margemComCustos ?? 0}
+                  metaMargem={goals.metaMargem ?? 10}
+                />
               ) : (
                 <div className="panel" style={{ color: "var(--muted)", fontSize: ".85rem" }}>
                   Nenhuma meta configurada. Configure na aba Metas.
