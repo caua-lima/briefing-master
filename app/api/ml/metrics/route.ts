@@ -401,8 +401,12 @@ export async function GET(req: Request) {
     const dFrom = new Date(`${fromStr}T00:00:00Z`).getTime();
     const dTo = new Date(`${toStr}T00:00:00Z`).getTime();
     const daysInPeriod = Math.max(1, Math.round((dTo - dFrom) / 86400000) + 1);
-    const [fy, fm] = fromStr.split("-").map(Number);
-    const [ty, tm] = toStr.split("-").map(Number);
+    const [fy, fm, fd] = fromStr.split("-").map(Number);
+    const [ty, tm, td] = toStr.split("-").map(Number);
+    // Custo MENSAL só entra em períodos que cobrem mês(es) completo(s).
+    // Assim ele NÃO polui o lucro de "Hoje"/dias avulsos (é um custo do mês).
+    const lastDayFrom = new Date(Date.UTC(fy, fm, 0)).getUTCDate();
+    const isFullMonth = fy === ty && fm === tm && fd === 1 && td === lastDayFrom;
     const monthsInPeriod = Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
 
     const custosSnap = await db.collection("custos").get();
@@ -413,11 +417,11 @@ export async function GET(req: Request) {
       const data = String(d.data ?? d.date ?? "");
       const freq = String(d.freq ?? d.frequency ?? "avulso");
       if (freq === "diario" || freq === "daily") {
-        custosOp += valor * daysInPeriod;       // desconta todo dia
+        custosOp += valor * daysInPeriod;                 // desconta todo dia
       } else if (freq === "mensal" || freq === "monthly") {
-        custosOp += valor * monthsInPeriod;     // recorrente por mês
+        if (isFullMonth) custosOp += valor * monthsInPeriod; // só no mês completo
       } else if (data >= fromStr && data <= toStr) {
-        custosOp += valor;                       // avulso: só na data
+        custosOp += valor;                                 // avulso: só na data
       }
     }
 

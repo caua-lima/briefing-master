@@ -309,7 +309,7 @@ function AppShell() {
           </header>
 
           {/* Tab content */}
-          <main style={{ padding: "24px", flex: 1, minWidth: 0 }}>
+          <main className="app-content" style={{ flex: 1, minWidth: 0 }}>
             {!data.ready ? (
               <div
                 style={{

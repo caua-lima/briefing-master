@@ -295,6 +295,36 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .dgoal-bar{height:10px;border-radius:99px;background:var(--surface2);overflow:hidden}
 .dgoal-fill{height:100%;border-radius:99px;transition:width .6s ease}
 
+/* conteúdo principal */
+.app-content{padding:24px}
+
+/* ================= Responsivo (celular) ================= */
+@media(max-width:720px){
+  .app-content{padding:14px}
+  .dash{gap:14px}
+  .panel{padding:15px 15px}
+  .hero{padding:16px 16px}
+  .hero-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .hero-stat{padding:11px 12px}
+  .hero-stat .val{font-size:1.15rem}
+  .kpi-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .kpi{padding:13px 14px 13px 18px}
+  .kpi .k-val{font-size:1.12rem}
+  .dash-2col{grid-template-columns:1fr;gap:12px}
+  .dash-top{gap:10px}
+  .seg{width:100%;justify-content:center}
+  .panel-head{gap:6px}
+}
+
+@media(max-width:440px){
+  .hero-grid{grid-template-columns:1fr}
+  .kpi-grid{grid-template-columns:1fr}
+  .hero-stat .val{font-size:1.25rem}
+  .kpi .k-val{font-size:1.3rem}
+  .acct-chip{font-size:.74rem;padding:7px 10px}
+  .seg-btn{padding:7px 10px;font-size:.76rem}
+}
+
 /* Sidebar layout */
 .app-sidebar{display:flex}
 .sidebar-toggle{display:none}
