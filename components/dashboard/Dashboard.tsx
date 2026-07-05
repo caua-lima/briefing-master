@@ -308,17 +308,17 @@ export default function Dashboard({ data }: Props) {
     return monthRange(mes);
   }, [periodoMode, customFrom, customTo, mes]);
 
-  const fetchMetrics = useCallback(async (from: string, to: string) => {
-    setMlLoading(true);
+  const fetchMetrics = useCallback(async (from: string, to: string, silent = false) => {
+    if (!silent) setMlLoading(true);
     try {
       const res = await authedFetch(`/api/ml/metrics?from=${from}&to=${to}`, { cache: "no-store" });
-      if (!res.ok) { setMlMetrics(null); return; }
+      if (!res.ok) { if (!silent) setMlMetrics(null); return; }
       const json = await res.json();
       if (mountedRef.current) setMlMetrics(json);
     } catch {
-      if (mountedRef.current) setMlMetrics(null);
+      if (!silent && mountedRef.current) setMlMetrics(null);
     } finally {
-      if (mountedRef.current) setMlLoading(false);
+      if (!silent && mountedRef.current) setMlLoading(false);
     }
   }, []);
 
@@ -352,6 +352,17 @@ export default function Dashboard({ data }: Props) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Atualização automática a cada 15 minutos (silenciosa) enquanto aberto
+  useEffect(() => {
+    const id = setInterval(() => {
+      (async () => {
+        try { await authedFetch("/api/ml/sync-all", { method: "POST" }); } catch { /* ignora */ }
+        if (mountedRef.current) fetchMetrics(periodoRange.from, periodoRange.to, true);
+      })();
+    }, 15 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [periodoRange, fetchMetrics]);
 
   async function handleRefreshML() {
     setMlRefreshing(true);
