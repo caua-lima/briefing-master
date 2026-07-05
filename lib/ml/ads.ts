@@ -5,24 +5,30 @@ const ML_API = "https://api.mercadolibre.com";
 
 type Advertiser = { advertiser_id?: number | string; site_id?: string; account_name?: string };
 
+// Cache do advertiser_id por lambda quente (evita resolver a cada chamada)
+let advCache: { id: string | null; at: number } | null = null;
+const ADV_TTL = 10 * 60 * 1000;
+
 /**
  * Resolve o advertiser_id da conta (NÃO é o seller_id). O ML exige buscar o
  * anunciante via /advertising/advertisers?product_id=PADS com header Api-Version.
  * Prioriza o anunciante do site MLB (Brasil).
  */
 async function getAdvertiserId(token: string): Promise<string | null> {
+  if (advCache && Date.now() - advCache.at < ADV_TTL) return advCache.id;
+
   const res = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
     headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
     cache: "no-store",
   });
-  if (!res.ok) return null;
+  if (!res.ok) return advCache?.id ?? null; // mantém cache anterior em falha transitória
   const j = (await res.json()) as { advertisers?: Advertiser[] };
   const list = Array.isArray(j?.advertisers) ? j.advertisers : [];
-  if (list.length === 0) return null;
   const mlb = list.find((a) => String(a.site_id ?? "").toUpperCase() === "MLB");
   const chosen = mlb ?? list[0];
-  const id = chosen?.advertiser_id;
-  return id != null ? String(id) : null;
+  const id = chosen?.advertiser_id != null ? String(chosen.advertiser_id) : null;
+  advCache = { id, at: Date.now() };
+  return id;
 }
 
 /**

@@ -11,9 +11,8 @@ import {
   clamp,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
-import RevenueLineChart from "./RevenueLineChart";
 import ExpensesDoughnut from "./ExpensesDoughnut";
-import GoalsProgressBars from "./GoalsProgressBars";
+import GoalsChart from "./GoalsChart";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
 type Props = { data: UserData };
@@ -65,6 +64,7 @@ type MlMetrics = {
   anuncios:           AnuncioResult[];
   pedidosSemVinculo:  number;
   hoje:               HojeBreakdown;
+  serieDiaria:        { data: string; faturamento: number }[];
   from:               string;
   to:                 string;
 };
@@ -78,6 +78,9 @@ const COST_COLORS = {
   ads:  "rgba(239,68,68,.9)",
   op:   "rgba(167,139,250,.9)",
 };
+
+// throttle da sincronização automática (compartilhado entre montagens)
+let lastAutoSync = 0;
 
 function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -277,18 +280,6 @@ function MetasCascata({
             </div>
           );
         })}
-        {metasVisiveis.length < metas.length && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "5px 12px",
-            background: "var(--surface2)", border: "1px solid var(--border)",
-            borderRadius: 999, fontSize: ".78rem", opacity: 0.4,
-          }}>
-            <span>🔒</span>
-            <span style={{ color: "var(--muted)" }}>
-              {metas[metasVisiveis.length].nome} — desbloqueie batendo {metas[metasVisiveis.length - 1].nome}
-            </span>
-          </div>
-        )}
       </div>
 
       <div style={{ position: "relative", height: 36, borderRadius: 999, background: "var(--surface2)", overflow: "visible", marginTop: 26 }}>
@@ -485,6 +476,21 @@ export default function Dashboard({ data }: Props) {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (mountedRef.current) setMlAccount(j); })
       .catch(() => {});
+  }, []);
+
+  // Sincronização automática ao abrir (mantém "hoje" e o mês sempre atualizados)
+  useEffect(() => {
+    if (Date.now() - lastAutoSync < 5 * 60 * 1000) return;
+    lastAutoSync = Date.now();
+    (async () => {
+      setMlRefreshing(true);
+      try {
+        await authedFetch("/api/ml/sync-all", { method: "POST" });
+        if (mountedRef.current) await fetchMetrics(periodoRange.from, periodoRange.to);
+      } catch { /* silencioso */ }
+      finally { if (mountedRef.current) setMlRefreshing(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleRefreshML() {
@@ -694,18 +700,24 @@ export default function Dashboard({ data }: Props) {
                   lucroAtual={lucroLiquido}
                 />
               )}
-
-              <div style={{ marginTop: 22 }}>
-                <GoalsProgressBars goals={goals} days={[]} liveRevenue={fatBruto} />
-              </div>
             </div>
           )}
 
-          {/* Gráfico (mês) */}
-          {periodoMode === "mes" && (
+          {/* Gráfico de acompanhamento das metas (mês) */}
+          {periodoMode === "mes" && goals?.meta1 && (
             <div className="panel">
-              <div className="panel-title" style={{ marginBottom: 14 }}>📈 Evolução do Faturamento</div>
-              <RevenueLineChart days={[]} windowDays={30} />
+              <div className="panel-head">
+                <span className="panel-title">📊 Acompanhamento das Metas</span>
+                <span className="panel-sub">Acumulado vs ritmo ideal · projeção {fmtBRL(projecao)}</span>
+              </div>
+              <GoalsChart
+                serieDiaria={mlMetrics?.serieDiaria ?? []}
+                mes={mes}
+                meta1={goals.meta1}
+                meta2={goals.meta2 ?? null}
+                meta3={goals.meta3 ?? null}
+                projecao={projecao}
+              />
             </div>
           )}
         </>

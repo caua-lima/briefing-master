@@ -263,8 +263,12 @@ export async function GET(req: Request) {
     const hj = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}-${String(brNow.getUTCDate()).padStart(2, "0")}`;
 
     // ── 3. ADS por item_id (período + hoje) ───────────────────
+    // A API de ADS rejeita datas futuras → limita o fim ao dia de hoje
+    const adsTo = toStr > hj ? hj : toStr;
     const [adsByItem, adsHoje] = await Promise.all([
-      getAdsSpendByItem(fromStr, toStr).catch(() => ({} as Record<string, number>)),
+      fromStr <= adsTo
+        ? getAdsSpendByItem(fromStr, adsTo).catch(() => ({} as Record<string, number>))
+        : Promise.resolve({} as Record<string, number>),
       getAdsSpendByItem(hj, hj).catch(() => ({} as Record<string, number>)),
     ]);
 
@@ -276,6 +280,16 @@ export async function GET(req: Request) {
 
     const agg = computeAggregates(orders, porMlb, porSku, adsByItem);
     const aggHoje = computeAggregates(ordersHoje, porMlb, porSku, adsHoje);
+
+    // Série diária de faturamento bruto (para o gráfico de metas)
+    const serieMap = new Map<string, number>();
+    for (const o of orders) {
+      const dia = String(o.date_created ?? "").slice(0, 10);
+      if (dia) serieMap.set(dia, (serieMap.get(dia) ?? 0) + Number(o.total_amount ?? 0));
+    }
+    const serieDiaria = Array.from(serieMap.entries())
+      .map(([data, faturamento]) => ({ data, faturamento }))
+      .sort((a, b) => a.data.localeCompare(b.data));
 
     // ── 5. Devoluções ─────────────────────────────────────────
     const [retUTC, retBR] = await Promise.all([
@@ -353,6 +367,7 @@ export async function GET(req: Request) {
         lucroLiquido: lucroLiquidoHoje,
         pedidos: aggHoje.ordersCount,
       },
+      serieDiaria,
       from: fromStr,
       to: toStr,
     });
