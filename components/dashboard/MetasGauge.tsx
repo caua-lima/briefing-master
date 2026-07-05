@@ -21,13 +21,14 @@ function Card({ label, value, sub, subColor }: { label: string; value: string; s
 
 /** Painel de acompanhamento das metas: velocímetros do mês e do lucro líquido. */
 export default function MetasGauge({
-  fatBruto, meta1, meta2, meta3, projecao, diaAtual, totalDias, margemAtual, metaMargem,
+  fatBruto, meta1, meta2, meta3, projecao, projecaoLucro, diaAtual, totalDias, margemAtual, metaMargem,
 }: {
   fatBruto: number;
   meta1: number;
   meta2: number | null;
   meta3: number | null;
   projecao: number;
+  projecaoLucro: number;
   diaAtual: number;
   totalDias: number;
   margemAtual: number;
@@ -73,10 +74,16 @@ export default function MetasGauge({
           subColor={deltaIdeal >= 0 ? "var(--green)" : "var(--red)"}
         />
         <Card
-          label="Projeção de fechamento"
+          label="Projeção de faturamento"
           value={fmtBRL(projecao)}
           sub={noRitmo ? "✅ no ritmo da meta" : "⚠️ abaixo da meta"}
           subColor={noRitmo ? "var(--green)" : "var(--red)"}
+        />
+        <Card
+          label="Projeção de lucro"
+          value={fmtBRL(projecaoLucro)}
+          sub="lucro líquido projetado do mês"
+          subColor={projecaoLucro >= 0 ? "var(--green)" : "var(--red)"}
         />
       </div>
     </div>

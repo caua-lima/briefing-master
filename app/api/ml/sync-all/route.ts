@@ -6,6 +6,7 @@ import {
   lastNDaysRangeBR,
   syncOrdersRange,
   syncReturnsRange,
+  syncClaimsRange,
   type SyncRange,
 } from "@/lib/ml/sync";
 
@@ -38,12 +39,13 @@ export async function POST(req: Request) {
     }
 
     const range = rangeFromRequest(req);
-    const [savedOrders, savedReturns] = await Promise.all([
+    const [savedOrders, savedReturns, savedClaims] = await Promise.all([
       syncOrdersRange(accessToken, range),
       syncReturnsRange(accessToken, range),
+      syncClaimsRange(accessToken, range).catch(() => 0), // best-effort
     ]);
 
-    return NextResponse.json({ ok: true, savedOrders, savedReturns, range });
+    return NextResponse.json({ ok: true, savedOrders, savedReturns, savedClaims, range });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "sync_failed", details: msg }, { status: 500 });

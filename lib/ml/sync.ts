@@ -219,6 +219,7 @@ export async function syncReturnsRange(accessToken: string, range: SyncRange): P
         {
           order_id: id,
           status: o.status ?? null,
+          tipo: "cancelamento",
           date_created: String(o.date_created ?? ""),
           total_amount: Number(o.total_amount ?? 0),
           updatedAt: new Date().toISOString(),
@@ -229,4 +230,82 @@ export async function syncReturnsRange(accessToken: string, range: SyncRange): P
     await batch.commit();
   }
   return all.length;
+}
+
+/**
+ * Busca DEVOLUÇÕES reais (claims do tipo return) via API de pós-venda e grava
+ * em `ml_returns` com motivo e produto. Best-effort: falha silenciosa (mantém
+ * as devoluções baseadas em cancelamento como fallback).
+ */
+export async function syncClaimsRange(accessToken: string, range: SyncRange): Promise<number> {
+  const db = getAdminDb();
+  const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "x-format-new": "true" };
+
+  // 1. Coleta claims (paginado)
+  const claims: Record<string, unknown>[] = [];
+  let offset = 0;
+  while (offset <= 500) {
+    const res = await fetch(`${ML_API}/post-purchase/v1/claims/search?sort=date_created,desc&limit=50&offset=${offset}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return 0; // sem permissão/erro → mantém fallback
+    const data = (await res.json()) as { data?: Record<string, unknown>[]; results?: Record<string, unknown>[]; paging?: { total?: number } };
+    const results = data.data ?? data.results ?? [];
+    claims.push(...results);
+    const total = data.paging?.total ?? results.length;
+    offset += results.length;
+    if (offset >= total || results.length === 0) break;
+  }
+  if (claims.length === 0) return 0;
+
+  const fromDate = range.from.slice(0, 10);
+  const toDate = range.to.slice(0, 10);
+
+  // 2. Filtra devoluções no período
+  const devs = claims.filter((c) => {
+    const type = String(c.type ?? "").toLowerCase();
+    const isReturn = type.includes("return") || type.includes("devol");
+    const dc = String(c.date_created ?? "").slice(0, 10);
+    return isReturn && dc >= fromDate && dc <= toDate;
+  });
+  if (devs.length === 0) return 0;
+
+  // 3. Enriquecer com dados do pedido (valor + produto) do cache Firestore
+  const orderIds = devs.map((c) => String(c.resource_id ?? c.resource ?? c.order_id ?? "")).filter(Boolean);
+  const orderMap = new Map<string, FirebaseFirestore.DocumentData>();
+  const CHUNK = 300;
+  for (let i = 0; i < orderIds.length; i += CHUNK) {
+    const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
+    if (refs.length === 0) continue;
+    const snaps = await db.getAll(...refs);
+    for (const s of snaps) if (s.exists) orderMap.set(s.id, s.data()!);
+  }
+
+  const batch = db.batch();
+  for (const c of devs) {
+    const orderId = String(c.resource_id ?? c.resource ?? c.order_id ?? "");
+    if (!orderId) continue;
+    const ord = orderMap.get(orderId);
+    const items = (ord?.items as { title?: string }[]) ?? [];
+    const produto = items.map((it) => it.title).filter(Boolean).join(", ");
+    const valor = Number(c.amount ?? ord?.total_amount ?? 0);
+    batch.set(
+      db.collection("ml_returns").doc(orderId),
+      {
+        order_id: orderId,
+        claim_id: String(c.id ?? ""),
+        tipo: "devolucao",
+        status: String(c.status ?? ""),
+        reason: String(c.reason_id ?? c.reason ?? ""),
+        produto,
+        date_created: String(c.date_created ?? ord?.date_created ?? ""),
+        total_amount: valor,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  }
+  await batch.commit();
+  return devs.length;
 }

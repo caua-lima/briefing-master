@@ -9,6 +9,10 @@ const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 export const maxDuration = 30;
 
+// Cache curto por lambda quente (evita bater no ML a cada abertura / 15 min)
+const metricsCache = new Map<string, { at: number; body: Record<string, unknown> }>();
+const CACHE_TTL = 60 * 1000;
+
 type ProdutoData = {
   custo: number;
   imposto: number; // % sobre a venda
@@ -340,6 +344,17 @@ export async function GET(req: Request) {
     const to = parseDateParam(url.searchParams.get("to"));
     const month = parseDateParam(url.searchParams.get("month"));
     const { start, end, startBR, endBR, fromStr, toStr } = buildRange(from, to, month);
+
+    // ── Cache curto (bypass com ?fresh=1, usado no "Atualizar ML") ──
+    const cacheKey = `${fromStr}|${toStr}`;
+    const bust = url.searchParams.get("fresh") === "1";
+    if (!bust) {
+      const cached = metricsCache.get(cacheKey);
+      if (cached && Date.now() - cached.at < CACHE_TTL) {
+        return NextResponse.json({ ...cached.body, cached: true });
+      }
+    }
+
     const db = getAdminDb();
 
     // ── 1. Estoque: indexar por MLB (sem prefixo) e por SKU ───
@@ -417,6 +432,16 @@ export async function GET(req: Request) {
     const retMap = new Map<string, FirebaseFirestore.DocumentData>();
     for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
     const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
+    const devolucoesDetalhe = Array.from(retMap.values())
+      .map((r) => ({
+        order_id: String(r.order_id ?? ""),
+        valor: Number(r.total_amount ?? 0),
+        data: String(r.date_created ?? "").slice(0, 10),
+        motivo: String(r.reason ?? r.motivo ?? ""),
+        produto: String(r.produto ?? r.title ?? ""),
+        tipo: String(r.tipo ?? r.status ?? ""),
+      }))
+      .sort((a, b) => b.valor - a.valor);
 
     // ── 6. Custos operacionais ────────────────────────────────
     // Dias e meses cobertos pelo período selecionado
@@ -458,13 +483,14 @@ export async function GET(req: Request) {
     const margemSemCustos = agg.totalRetorno > 0 ? (lucroSemCustos / agg.totalRetorno) * 100 : 0;
     const margemComCustos = agg.totalRetorno > 0 ? (lucroComCustos / agg.totalRetorno) * 100 : 0;
 
-    return NextResponse.json({
+    const responseBody: Record<string, unknown> = {
       faturamentoBruto: agg.faturamentoBruto,
       totalRetorno: agg.totalRetorno,
       faturamentoHoje: aggHoje.faturamentoBruto,
       pedidosHoje: aggHoje.ordersCount,
       ordersCount: agg.ordersCount,
       devolucoes,
+      devolucoesDetalhe,
       totalCMV: agg.totalCMV,
       totalAds: agg.totalAds,
       adsNaoVinculado: agg.adsNaoVinculado,
@@ -493,7 +519,9 @@ export async function GET(req: Request) {
       adsDiag,
       from: fromStr,
       to: toStr,
-    });
+    };
+    metricsCache.set(cacheKey, { at: Date.now(), body: responseBody });
+    return NextResponse.json(responseBody);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "metrics_failed", details: msg }, { status: 500 });

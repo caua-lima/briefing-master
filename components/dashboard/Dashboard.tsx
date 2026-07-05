@@ -67,9 +67,19 @@ type MlMetrics = {
   pedidosSemVinculo:  number;
   hoje:               HojeBreakdown;
   serieDiaria:        { data: string; faturamento: number }[];
+  devolucoesDetalhe?: Devolucao[];
   adsDiag?:           unknown;
   from:               string;
   to:                 string;
+};
+
+type Devolucao = {
+  order_id: string;
+  valor:    number;
+  data:     string;
+  motivo:   string;
+  produto:  string;
+  tipo:     string;
 };
 
 // cores usadas na composição de custos (batem com o doughnut)
@@ -120,6 +130,105 @@ function Kpi({
         {isPct ? `${value.toFixed(1)}%` : fmtBRL(value)}
       </div>
       {sub && <div className="k-sub">{sub}</div>}
+    </div>
+  );
+}
+
+// ── Selo "atualizado há X min" ─────────────────────────────────
+function LastUpdated({ at }: { at: number | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  if (!at) return null;
+  const mins = Math.floor((now - at) / 60000);
+  const txt = mins <= 0 ? "agora" : mins === 1 ? "há 1 min" : `há ${mins} min`;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: ".72rem", color: "var(--muted)", whiteSpace: "nowrap" }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 0 3px rgba(34,197,94,.15)" }} />
+      Atualizado {txt} · auto 15min
+    </span>
+  );
+}
+
+// ── Curva ABC (Pareto de lucro) ────────────────────────────────
+function CurvaABC({ anuncios }: { anuncios: AnuncioResult[] }) {
+  const vendidos = anuncios.filter((a) => !a.semVenda);
+  if (!vendidos.length) return null;
+  const sorted = [...vendidos].sort((a, b) => b.lucro - a.lucro);
+  const totalPos = sorted.reduce((s, a) => s + Math.max(a.lucro, 0), 0) || 1;
+  const shares = sorted.map((a) => (Math.max(a.lucro, 0) / totalPos) * 100);
+  const rows = sorted.map((a, i) => {
+    const share = shares[i];
+    const cum = shares.slice(0, i + 1).reduce((s, v) => s + v, 0);
+    const classe = a.lucro < 0 ? "C" : cum <= 80 ? "A" : cum <= 95 ? "B" : "C";
+    return { a, share, acc: cum, classe };
+  });
+  const cor = (c: string) => (c === "A" ? "var(--green)" : c === "B" ? "var(--yellow)" : "var(--red)");
+
+  return (
+    <div className="panel">
+      <div className="panel-title" style={{ marginBottom: 6 }}>📊 Curva ABC — quem puxa o lucro</div>
+      <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 12 }}>
+        A = topo (até 80% do lucro) · B = 80–95% · C = restante / prejuízo
+      </div>
+      <div className="table-wrapper" style={{ border: "none" }}>
+        <table className="tbl-modern">
+          <thead><tr><th>Classe</th><th style={{ textAlign: "left" }}>Anúncio</th><th>Lucro</th><th>% do lucro</th><th>Acumulado</th></tr></thead>
+          <tbody>
+            {rows.map(({ a, share, acc: cum, classe }) => (
+              <tr key={a.item_id}>
+                <td><span className="tag" style={{ background: "transparent", color: cor(classe), border: `1px solid ${cor(classe)}` }}>{classe}</span></td>
+                <td style={{ fontWeight: 600, textAlign: "left" }}>{a.title}</td>
+                <td style={{ color: a.lucro >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{fmtBRL(a.lucro)}</td>
+                <td style={{ color: "var(--muted)" }}>{share.toFixed(1)}%</td>
+                <td>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 60, height: 6, borderRadius: 99, background: "var(--surface2)", overflow: "hidden" }}>
+                      <div style={{ width: `${Math.min(cum, 100)}%`, height: "100%", background: cor(classe) }} />
+                    </div>
+                    <span style={{ color: "var(--muted)", fontSize: ".78rem" }}>{cum.toFixed(0)}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Devoluções (detalhe com motivo/produto) ────────────────────
+function DevolucoesPanel({ total, detalhe }: { total: number; detalhe: Devolucao[] }) {
+  const tipoLabel = (t: string) => (t === "devolucao" ? "Devolução" : t === "cancelamento" ? "Cancelamento" : t || "—");
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 10 }}>
+        <span className="panel-title">↩️ Devoluções</span>
+        <span className="panel-sub">Total: <b style={{ color: "var(--red)" }}>{fmtBRL(total)}</b> · {detalhe.length} caso(s)</span>
+      </div>
+      {detalhe.length ? (
+        <div className="table-wrapper" style={{ border: "none" }}>
+          <table className="tbl-modern">
+            <thead><tr><th>Data</th><th style={{ textAlign: "left" }}>Produto</th><th style={{ textAlign: "left" }}>Motivo</th><th style={{ textAlign: "left" }}>Tipo</th><th>Valor</th></tr></thead>
+            <tbody>
+              {detalhe.map((d, i) => (
+                <tr key={d.order_id + i}>
+                  <td style={{ color: "var(--muted)" }}>{d.data}</td>
+                  <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{d.produto || "—"}</td>
+                  <td style={{ color: "var(--muted)", textAlign: "left" }}>{d.motivo || "—"}</td>
+                  <td style={{ textAlign: "left" }}>{tipoLabel(d.tipo)}</td>
+                  <td style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>Sem devoluções no período. 🎉</div>
+      )}
     </div>
   );
 }
@@ -293,6 +402,7 @@ export default function Dashboard({ data }: Props) {
   const [mlMetrics, setMlMetrics] = useState<MlMetrics | null>(null);
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const mountedRef = useRef(true);
 
   function runDiagAds() {
@@ -308,13 +418,13 @@ export default function Dashboard({ data }: Props) {
     return monthRange(mes);
   }, [periodoMode, customFrom, customTo, mes]);
 
-  const fetchMetrics = useCallback(async (from: string, to: string, silent = false) => {
+  const fetchMetrics = useCallback(async (from: string, to: string, silent = false, fresh = false) => {
     if (!silent) setMlLoading(true);
     try {
-      const res = await authedFetch(`/api/ml/metrics?from=${from}&to=${to}`, { cache: "no-store" });
+      const res = await authedFetch(`/api/ml/metrics?from=${from}&to=${to}${fresh ? "&fresh=1" : ""}`, { cache: "no-store" });
       if (!res.ok) { if (!silent) setMlMetrics(null); return; }
       const json = await res.json();
-      if (mountedRef.current) setMlMetrics(json);
+      if (mountedRef.current) { setMlMetrics(json); setLastUpdated(Date.now()); }
     } catch {
       if (!silent && mountedRef.current) setMlMetrics(null);
     } finally {
@@ -346,7 +456,7 @@ export default function Dashboard({ data }: Props) {
       setMlRefreshing(true);
       try {
         await authedFetch("/api/ml/sync-all", { method: "POST" });
-        if (mountedRef.current) await fetchMetrics(periodoRange.from, periodoRange.to);
+        if (mountedRef.current) await fetchMetrics(periodoRange.from, periodoRange.to, true, true);
       } catch { /* silencioso */ }
       finally { if (mountedRef.current) setMlRefreshing(false); }
     })();
@@ -358,7 +468,7 @@ export default function Dashboard({ data }: Props) {
     const id = setInterval(() => {
       (async () => {
         try { await authedFetch("/api/ml/sync-all", { method: "POST" }); } catch { /* ignora */ }
-        if (mountedRef.current) fetchMetrics(periodoRange.from, periodoRange.to, true);
+        if (mountedRef.current) fetchMetrics(periodoRange.from, periodoRange.to, true, true);
       })();
     }, 15 * 60 * 1000);
     return () => clearInterval(id);
@@ -368,7 +478,7 @@ export default function Dashboard({ data }: Props) {
     setMlRefreshing(true);
     try {
       await authedFetch("/api/ml/sync-all", { method: "POST" });
-      await fetchMetrics(periodoRange.from, periodoRange.to);
+      await fetchMetrics(periodoRange.from, periodoRange.to, false, true);
     } catch (e) { console.error(e); }
     finally { setMlRefreshing(false); }
   }
@@ -400,6 +510,17 @@ export default function Dashboard({ data }: Props) {
     if (diaAtual <= 0) return 0;
     return (fatBruto / diaAtual) * totalDias;
   }, [periodoMode, mlMetrics, fatBruto, mes]);
+
+  // Projeção de LUCRO: escala a parte variável (sem custos op.) e mantém o
+  // custo operacional do mês fixo.
+  const projecaoLucro = useMemo(() => {
+    if (periodoMode !== "mes" || !mlMetrics) return 0;
+    const diaAtual = diaAtualNoMes();
+    const totalDias = diasNoMes(mes);
+    if (diaAtual <= 0) return 0;
+    const variavel = mlMetrics.lucroSemCustos;
+    return (variavel / diaAtual) * totalDias - (mlMetrics.custosOperacionais ?? 0);
+  }, [periodoMode, mlMetrics, mes]);
 
   // Meta diária automática = meta mensal (Meta 1) ÷ dias do mês
   const metaDiariaAtiva = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
@@ -435,6 +556,7 @@ export default function Dashboard({ data }: Props) {
           {(mlMetrics && mlMetrics.totalAds === 0) && (
             <button type="button" className="btn btn-xs btn-ghost" onClick={runDiagAds} title="Diagnóstico do ADS">🐞 ADS</button>
           )}
+          <LastUpdated at={lastUpdated} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -497,6 +619,7 @@ export default function Dashboard({ data }: Props) {
                   meta2={goals.meta2 ?? null}
                   meta3={goals.meta3 ?? null}
                   projecao={projecao}
+                  projecaoLucro={projecaoLucro}
                   diaAtual={diaAtualNoMes()}
                   totalDias={diasNoMes(mes)}
                   margemAtual={mlMetrics?.margemComCustos ?? 0}
@@ -580,6 +703,12 @@ export default function Dashboard({ data }: Props) {
             </div>
             <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
           </div>
+
+          {/* Curva ABC de produtos */}
+          <CurvaABC anuncios={mlMetrics?.anuncios ?? []} />
+
+          {/* Devoluções detalhadas */}
+          <DevolucoesPanel total={mlMetrics?.devolucoes ?? 0} detalhe={mlMetrics?.devolucoesDetalhe ?? []} />
         </>
       )}
     </div>
