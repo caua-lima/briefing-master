@@ -1,31 +1,45 @@
 // lib/ml/client.ts
+import crypto from "crypto";
+
 const ML_APP_ID = process.env.ML_APP_ID!;
 const ML_SECRET = process.env.ML_SECRET!;
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI!;
 const ML_API = "https://api.mercadolibre.com";
 
-export function getAuthURL(forceLogin: boolean = false): string {
+/** Gera o par PKCE (o ML passou a exigir code_challenge/code_verifier). */
+export function generatePkce(): { verifier: string; challenge: string } {
+  const verifier = crypto.randomBytes(32).toString("base64url");
+  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
+
+export function getAuthURL(codeChallenge: string): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: ML_APP_ID,
     redirect_uri: ML_REDIRECT_URI,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
     state: Date.now().toString(), // evita cache
   });
 
   return `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
 }
 
-export async function exchangeCodeForToken(code: string) {
+export async function exchangeCodeForToken(code: string, codeVerifier: string) {
+  const body: Record<string, string> = {
+    grant_type: "authorization_code",
+    client_id: ML_APP_ID,
+    client_secret: ML_SECRET,
+    code,
+    redirect_uri: ML_REDIRECT_URI,
+  };
+  if (codeVerifier) body.code_verifier = codeVerifier;
+
   const res = await fetch(`${ML_API}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: ML_APP_ID,
-      client_secret: ML_SECRET,
-      code,
-      redirect_uri: ML_REDIRECT_URI,
-    }),
+    body: new URLSearchParams(body),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

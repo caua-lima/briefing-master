@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "../../../../lib/firebase/admin";
 import { exchangeCodeForToken } from "@/lib/ml/client";
 
+function readCookie(req: Request, name: string): string | null {
+  const raw = req.headers.get("cookie") ?? "";
+  const m = raw.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -11,7 +17,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing code" }, { status: 400 });
     }
 
-    const token = await exchangeCodeForToken(code);
+    // PKCE: recupera o code_verifier salvo no cookie pela rota /auth
+    const codeVerifier = readCookie(req, "ml_pkce_verifier") ?? "";
+    const token = await exchangeCodeForToken(code, codeVerifier);
 
     const db = getAdminDb();
 
@@ -41,8 +49,9 @@ export async function GET(req: Request) {
 
     // Redireciona para a home em vez de retornar JSON
     const response = NextResponse.redirect(new URL("/", req.url));
-    // Limpa o flag de desconectado
+    // Limpa o flag de desconectado e o verifier do PKCE
     response.cookies.set("ml_disconnected", "false", { maxAge: 0 });
+    response.cookies.set("ml_pkce_verifier", "", { maxAge: 0, path: "/" });
     return response;
   } catch (error: any) {
     return NextResponse.json(
