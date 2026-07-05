@@ -90,20 +90,6 @@ function isoOf(d: Date): string {
 function todayISO(): string {
   return isoOf(new Date());
 }
-function daysAgoISO(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return isoOf(d);
-}
-function weekRange(): { from: string; to: string } {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-  const mon = new Date(now.setDate(diff));
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  return { from: isoOf(mon), to: isoOf(sun) };
-}
 function monthRange(mes: string): { from: string; to: string } {
   const [y, m] = mes.split("-").map(Number);
   const last = new Date(y, m, 0).getDate();
@@ -186,7 +172,7 @@ function MetaDiariaCard({
   const falta = metaDiaria ? Math.max(metaDiaria - faturamentoHoje, 0) : 0;
 
   return (
-    <div className="panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+    <div className="panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
       {metaDiaria ? (
         <Gauge
           caption="📅 Meta Diária de Hoje"
@@ -292,7 +278,7 @@ function TabelaAnuncios({ anuncios, adsNaoVinculado }: { anuncios: AnuncioResult
 export default function Dashboard({ data }: Props) {
   const mes = mesAtual();
 
-  type PeriodoMode = "hoje" | "ontem" | "3d" | "7d" | "semana" | "mes" | "custom";
+  type PeriodoMode = "hoje" | "mes" | "custom";
   const [periodoMode, setPeriodoMode] = useState<PeriodoMode>("mes");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -311,10 +297,6 @@ export default function Dashboard({ data }: Props) {
   const periodoRange = useMemo((): { from: string; to: string } => {
     const today = todayISO();
     if (periodoMode === "hoje") return { from: today, to: today };
-    if (periodoMode === "ontem") return { from: daysAgoISO(1), to: daysAgoISO(1) };
-    if (periodoMode === "3d") return { from: daysAgoISO(2), to: today };
-    if (periodoMode === "7d") return { from: daysAgoISO(6), to: today };
-    if (periodoMode === "semana") return weekRange();
     if (periodoMode === "mes") return monthRange(mes);
     if (customFrom && customTo) return { from: customFrom, to: customTo };
     return monthRange(mes);
@@ -406,8 +388,7 @@ export default function Dashboard({ data }: Props) {
   const metaDiariaAtiva = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
 
   const PERIOD_LABELS: Record<PeriodoMode, string> = {
-    hoje: "Hoje", ontem: "Ontem", "3d": "3 dias", "7d": "7 dias",
-    semana: "Semana", mes: "Mês", custom: "Personalizado",
+    hoje: "Hoje", mes: "Mês", custom: "Personalizado",
   };
 
   const totalCustos =
@@ -441,7 +422,7 @@ export default function Dashboard({ data }: Props) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div className="seg">
-            {(["hoje", "ontem", "3d", "7d", "semana", "mes", "custom"] as PeriodoMode[]).map((mode) => (
+            {(["hoje", "mes", "custom"] as PeriodoMode[]).map((mode) => (
               <button key={mode} type="button" className={`seg-btn ${periodoMode === mode ? "active" : ""}`} onClick={() => setPeriodoMode(mode)}>
                 {PERIOD_LABELS[mode]}
               </button>
@@ -531,25 +512,18 @@ export default function Dashboard({ data }: Props) {
             </div>
           </section>
 
-          {/* Meta diária + Pedidos */}
-          <div className="dash-2col">
-            <MetaDiariaCard
-              faturamentoHoje={mlMetrics?.faturamentoHoje ?? 0}
-              pedidosHoje={mlMetrics?.pedidosHoje ?? 0}
-              metaDiaria={metaDiariaAtiva}
-            />
-            <div className="panel">
-              <div className="panel-title" style={{ marginBottom: 12 }}>📦 Pedidos</div>
-              <div className="stat-row"><span className="s-lbl">Pedidos no período</span><span className="s-val">{mlMetrics?.ordersCount ?? 0}</span></div>
-              <div className="stat-row"><span className="s-lbl">Sem produto vinculado</span><span className="s-val" style={{ color: (mlMetrics?.pedidosSemVinculo ?? 0) > 0 ? "var(--yellow)" : undefined }}>{mlMetrics?.pedidosSemVinculo ?? 0}</span></div>
-              <div className="stat-row"><span className="s-lbl">Ticket médio</span><span className="s-val">{(mlMetrics?.ordersCount ?? 0) > 0 ? fmtBRL(fatBruto / mlMetrics!.ordersCount) : "—"}</span></div>
-              {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
-                <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)", borderRadius: 8, fontSize: ".76rem", color: "#f7c948" }}>
-                  ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — cadastre o SKU/MLB no Estoque.
-                </div>
-              )}
+          {/* Meta diária de hoje */}
+          <MetaDiariaCard
+            faturamentoHoje={mlMetrics?.faturamentoHoje ?? 0}
+            pedidosHoje={mlMetrics?.pedidosHoje ?? 0}
+            metaDiaria={metaDiariaAtiva}
+          />
+
+          {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
+            <div style={{ padding: "8px 12px", background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)", borderRadius: 8, fontSize: ".78rem", color: "#f7c948" }}>
+              ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — cadastre o SKU/MLB no Estoque para o lucro ficar completo.
             </div>
-          </div>
+          )}
 
           {/* Composição de custos + Doughnut */}
           <div className="dash-2col">
