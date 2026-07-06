@@ -10,7 +10,7 @@
   --radius:12px;--shadow:0 4px 24px rgba(0,0,0,0.4);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
 header{text-align:center;margin-bottom:28px}
 header h1{font-size:clamp(1.4rem,4vw,2rem);font-weight:700}
 header h1 .logo-text{background:linear-gradient(135deg,#4f8ef7,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:inline-block}
@@ -76,7 +76,7 @@ header p{color:var(--muted);font-size:.9rem;margin-top:4px}
 /* Results */
 .results-section{margin-top:32px}
 .results-section h2{font-size:1.05rem;font-weight:600;margin-bottom:16px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.table-wrapper{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+.table-wrapper{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;border-radius:var(--radius);border:1px solid var(--border)}
 table{width:100%;border-collapse:collapse;font-size:.87rem}
 thead tr{background:var(--surface2)}
 thead th{padding:11px 13px;text-align:left;color:var(--muted);font-weight:600;font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
@@ -213,7 +213,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
 /* ================= Dashboard v2 (redesign) ================= */
-.dash{display:flex;flex-direction:column;gap:22px}
+.dash{display:flex;flex-direction:column;gap:22px;min-width:0}
 
 /* Topbar */
 .dash-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
@@ -230,7 +230,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .date-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:.82rem}
 
 /* Panels */
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;min-width:0}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 .panel-title{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800}
 .panel-sub{font-size:.74rem;color:var(--muted)}
@@ -314,6 +314,11 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .dash-top{gap:10px}
   .seg{width:100%;justify-content:center}
   .panel-head{gap:6px}
+  /* tabelas largas: rolam dentro do painel, mais compactas */
+  .kpi,.hero-stat,.dash-2col>*{min-width:0}
+  .tbl-modern{font-size:.76rem}
+  .tbl-modern thead th,.tbl-modern tbody td,.tbl-modern tfoot td{padding:8px 8px}
+  table thead th,table tbody td{padding:9px 9px;font-size:.8rem}
 }
 
 @media(max-width:440px){
