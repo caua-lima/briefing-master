@@ -85,14 +85,16 @@ export type DraftToday = {
 export type Product = {
   id: string;
   name: string;
-  preco: string;
   custo: string;
-  retorno: string;
   sku?: string;              // bate com items[].sku dos pedidos ML
   imposto?: string;          // % de imposto sobre a venda (ex: "8" = 8%)
-  mlb?: string;
+  mlb?: string;              // 1º código MLB (compat); ver mlbs
+  mlbs?: string[];           // vários anúncios (MLB) do mesmo produto
   ativo: boolean;
   createdBy?: string;
+  // @deprecated — preço e retorno vêm automaticamente das vendas do ML
+  preco?: string;
+  retorno?: string;
   // @deprecated — ADS e Full agora são puxados automaticamente do ML
   ads?: string;
   custo_envio_full?: string;

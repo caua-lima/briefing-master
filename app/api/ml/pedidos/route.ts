@@ -59,9 +59,12 @@ export async function GET(req: Request) {
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const entry: ProdutoData = { custo: Number(d.custo ?? 0), imposto: Number(d.imposto ?? 0), name: String(d.name ?? "") };
-      const mlbNum = normalizeItemId(String(d.mlb ?? ""));
+      const mlbList: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
+      for (const m of mlbList) {
+        const n = normalizeItemId(String(m));
+        if (n) porMlb.set(n, entry);
+      }
       const sku = String(d.sku ?? "").trim();
-      if (mlbNum) porMlb.set(mlbNum, entry);
       if (sku) porSku.set(normalizeSku(sku), entry);
     }
 

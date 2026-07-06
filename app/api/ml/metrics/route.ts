@@ -370,8 +370,11 @@ export async function GET(req: Request) {
         name: String(d.name ?? ""),
         sku: String(d.sku ?? "").trim(),
       };
-      const mlbNum = normalizeItemId(entry.mlb);
-      if (mlbNum) porMlb.set(mlbNum, entry);
+      const mlbList: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : entry.mlb ? [entry.mlb] : [];
+      for (const m of mlbList) {
+        const n = normalizeItemId(String(m));
+        if (n) porMlb.set(n, entry);
+      }
       if (entry.sku) porSku.set(normalizeSku(entry.sku), entry);
     }
 
