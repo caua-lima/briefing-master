@@ -30,6 +30,17 @@ export default function GestaoFullTab() {
   const [resumo, setResumo] = useState<Resumo>({ agendados: 0, preparando: 0, aCaminho: 0, recebendo: 0, finalizado: 0, cancelado: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [apiStatus, setApiStatus] = useState<number>(0);
+  const [diag, setDiag] = useState<string | null>(null);
+
+  async function runDiag() {
+    setDiag("⏳ Testando endpoints do Full…");
+    try {
+      const r = await authedFetch("/api/ml/debug-inbound", { cache: "no-store" });
+      setDiag(JSON.stringify(await r.json(), null, 2));
+    } catch (e) {
+      setDiag("Erro: " + String(e));
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,8 +71,18 @@ export default function GestaoFullTab() {
         <div className="dash-top-left">
           <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🏭 Gestão Full</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={load} disabled={loading}>{loading ? "⏳ Carregando..." : "⟳ Atualizar"}</button>
+          {(!loading && envios.length === 0) && (
+            <button type="button" className="btn btn-xs btn-ghost" onClick={runDiag} title="Diagnóstico dos endpoints do Full">🐞 Diagnóstico</button>
+          )}
         </div>
       </div>
+
+      {diag && (
+        <pre style={{ position: "relative", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", fontSize: ".72rem", maxHeight: 320, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--text)" }}>
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => setDiag(null)} style={{ position: "absolute", right: 8, top: 8 }}>✕</button>
+          {diag}
+        </pre>
+      )}
 
       <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(79,142,247,.06)", border: "1px solid rgba(79,142,247,.18)", borderRadius: 8, padding: "10px 14px" }}>
         📦 Envios que você manda para o centro de distribuição do Full (agendados, em preparação, recebimento e processamento).
