@@ -6,16 +6,18 @@ import { useUserData } from "@/components/useUserData";
 import { AccessGuard, useAccess } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
 import MetasTab from "@/components/tabs/MetasTab";
+import PedidosTab from "@/components/tabs/PedidosTab";
 import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 
-type Tab = "dashboard" | "metas" | "custos" | "estoque" | "acesso";
+type Tab = "dashboard" | "pedidos" | "metas" | "custos" | "estoque" | "acesso";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string; adminOnly?: boolean }[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
+  { id: "pedidos", label: "Pedidos", icon: "🧾" },
   { id: "metas", label: "Metas", icon: "🎯", adminOnly: true },
   { id: "custos", label: "Custos", icon: "💸", adminOnly: true },
   { id: "estoque", label: "Estoque", icon: "📦", adminOnly: true },
@@ -324,6 +326,7 @@ function AppShell() {
             ) : (
               <>
                 {activeTab === "dashboard" && <Dashboard data={data} />}
+                {activeTab === "pedidos" && <PedidosTab />}
                 {activeTab === "metas" && isAdmin && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && isAdmin && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && isAdmin && <EstoqueTab uid={user.uid} data={data} />}
