@@ -64,57 +64,72 @@ async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
   await Promise.all(workers);
 }
 
+type ShipmentInfo = {
+  cost: number | null;
+  status: string;
+  substatus: string;
+  logistic: string;
+  tracking: string;
+  estimated: string;
+};
+
 /**
- * Busca o custo de frete que o VENDEDOR paga por um envio (senders[].cost).
- * Retorna null em caso de falha (para permitir nova tentativa no próximo sync).
+ * Busca custo (senders) + status/logística do envio numa passada.
+ * Retorna null em falha (para permitir nova tentativa no próximo sync).
  */
-async function fetchShipmentCost(accessToken: string, shipmentId: string): Promise<number | null> {
+async function fetchShipment(accessToken: string, shipmentId: string): Promise<ShipmentInfo | null> {
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
   try {
-    // 1) /costs → senders[].cost = custo líquido do vendedor (documentado)
-    const rc = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, { headers, cache: "no-store" });
-    if (rc.ok) {
-      const j = (await rc.json()) as { senders?: { cost?: number }[] };
-      const senders = Array.isArray(j?.senders) ? j.senders : [];
-      const sum = senders.reduce((s, x) => s + Number(x?.cost ?? 0), 0);
-      if (sum > 0) return sum;
-    }
-    // 2) fallback: /shipments/{id} → list_cost quando o comprador não pagou o
-    //    frete (frete grátis / Full → o vendedor absorve o custo)
+    // detalhe do envio (status, logística, tracking, prazo, list_cost)
     const rs = await fetch(`${ML_API}/shipments/${shipmentId}`, { headers, cache: "no-store" });
-    if (rs.ok) {
-      const j = (await rs.json()) as { shipping_option?: { cost?: number; list_cost?: number }; base_cost?: number };
-      const opt = j?.shipping_option ?? {};
-      const buyerCost = Number(opt.cost ?? 0);
-      const listCost = Number(opt.list_cost ?? 0);
-      const baseCost = Number(j?.base_cost ?? 0);
-      if (buyerCost === 0 && listCost > 0) return listCost;
-      if (buyerCost === 0 && baseCost > 0) return baseCost;
-      return 0;
-    }
-    return null;
+    if (!rs.ok) return null;
+    const j = (await rs.json()) as {
+      status?: string; substatus?: string; logistic_type?: string; tracking_number?: string;
+      shipping_option?: { cost?: number; list_cost?: number }; base_cost?: number;
+      lead_time?: { estimated_delivery_time?: { date?: string }; estimated_delivery_final?: { date?: string } };
+    };
+    const status = String(j.status ?? "");
+    const substatus = String(j.substatus ?? "");
+    const logistic = String(j.logistic_type ?? "");
+    const tracking = String(j.tracking_number ?? "");
+    const estimated = String(j.lead_time?.estimated_delivery_final?.date ?? j.lead_time?.estimated_delivery_time?.date ?? "");
+    const buyerCost = Number(j.shipping_option?.cost ?? 0);
+    const listCost = Number(j.shipping_option?.list_cost ?? 0);
+    const baseCost = Number(j.base_cost ?? 0);
+
+    // custo do vendedor: /costs senders (mais preciso), fallback list_cost em frete grátis
+    let cost: number | null = null;
+    try {
+      const rc = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, { headers, cache: "no-store" });
+      if (rc.ok) {
+        const jc = (await rc.json()) as { senders?: { cost?: number }[] };
+        const senders = Array.isArray(jc?.senders) ? jc.senders : [];
+        const sum = senders.reduce((s, x) => s + Number(x?.cost ?? 0), 0);
+        if (sum > 0) cost = sum;
+      }
+    } catch { /* segue */ }
+    if (cost == null) cost = buyerCost === 0 ? (listCost > 0 ? listCost : baseCost > 0 ? baseCost : 0) : 0;
+
+    return { cost, status, substatus, logistic, tracking, estimated };
   } catch {
     return null;
   }
 }
 
-/** Lê `shipping_cost` já salvo dos pedidos informados (evita refetch de envios). */
-async function existingShippingCosts(
-  db: FirebaseFirestore.Firestore,
-  orderIds: string[],
-): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
+/** Ids de pedidos cujo envio já está em estado FINAL (não precisa re-buscar). */
+async function terminalShipmentIds(db: FirebaseFirestore.Firestore, orderIds: string[]): Promise<Set<string>> {
+  const set = new Set<string>();
+  const terminal = new Set(["delivered", "not_delivered", "cancelled"]);
   const CHUNK = 300;
   for (let i = 0; i < orderIds.length; i += CHUNK) {
     const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
     if (refs.length === 0) continue;
     const snaps = await db.getAll(...refs);
     for (const snap of snaps) {
-      const v = snap.get("shipping_cost");
-      if (typeof v === "number") map.set(snap.id, v);
+      if (terminal.has(String(snap.get("shipping_status") ?? ""))) set.add(snap.id);
     }
   }
-  return map;
+  return set;
 }
 
 async function fetchAllOrders(
@@ -154,22 +169,22 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
   const db = getAdminDb();
   const all = await fetchAllOrders(accessToken, range);
 
-  // ── Custo de frete (Full) por pedido, via API de envios ──
+  // ── Envio (Full): custo + status, via API de envios ──
+  // Re-busca envios não-finais para o status ficar atualizado (a caminho→entregue)
   const orderIds = all.map((o) => String((o as Record<string, unknown>).id));
-  const shippingByOrder = await existingShippingCosts(db, orderIds);
+  const finais = await terminalShipmentIds(db, orderIds);
 
   const toFetch: { orderId: string; shipmentId: string }[] = [];
   for (const o of all) {
     const orderId = String((o as Record<string, unknown>).id);
     const shipmentId = String((o.shipping as Record<string, unknown>)?.id ?? "").trim();
-    if (shipmentId && !shippingByOrder.has(orderId)) {
-      toFetch.push({ orderId, shipmentId });
-    }
+    if (shipmentId && !finais.has(orderId)) toFetch.push({ orderId, shipmentId });
   }
 
+  const infoByOrder = new Map<string, ShipmentInfo>();
   await mapPool(toFetch, 8, async ({ orderId, shipmentId }) => {
-    const cost = await fetchShipmentCost(accessToken, shipmentId);
-    if (cost != null) shippingByOrder.set(orderId, cost);
+    const info = await fetchShipment(accessToken, shipmentId);
+    if (info) infoByOrder.set(orderId, info);
   });
 
   // ── Gravação em lote ──
@@ -191,9 +206,15 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
         items: mapOrderItems(o),
         updatedAt: new Date().toISOString(),
       };
-      // Só grava shipping_cost quando temos valor (falha na API não zera o existente)
-      const ship = shippingByOrder.get(orderId);
-      if (typeof ship === "number") doc.shipping_cost = ship;
+      const info = infoByOrder.get(orderId);
+      if (info) {
+        if (typeof info.cost === "number") doc.shipping_cost = info.cost;
+        doc.shipping_status = info.status;
+        doc.shipping_substatus = info.substatus;
+        doc.logistic_type = info.logistic;
+        doc.tracking = info.tracking;
+        doc.estimated_delivery = info.estimated;
+      }
 
       batch.set(db.collection("ml_orders").doc(orderId), doc, { merge: true });
     }

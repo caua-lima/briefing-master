@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Product } from "@/lib/domain/types";
 import { deleteProduct, upsertProduct } from "@/lib/firebase/data";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
+import { authedFetch } from "@/lib/api/authed-fetch";
+
+type EstoqueML = Record<string, { available: number; sold: number; status: string }>;
 
 function newId() {
   return "p" + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -15,9 +18,26 @@ function mlbsDe(p: Product): string[] {
   return p.mlb ? [p.mlb] : [];
 }
 
+function normMlb(s: string) {
+  const up = s.trim().toUpperCase();
+  return up.startsWith("MLB") ? up : up ? `MLB${up}` : "";
+}
+
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
+  const [estoqueML, setEstoqueML] = useState<EstoqueML>({});
+  const [loadingML, setLoadingML] = useState(false);
+
+  const carregarEstoque = useCallback(async () => {
+    setLoadingML(true);
+    try {
+      const res = await authedFetch("/api/ml/estoque-ml", { cache: "no-store" });
+      if (res.ok) setEstoqueML((await res.json()).estoque ?? {});
+    } catch { /* ignora */ } finally { setLoadingML(false); }
+  }, []);
+
+  useEffect(() => { carregarEstoque(); }, [carregarEstoque]);
 
   const filtered = data.products.filter((p) => {
     const q = search.toLowerCase();
@@ -33,6 +53,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const ativos = data.products.filter((p) => p.ativo).length;
   const anuncios = data.products.reduce((s, p) => s + mlbsDe(p).length, 0);
   const semVinculo = data.products.filter((p) => !p.sku && mlbsDe(p).length === 0).length;
+  const totalEstoque = Object.values(estoqueML).reduce((s, v) => s + v.available, 0);
 
   function onAdd() {
     setEditProduct({ id: newId(), name: "", custo: "", sku: "", imposto: "", mlbs: [""], ativo: true });
@@ -44,6 +65,9 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       <div className="dash-top">
         <div className="dash-top-left">
           <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>📦 Estoque de Produtos</h2>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={carregarEstoque} disabled={loadingML}>
+            {loadingML ? "⏳ Atualizando..." : "⟳ Atualizar estoque"}
+          </button>
         </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>
       </div>
@@ -52,8 +76,8 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Produtos</div><div className="k-val">{total}</div></div>
         <div className="kpi k-pos"><div className="k-lbl">Ativos</div><div className="k-val" style={{ color: "var(--green)" }}>{ativos}</div></div>
-        <div className="kpi k-neg"><div className="k-lbl">Inativos</div><div className="k-val" style={{ color: "var(--red)" }}>{total - ativos}</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Anúncios (MLB)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{anuncios}</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Estoque (ML)</div><div className="k-val" style={{ color: totalEstoque > 0 ? "var(--green)" : "var(--muted)" }}>{totalEstoque} un</div></div>
       </div>
 
       {/* Busca */}
@@ -82,13 +106,13 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                 <tr>
                   <th style={{ textAlign: "left" }}>Produto</th>
                   <th style={{ textAlign: "left" }}>Anúncios (MLB)</th>
-                  <th>Custo</th><th>Imposto</th>
+                  <th>Estoque ML</th><th>Custo</th><th>Imposto</th>
                   <th style={{ textAlign: "left" }}>Status</th><th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((p) => (
-                  <ProductRow key={p.id} product={p} uid={uid} onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })} />
+                  <ProductRow key={p.id} product={p} uid={uid} estoqueML={estoqueML} onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })} />
                 ))}
               </tbody>
             </table>
@@ -116,10 +140,13 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   );
 }
 
-function ProductRow({ product, uid, onEdit }: { product: Product; uid: string; onEdit: () => void }) {
+function ProductRow({ product, uid, estoqueML, onEdit }: { product: Product; uid: string; estoqueML: EstoqueML; onEdit: () => void }) {
   const custo = parseFloat(product.custo) || 0;
   const imposto = parseFloat(product.imposto ?? "0") || 0;
   const mlbs = mlbsDe(product);
+  const estoqueDe = (m: string) => estoqueML[normMlb(m)]?.available;
+  const totalEstoque = mlbs.reduce((s, m) => s + (estoqueDe(m) ?? 0), 0);
+  const temDado = mlbs.some((m) => estoqueDe(m) != null);
 
   return (
     <tr style={{ opacity: product.ativo ? 1 : 0.5 }}>
@@ -133,12 +160,20 @@ function ProductRow({ product, uid, onEdit }: { product: Product; uid: string; o
       </td>
       <td style={{ textAlign: "left" }}>
         {mlbs.length ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 260 }}>
-            {mlbs.map((m) => (
-              <span key={m} style={{ fontSize: ".72rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 7px", borderRadius: 5, color: "var(--muted)" }}>{m}</span>
-            ))}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 280 }}>
+            {mlbs.map((m) => {
+              const q = estoqueDe(m);
+              return (
+                <span key={m} style={{ fontSize: ".72rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 7px", borderRadius: 5, color: "var(--muted)" }}>
+                  {m}{q != null && <b style={{ color: q > 0 ? "var(--green)" : "var(--red)", marginLeft: 4 }}>{q}un</b>}
+                </span>
+              );
+            })}
           </div>
         ) : <span style={{ color: "var(--red)", fontSize: ".72rem" }}>⚠️ sem MLB</span>}
+      </td>
+      <td style={{ fontWeight: 700, color: !temDado ? "var(--muted)" : totalEstoque > 0 ? "var(--green)" : "var(--red)" }}>
+        {temDado ? `${totalEstoque} un` : "—"}
       </td>
       <td style={{ color: "var(--red)", fontWeight: 600 }}>R$ {custo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
       <td style={{ color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>
