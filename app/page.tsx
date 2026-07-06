@@ -66,8 +66,9 @@ function AppShell() {
   const data = useUserData(user?.uid);
   const { isAdmin } = useAccess();
   const navItems = NAV_ITEMS.filter((item) => isAdmin || !item.adminOnly);
-  // aba efetiva: não-admin fica sempre no dashboard
-  const activeTab: Tab = isAdmin ? tab : "dashboard";
+  // aba efetiva: só bloqueia abas admin-only para quem não é admin
+  const tabIsAdminOnly = NAV_ITEMS.find((n) => n.id === tab)?.adminOnly ?? false;
+  const activeTab: Tab = tabIsAdminOnly && !isAdmin ? "dashboard" : tab;
 
   if (!user) return null;
 
