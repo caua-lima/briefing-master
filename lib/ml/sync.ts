@@ -77,30 +77,50 @@ type ShipmentInfo = {
  * Busca custo (senders) + status/logística do envio numa passada.
  * Retorna null em falha (para permitir nova tentativa no próximo sync).
  */
+type LeadTime = {
+  estimated_delivery_time?: { date?: string };
+  estimated_delivery_final?: { date?: string };
+  estimated_delivery_limit?: { date?: string };
+};
+function pickEstimate(lt?: LeadTime): string {
+  return String(lt?.estimated_delivery_final?.date ?? lt?.estimated_delivery_time?.date ?? lt?.estimated_delivery_limit?.date ?? "");
+}
+
 async function fetchShipment(accessToken: string, shipmentId: string): Promise<ShipmentInfo | null> {
-  const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
+  // x-format-new enriquece o envio (inclui lead_time/prazo)
+  const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "x-format-new": "true" };
   try {
     // detalhe do envio (status, logística, tracking, prazo, list_cost)
     const rs = await fetch(`${ML_API}/shipments/${shipmentId}`, { headers, cache: "no-store" });
     if (!rs.ok) return null;
     const j = (await rs.json()) as {
       status?: string; substatus?: string; logistic_type?: string; tracking_number?: string;
-      shipping_option?: { cost?: number; list_cost?: number }; base_cost?: number;
-      lead_time?: { estimated_delivery_time?: { date?: string }; estimated_delivery_final?: { date?: string } };
+      shipping_option?: { cost?: number; list_cost?: number; estimated_delivery_time?: { date?: string }; estimated_delivery_final?: { date?: string } };
+      base_cost?: number; lead_time?: LeadTime;
     };
     const status = String(j.status ?? "");
     const substatus = String(j.substatus ?? "");
     const logistic = String(j.logistic_type ?? "");
     const tracking = String(j.tracking_number ?? "");
-    const estimated = String(j.lead_time?.estimated_delivery_final?.date ?? j.lead_time?.estimated_delivery_time?.date ?? "");
+    let estimated = pickEstimate(j.lead_time) ||
+      String(j.shipping_option?.estimated_delivery_final?.date ?? j.shipping_option?.estimated_delivery_time?.date ?? "");
+    // fallback: sub-recurso de prazo, quando o envio não trouxe lead_time
+    if (!estimated) {
+      try {
+        const rl = await fetch(`${ML_API}/shipments/${shipmentId}/lead_time`, { headers, cache: "no-store" });
+        if (rl.ok) estimated = pickEstimate((await rl.json()) as LeadTime);
+      } catch { /* segue */ }
+    }
     const buyerCost = Number(j.shipping_option?.cost ?? 0);
     const listCost = Number(j.shipping_option?.list_cost ?? 0);
     const baseCost = Number(j.base_cost ?? 0);
 
     // custo do vendedor: /costs senders (mais preciso), fallback list_cost em frete grátis
+    // (sem x-format-new para não alterar a estrutura de custo já validada)
+    const costHeaders = { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
     let cost: number | null = null;
     try {
-      const rc = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, { headers, cache: "no-store" });
+      const rc = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, { headers: costHeaders, cache: "no-store" });
       if (rc.ok) {
         const jc = (await rc.json()) as { senders?: { cost?: number }[] };
         const senders = Array.isArray(jc?.senders) ? jc.senders : [];
