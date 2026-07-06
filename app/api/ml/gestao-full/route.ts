@@ -42,13 +42,18 @@ export async function GET(req: Request) {
     const inventoryIds = new Set<string>();
     for (let i = 0; i < arr.length; i += 20) {
       const chunk = arr.slice(i, i + 20);
-      const res = await fetch(`${ML_API}/items?ids=${chunk.join(",")}&attributes=id,title,available_quantity,sold_quantity,status,inventory_id`, { headers, cache: "no-store" });
+      const res = await fetch(`${ML_API}/items?ids=${chunk.join(",")}&attributes=id,title,available_quantity,sold_quantity,status,inventory_id,shipping`, { headers, cache: "no-store" });
       if (!res.ok) continue;
       const rows = (await res.json()) as { body?: Record<string, unknown> }[];
       for (const row of rows) {
         const b = row?.body;
         if (!b) continue;
+        const shipping = (b.shipping as Record<string, unknown>) ?? {};
+        const logistic = String(shipping.logistic_type ?? "");
         const inv = String(b.inventory_id ?? "");
+        // Só anúncios no Full (fulfillment). Agência/Flex/self ficam de fora.
+        const isFull = logistic === "fulfillment" || (logistic === "" && inv !== "");
+        if (!isFull) continue;
         if (inv) inventoryIds.add(inv);
         itens.push({
           mlb: String(b.id ?? "").toUpperCase(),
