@@ -29,45 +29,72 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
     );
   });
 
+  const total = data.products.length;
+  const ativos = data.products.filter((p) => p.ativo).length;
+  const anuncios = data.products.reduce((s, p) => s + mlbsDe(p).length, 0);
+  const semVinculo = data.products.filter((p) => !p.sku && mlbsDe(p).length === 0).length;
+
   function onAdd() {
     setEditProduct({ id: newId(), name: "", custo: "", sku: "", imposto: "", mlbs: [""], ativo: true });
   }
 
   return (
-    <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <h2 style={{ fontSize: "1.1rem", fontWeight: 700 }}>📦 Estoque de Produtos</h2>
+    <div className="dash">
+      {/* Header */}
+      <div className="dash-top">
+        <div className="dash-top-left">
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>📦 Estoque de Produtos</h2>
+        </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <input
-          type="text" placeholder="🔍 Buscar por nome, SKU ou código MLB…" value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
-        />
+      {/* Resumo */}
+      <div className="kpi-grid">
+        <div className="kpi k-acc"><div className="k-lbl">Produtos</div><div className="k-val">{total}</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Ativos</div><div className="k-val" style={{ color: "var(--green)" }}>{ativos}</div></div>
+        <div className="kpi k-neg"><div className="k-lbl">Inativos</div><div className="k-val" style={{ color: "var(--red)" }}>{total - ativos}</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Anúncios (MLB)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{anuncios}</div></div>
       </div>
 
-      {filtered.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
-          {search ? "Nenhum produto encontrado." : (<>Nenhum produto cadastrado.<br />Clique em <strong>＋ Novo Produto</strong>.</>)}
-        </div>
-      ) : (
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Produto</th><th>SKU</th><th>Anúncios (MLB)</th><th>Custo</th><th>Imposto %</th><th>Status</th><th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <ProductRow key={p.id} product={p} uid={uid} onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })} />
-              ))}
-            </tbody>
-          </table>
+      {/* Busca */}
+      <input
+        type="text" placeholder="🔍 Buscar por nome, SKU ou código MLB…" value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
+      />
+
+      {semVinculo > 0 && (
+        <div style={{ padding: "8px 12px", background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)", borderRadius: 8, fontSize: ".78rem", color: "#f7c948" }}>
+          ⚠️ {semVinculo} produto(s) sem SKU nem MLB — não vão vincular às vendas.
         </div>
       )}
+
+      {/* Lista */}
+      <div className="panel">
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+            {search ? "Nenhum produto encontrado." : (<>Nenhum produto cadastrado.<br />Clique em <strong>＋ Novo Produto</strong>.</>)}
+          </div>
+        ) : (
+          <div className="table-wrapper" style={{ border: "none" }}>
+            <table className="tbl-modern">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>Produto</th>
+                  <th style={{ textAlign: "left" }}>Anúncios (MLB)</th>
+                  <th>Custo</th><th>Imposto</th>
+                  <th style={{ textAlign: "left" }}>Status</th><th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p) => (
+                  <ProductRow key={p.id} product={p} uid={uid} onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {editProduct && (
         <ProductModal
@@ -85,7 +112,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -95,35 +122,33 @@ function ProductRow({ product, uid, onEdit }: { product: Product; uid: string; o
   const mlbs = mlbsDe(product);
 
   return (
-    <tr style={{ opacity: product.ativo ? 1 : 0.45 }}>
-      <td className="td-name">{product.name || <em style={{ color: "var(--muted)" }}>Sem nome</em>}</td>
-      <td style={{ color: "var(--muted)", fontSize: ".82rem" }}>
+    <tr style={{ opacity: product.ativo ? 1 : 0.5 }}>
+      <td style={{ textAlign: "left" }}>
+        <div style={{ fontWeight: 600 }}>{product.name || <em style={{ color: "var(--muted)" }}>Sem nome</em>}</div>
         {product.sku ? (
-          <span style={{ background: "rgba(79,142,247,.12)", color: "#4f8ef7", padding: "2px 7px", borderRadius: 6, fontWeight: 700, fontSize: ".78rem" }}>{product.sku}</span>
+          <span style={{ display: "inline-block", marginTop: 3, background: "rgba(79,142,247,.12)", color: "#4f8ef7", padding: "1px 7px", borderRadius: 6, fontWeight: 700, fontSize: ".7rem" }}>SKU {product.sku}</span>
         ) : (
-          <span style={{ color: "var(--red)", fontSize: ".75rem" }}>⚠️ sem SKU</span>
+          <span style={{ display: "inline-block", marginTop: 3, color: "var(--red)", fontSize: ".7rem" }}>⚠️ sem SKU</span>
         )}
       </td>
-      <td style={{ color: "var(--muted)", fontSize: ".78rem" }}>
+      <td style={{ textAlign: "left" }}>
         {mlbs.length ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 260 }}>
             {mlbs.map((m) => (
-              <span key={m} style={{ background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5 }}>{m}</span>
+              <span key={m} style={{ fontSize: ".72rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 7px", borderRadius: 5, color: "var(--muted)" }}>{m}</span>
             ))}
           </div>
-        ) : "—"}
+        ) : <span style={{ color: "var(--red)", fontSize: ".72rem" }}>⚠️ sem MLB</span>}
       </td>
-      <td className="negative">R$ {custo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-      <td className={imposto > 0 ? "negative" : ""} style={{ color: imposto > 0 ? undefined : "var(--muted)" }}>
+      <td style={{ color: "var(--red)", fontWeight: 600 }}>R$ {custo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+      <td style={{ color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>
         {imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}
       </td>
-      <td>
-        <span style={{ display: "inline-block", fontSize: ".75rem", fontWeight: 700, padding: "2px 8px", borderRadius: 12, background: product.ativo ? "rgba(34,197,94,.15)" : "rgba(239,68,68,.1)", color: product.ativo ? "var(--green)" : "var(--red)" }}>
-          {product.ativo ? "✅ Ativo" : "🔴 Inativo"}
-        </span>
+      <td style={{ textAlign: "left" }}>
+        <span className={`tag ${product.ativo ? "tag-g" : "tag-r"}`}>{product.ativo ? "Ativo" : "Inativo"}</span>
       </td>
       <td>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
           <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>✏️</button>
           <button type="button" className="btn btn-danger btn-xs" onClick={() => { if (!confirm(`Remover "${product.name}"?`)) return; deleteProduct(uid, product.id).catch(() => {}); }}>🗑</button>
         </div>
