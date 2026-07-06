@@ -91,7 +91,7 @@ export default function EnviosTab() {
     <div className="dash">
       <div className="dash-top">
         <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🚚 Envios Full</h2>
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>📦 Entregas</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={atualizar} disabled={loading}>
             {loading ? "⏳ Atualizando..." : "⟳ Atualizar"}
           </button>
@@ -145,7 +145,7 @@ export default function EnviosTab() {
                   <th style={{ textAlign: "left" }}>Data</th>
                   <th style={{ textAlign: "left" }}>Produto</th>
                   <th style={{ textAlign: "left" }}>Status</th>
-                  <th style={{ textAlign: "left" }}>Previsão</th>
+                  <th style={{ textAlign: "left" }}>Previsão de entrega</th>
                   <th>Valor</th>
                 </tr>
               </thead>
