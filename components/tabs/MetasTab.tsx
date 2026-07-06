@@ -32,60 +32,40 @@ export default function MetasTab({
   }, [data.goalEntries]);
 
   return (
-    <>
-      <div className="metas-header">
-        <h2>🎯 Definição de Metas</h2>
-        <button
-          type="button"
-          className="btn btn-purple btn-sm"
-          onClick={() => setOpenNew(true)}
-        >
-          ＋ Nova Meta
-        </button>
+    <div className="dash">
+      <div className="dash-top">
+        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🎯 Definição de Metas</h2></div>
+        <button type="button" className="btn btn-purple btn-sm" onClick={() => setOpenNew(true)}>＋ Nova Meta</button>
       </div>
-      <p style={{ color: "var(--muted)", fontSize: ".85rem", margin: "8px 0 20px" }}>
-        Defina as metas de faturamento (1, 2 e 3) e a margem de lucro líquido. O acompanhamento aparece no Dashboard.
-      </p>
 
-      {/* Metas cadastradas */}
-      {data.goalEntries.length > 0 && (
-        <div style={{ marginTop: 32 }}>
-          <h3 style={{ fontSize: ".95rem", fontWeight: 700, marginBottom: 12 }}>
-            📋 Histórico de Metas
-          </h3>
-          {data.goalEntries.map((entry) => (
-            <GoalEntryRow
-              key={entry.id}
-              entry={entry}
-              isActive={entry.id === activeEntry?.id}
-              onEdit={() => setEditEntry(entry)}
-              onDelete={() => {
-                if (!confirm("Remover esta meta?")) return;
-                deleteGoalEntry(uid, entry.id).catch(() => { });
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(167,139,250,.07)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 8, padding: "10px 14px" }}>
+        💡 Defina as metas de faturamento (🥇🥈🥉) e a margem de lucro líquido alvo. O <strong>acompanhamento com velocímetros</strong> aparece no Dashboard.
+      </div>
 
-      {openNew && (
-        <GoalEntryModal
-          uid={uid}
-          entry={null}
-          open
-          onClose={() => setOpenNew(false)}
-        />
-      )}
+      <div className="panel">
+        <div className="panel-title" style={{ marginBottom: 14 }}>📋 Metas cadastradas</div>
+        {data.goalEntries.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>
+            Nenhuma meta definida.<br />Clique em <strong>＋ Nova Meta</strong>.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {data.goalEntries.map((entry) => (
+              <GoalEntryRow
+                key={entry.id}
+                entry={entry}
+                isActive={entry.id === activeEntry?.id}
+                onEdit={() => setEditEntry(entry)}
+                onDelete={() => { if (!confirm("Remover esta meta?")) return; deleteGoalEntry(uid, entry.id).catch(() => {}); }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
-      {editEntry && (
-        <GoalEntryModal
-          uid={uid}
-          entry={editEntry}
-          open
-          onClose={() => setEditEntry(null)}
-        />
-      )}
-    </>
+      {openNew && <GoalEntryModal uid={uid} entry={null} open onClose={() => setOpenNew(false)} />}
+      {editEntry && <GoalEntryModal uid={uid} entry={editEntry} open onClose={() => setEditEntry(null)} />}
+    </div>
   );
 }
 
@@ -100,59 +80,38 @@ function GoalEntryRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const chip = (emoji: string, valor: number | null, cor: string) =>
+    valor ? (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `${cor}1f`, border: `1px solid ${cor}`, color: cor, borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
+        {emoji} {fmtBRL(valor)}
+      </span>
+    ) : null;
+
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: "var(--surface)",
-        border: `1px solid ${isActive ? "var(--blue)" : "var(--border)"}`,
-        borderRadius: 10,
-        padding: "12px 16px",
-        marginBottom: 8,
-        flexWrap: "wrap",
-        gap: 8,
-      }}
-    >
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+      background: isActive ? "rgba(79,142,247,.06)" : "var(--surface2)",
+      border: `1px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
+      borderRadius: 10, padding: "12px 16px",
+    }}>
       <div>
-        <div style={{ fontWeight: 700, fontSize: ".9rem" }}>
-          {formatMesBR(entry.mes)}
-          {isActive && (
-            <span
-              style={{
-                marginLeft: 8,
-                fontSize: ".72rem",
-                background: "rgba(79,142,247,.15)",
-                color: "var(--blue)",
-                borderRadius: 6,
-                padding: "2px 8px",
-                fontWeight: 700,
-              }}
-            >
-              ✦ Ativa
-            </span>
-          )}
-          {entry.label && (
-            <span style={{ marginLeft: 8, fontSize: ".78rem", color: "var(--muted)" }}>
-              {entry.label}
-            </span>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 800, fontSize: ".95rem", textTransform: "capitalize" }}>{formatMesBR(entry.mes)}</span>
+          {isActive && <span style={{ fontSize: ".68rem", background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>ATIVA</span>}
+          {entry.label && <span style={{ fontSize: ".78rem", color: "var(--muted)" }}>· {entry.label}</span>}
         </div>
-        <div style={{ fontSize: ".78rem", color: "var(--muted)", marginTop: 4 }}>
-          🥇 {fmtBRL(entry.meta1)}
-          {entry.meta2 ? ` · 🥈 ${fmtBRL(entry.meta2)}` : ""}
-          {entry.meta3 ? ` · 🥉 ${fmtBRL(entry.meta3)}` : ""}
-          {` · 📈 margem alvo ${entry.metaMargem ?? 10}%`}
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          {chip("🥇", entry.meta1, "#4f8ef7")}
+          {chip("🥈", entry.meta2, "#f7c948")}
+          {chip("🥉", entry.meta3, "#a855f7")}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(34,197,94,.12)", border: "1px solid var(--green)", color: "var(--green)", borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
+            📈 margem {entry.metaMargem ?? 10}%
+          </span>
         </div>
       </div>
       <div style={{ display: "flex", gap: 6 }}>
-        <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>
-          ✏️ Editar
-        </button>
-        <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>
-          🗑
-        </button>
+        <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>✏️ Editar</button>
+        <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>🗑</button>
       </div>
     </div>
   );

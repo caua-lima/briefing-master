@@ -147,34 +147,38 @@ export default function AccessControlTab({
     }
   }
 
+  const admins = entries.filter((e) => e.role === "owner" || e.role === "admin").length;
+  const roleBadge = (r: AccessEntry["role"]) => {
+    const map: Record<string, [string, string]> = { owner: ["Owner", "#a855f7"], admin: ["Admin", "#4f8ef7"], user: ["Usuário", "#64748b"] };
+    const [txt, cor] = map[r] ?? map.user;
+    return <span style={{ fontSize: ".7rem", fontWeight: 700, color: cor, background: `${cor}1f`, border: `1px solid ${cor}`, borderRadius: 6, padding: "1px 8px" }}>{txt}</span>;
+  };
+
   return (
-    <div style={{ padding: 8 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h2>🔐 Controle de Acesso</h2>
-          <div style={{ marginTop: 12, color: "var(--muted)" }}>
-            Lista de e-mails autorizados com CRUD em tempo real.
-          </div>
-        </div>
+    <div className="dash">
+      <div className="dash-top">
+        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🔐 Controle de Acesso</h2></div>
       </div>
 
-      <div style={{ marginTop: 18, display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr)" }}>
-        <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: "1rem" }}>{editingEmail ? "Editar acesso" : "Nova entrada"}</h3>
-              <div style={{ marginTop: 4, fontSize: ".84rem", color: "var(--muted)" }}>
-                Controle direto da coleção /accessControl.
-              </div>
-            </div>
+      <div className="kpi-grid">
+        <div className="kpi k-acc"><div className="k-lbl">Acessos</div><div className="k-val">{entries.length}</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Admins / Owner</div><div className="k-val" style={{ color: "var(--green)" }}>{admins}</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Usuários</div><div className="k-val" style={{ color: "var(--yellow)" }}>{entries.length - admins}</div></div>
+      </div>
+
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr)" }}>
+        <div className="panel">
+          <div className="panel-head" style={{ marginBottom: 4 }}>
+            <span className="panel-title">{editingEmail ? "✏️ Editar acesso" : "＋ Nova entrada"}</span>
             {editingEmail ? (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={resetForm}>
-                Cancelar edição
-              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={resetForm}>Cancelar edição</button>
             ) : null}
           </div>
+          <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 14 }}>
+            Autorize por e-mail. A pessoa entra por Google ou, se definir uma senha, por e-mail/senha.
+          </div>
 
-          <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
+          <div style={{ display: "grid", gap: 12 }}>
             <div className="config-field" style={{ margin: 0 }}>
               <label>E-mail</label>
               <input
@@ -243,73 +247,48 @@ export default function AccessControlTab({
               <button type="button" className="btn btn-success" onClick={saveEntry}>
                 {editingEmail ? "💾 Salvar alterações" : "＋ Adicionar e-mail"}
               </button>
-              <button type="button" className="btn btn-ghost" onClick={resetForm}>
-                Limpar
-              </button>
+              <button type="button" className="btn btn-ghost" onClick={resetForm}>Limpar</button>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: "1rem" }}>E-mails autorizados</h3>
-              <div style={{ marginTop: 4, fontSize: ".84rem", color: "var(--muted)" }}>
-                {loading ? "Carregando lista..." : `${filteredEntries.length} registro(s)`}
-              </div>
-            </div>
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">👥 E-mails autorizados <span className="panel-sub">· {loading ? "…" : `${filteredEntries.length} registro(s)`}</span></span>
             <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filtrar por e-mail ou nome"
-              style={{ maxWidth: 280 }}
+              type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="🔍 Filtrar por e-mail ou nome"
+              style={{ maxWidth: 260, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", color: "var(--text)", fontSize: ".85rem", outline: "none" }}
             />
           </div>
 
-          <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 10 }}>
             {loading ? (
-              <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>Atualizando acesso...</div>
+              <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>Carregando…</div>
             ) : filteredEntries.length ? (
               filteredEntries.map((entry) => (
-                <div
-                  key={entry.email}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    padding: 12,
-                    borderRadius: 10,
-                    border: "1px solid var(--border)",
-                  }}
-                >
+                <div key={entry.email} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 14px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)" }}>
                   <div>
-                    <div style={{ fontWeight: 700 }}>{entry.email}</div>
-                    <div style={{ marginTop: 4, fontSize: ".82rem", color: "var(--muted)" }}>
-                      {entry.displayName || "Sem nome"} · {entry.role === "owner" ? "Owner" : entry.role === "admin" ? "Admin" : "Usuário"}
-                      {entry.addedAt ? ` · ${new Date(entry.addedAt).toLocaleDateString("pt-BR")}` : ""}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700 }}>{entry.email}</span>
+                      {roleBadge(entry.role)}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: ".8rem", color: "var(--muted)" }}>
+                      {entry.displayName || "Sem nome"}
+                      {entry.addedAt ? ` · desde ${new Date(entry.addedAt).toLocaleDateString("pt-BR")}` : ""}
                     </div>
                   </div>
-
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>
-                      ✏️ Editar
-                    </button>
-                    <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>
-                      🗑 Remover
-                    </button>
+                    <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>✏️ Editar</button>
+                    <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>🗑 Remover</button>
                   </div>
                 </div>
               ))
             ) : (
-              <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>
-                Nenhum e-mail encontrado.
-              </div>
+              <div style={{ color: "var(--muted)", fontSize: ".9rem", textAlign: "center", padding: 20 }}>Nenhum e-mail encontrado.</div>
             )}
           </div>
-        </section>
+        </div>
       </div>
     </div>
   );
