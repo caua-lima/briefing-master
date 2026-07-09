@@ -39,6 +39,20 @@ function custoMedioDe(p: Product): number {
   return p.custoMedio ?? parseNum(p.custo);
 }
 
+// Estoque no Full (ML) do produto = soma dos MLBs. temDado=false quando o ML ainda não respondeu.
+function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; temDado: boolean } {
+  let qtd = 0;
+  let temDado = false;
+  for (const m of mlbsDe(p)) {
+    const v = estoqueML[normMlb(m)];
+    if (v != null) { qtd += v.available; temDado = true; }
+  }
+  return { qtd, temDado };
+}
+
+// Full considerado "baixo" → sugere reabastecer com o estoque de casa.
+const FULL_BAIXO = 5;
+
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
@@ -81,9 +95,19 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
   const total = data.products.length;
   const ativos = data.products.filter((p) => p.ativo).length;
-  const unGalpao = data.products.reduce((s, p) => s + (p.qtdLocal ?? 0), 0);
-  const valorEstoque = data.products.reduce((s, p) => s + Math.max(p.qtdLocal ?? 0, 0) * custoMedioDe(p), 0);
+  const unCasa = data.products.reduce((s, p) => s + (p.qtdLocal ?? 0), 0);
   const unFull = Object.values(estoqueML).reduce((s, v) => s + v.available, 0);
+  // Valor parado = (casa + Full) × custo médio — capital nos dois locais.
+  const valorEstoque = data.products.reduce((s, p) => {
+    const casa = Math.max(p.qtdLocal ?? 0, 0);
+    const full = fullDe(p, estoqueML).qtd;
+    return s + (casa + full) * custoMedioDe(p);
+  }, 0);
+  // Produtos com Full baixo E unidades em casa pra reabastecer.
+  const reabastecer = data.products.filter((p) => {
+    const f = fullDe(p, estoqueML);
+    return f.temDado && f.qtd <= FULL_BAIXO && (p.qtdLocal ?? 0) > 0;
+  });
 
   function onAdd() {
     setEditProduct({ id: newId(), name: "", custo: "", sku: "", imposto: "", mlbs: [""], ativo: true });
@@ -105,9 +129,9 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       {/* Resumo */}
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Produtos</div><div className="k-val">{total}</div><div className="k-sub">{ativos} ativos</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">Valor em estoque</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div><div className="k-sub">galpão × custo médio</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Estoque no galpão</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unGalpao} un</div><div className="k-sub">controle manual</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">Estoque no Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Valor em estoque</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div><div className="k-sub">(casa + Full) × custo médio</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">🏠 Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">🏬 No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
       </div>
 
       {/* Busca */}
@@ -116,6 +140,13 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         onChange={(e) => setSearch(e.target.value)}
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
       />
+
+      {reabastecer.length > 0 && (
+        <div style={{ padding: "9px 13px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".8rem", color: "#f7c948" }}>
+          🔄 <b>Full baixo</b> em {reabastecer.length} produto(s) — você tem unidades em casa pra enviar:{" "}
+          {reabastecer.slice(0, 6).map((p) => p.name || "sem nome").join(", ")}{reabastecer.length > 6 ? "…" : ""}
+        </div>
+      )}
 
       {/* Lista */}
       <div className="panel">
@@ -129,7 +160,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
               <thead>
                 <tr>
                   <th style={{ textAlign: "left" }}>Produto</th>
-                  <th>Galpão</th><th>Full (ML)</th><th>Total</th>
+                  <th>🏠 Em casa</th><th>🏬 Full (ML)</th><th>Σ Total</th>
                   <th>Custo médio</th><th>Imposto</th>
                   <th>Movimentar</th><th>Ações</th>
                 </tr>
@@ -203,12 +234,11 @@ function ProductRow({
 }) {
   const imposto = parseNum(product.imposto ?? "0");
   const mlbs = mlbsDe(product);
-  const estoqueDe = (m: string) => estoqueML[normMlb(m)]?.available;
-  const full = mlbs.reduce((s, m) => s + (estoqueDe(m) ?? 0), 0);
-  const temFull = mlbs.some((m) => estoqueDe(m) != null);
-  const galpao = product.qtdLocal ?? 0;
+  const { qtd: full, temDado: temFull } = fullDe(product, estoqueML);
+  const casa = product.qtdLocal ?? 0;
   const custoMedio = custoMedioDe(product);
-  const totalUn = galpao + (temFull ? full : 0);
+  const totalUn = casa + full;
+  const fullBaixo = temFull && full <= FULL_BAIXO;
 
   return (
     <>
@@ -229,8 +259,11 @@ function ProductRow({
             </div>
           </div>
         </td>
-        <td style={{ fontWeight: 700, color: galpao > 0 ? "var(--yellow)" : "var(--muted)" }}>{galpao} un</td>
-        <td style={{ fontWeight: 700, color: !temFull ? "var(--muted)" : full > 0 ? "var(--green)" : "var(--red)" }}>{temFull ? `${full} un` : "—"}</td>
+        <td style={{ fontWeight: 700, color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
+        <td style={{ fontWeight: 700, color: !temFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
+          {temFull ? `${full} un` : "—"}
+          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>🔄 reabastecer</span>}
+        </td>
         <td style={{ fontWeight: 700 }}>{totalUn} un</td>
         <td style={{ color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
           {custoMedio > 0 ? fmtBRL(custoMedio) : "—"}
@@ -346,7 +379,7 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
     <Modal open onClose={onClose}>
       <div className="modal-icon">{icon}</div>
       <div className="modal-title">{titulo}</div>
-      <div className="modal-sub">{product.name || "Produto"} · galpão atual: <b>{qAtual} un</b>{avgAtual > 0 && <> · custo médio {fmtBRL(avgAtual)}</>}</div>
+      <div className="modal-sub">{product.name || "Produto"} · 🏠 em casa: <b>{qAtual} un</b>{avgAtual > 0 && <> · custo médio {fmtBRL(avgAtual)}</>}</div>
 
       <div className="config-field">
         <label>{isAjuste ? "🔢 Quantidade (use − para baixa)" : "🔢 Quantidade (unidades)"}</label>
@@ -368,7 +401,7 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
 
       {tipo === "saida_full" && (
         <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.25)", fontSize: ".78rem", color: "var(--muted)" }}>
-          🚚 Baixa por <b>envio ao Full</b> — sai do galpão, mas <b>não é venda</b>. Não afeta o lucro; o custo só entra quando o produto vende.
+          🚚 Baixa por <b>envio ao Full</b> — sai de casa e vai pro Full, mas <b>não é venda</b>. Não afeta o lucro; o custo só entra quando o produto vende.
         </div>
       )}
 
