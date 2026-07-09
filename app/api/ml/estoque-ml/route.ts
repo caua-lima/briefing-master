@@ -30,13 +30,13 @@ export async function GET(req: Request) {
       for (const m of list) { const n = normId(m); if (n) ids.add(n); }
     }
     const arr = Array.from(ids);
-    const estoque: Record<string, { available: number; sold: number; status: string }> = {};
+    const estoque: Record<string, { available: number; sold: number; status: string; price: number }> = {};
 
     // Multi-get de 20 em 20
     for (let i = 0; i < arr.length; i += 20) {
       const chunk = arr.slice(i, i + 20);
       const res = await fetch(
-        `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,available_quantity,sold_quantity,status`,
+        `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,available_quantity,sold_quantity,status,price`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" },
       );
       if (!res.ok) continue;
@@ -50,6 +50,7 @@ export async function GET(req: Request) {
           available: Number(b.available_quantity ?? 0),
           sold: Number(b.sold_quantity ?? 0),
           status: String(b.status ?? ""),
+          price: Number(b.price ?? 0),
         };
       }
     }

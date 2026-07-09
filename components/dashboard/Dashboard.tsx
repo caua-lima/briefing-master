@@ -397,6 +397,48 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
   );
 }
 
+// ── Média de vendas por dia ────────────────────────────────────
+function diasDoPeriodo(from?: string, to?: string): number {
+  if (!from || !to) return 1;
+  const a = new Date(from + "T00:00:00Z").getTime();
+  const b = new Date(to + "T00:00:00Z").getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+
+function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; from?: string; to?: string }) {
+  const dias = diasDoPeriodo(from, to);
+  const linhas = anuncios
+    .filter((a) => !a.semVenda && a.qty > 0)
+    .map((a) => ({ title: a.title, qty: a.qty, media: a.qty / dias }))
+    .sort((x, y) => y.media - x.media);
+  if (!linhas.length) return null;
+  const totalQty = linhas.reduce((s, l) => s + l.qty, 0);
+
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 8 }}>
+        <span className="panel-title">📊 Média de vendas por dia</span>
+        <span className="panel-sub">{dias} dia(s) no período · {totalQty} un vendidas · média {(totalQty / dias).toFixed(1)}/dia</span>
+      </div>
+      <div className="table-wrapper" style={{ border: "none" }}>
+        <table className="tbl-modern">
+          <thead><tr><th style={{ textAlign: "left" }}>Produto</th><th>Vendas no período</th><th>Média/dia</th></tr></thead>
+          <tbody>
+            {linhas.map((l, i) => (
+              <tr key={l.title + i}>
+                <td style={{ textAlign: "left", fontWeight: 600 }}>{l.title}</td>
+                <td style={{ color: "var(--muted)" }}>{l.qty} un</td>
+                <td style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Dashboard principal ────────────────────────────────────────
 export default function Dashboard({ data }: Props) {
   const mes = mesAtual();
@@ -706,6 +748,9 @@ export default function Dashboard({ data }: Props) {
             </div>
             <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
           </div>
+
+          {/* Média de vendas por dia */}
+          <MediaVendasDia anuncios={mlMetrics?.anuncios ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
 
           {/* Curva ABC de produtos */}
           <CurvaABC anuncios={mlMetrics?.anuncios ?? []} />

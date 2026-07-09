@@ -8,7 +8,11 @@ import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
-type EstoqueML = Record<string, { available: number; sold: number; status: string }>;
+type EstoqueML = Record<string, { available: number; sold: number; status: string; price: number }>;
+type Forecast = { vendas: Record<string, number>; dias: number };
+
+// dias-alvo de cobertura pra sugestão de reposição
+const DIAS_ALVO = 30;
 
 function newId() {
   return "p" + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -53,10 +57,47 @@ function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; temDado: boole
 // Full considerado "baixo" → sugere reabastecer com o estoque de casa.
 const FULL_BAIXO = 5;
 
+// Preço de venda do produto (atual, ML): média ponderada pelo estoque de cada
+// anúncio; se nenhum tem estoque, cai pra média simples dos preços.
+function precoVendaDe(p: Product, estoqueML: EstoqueML): number {
+  let pondPreco = 0, pondQtd = 0, somaPreco = 0, n = 0;
+  for (const m of mlbsDe(p)) {
+    const v = estoqueML[normMlb(m)];
+    if (!v || !v.price) continue;
+    somaPreco += v.price; n++;
+    pondPreco += v.price * v.available; pondQtd += v.available;
+  }
+  if (pondQtd > 0) return pondPreco / pondQtd;
+  return n > 0 ? somaPreco / n : 0;
+}
+
+type PrevisaoProduto = {
+  preco: number;
+  casa: number;
+  full: number;
+  total: number;
+  mediaDiaria: number;
+  cobertura: number;    // dias até acabar o total (Infinity = sem vendas)
+  valorPotencial: number;
+  reporQtd: number;     // unidades pra levar o Full a cobrir DIAS_ALVO
+};
+
+function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): PrevisaoProduto {
+  const casa = Math.max(p.qtdLocal ?? 0, 0);
+  const full = fullDe(p, estoqueML).qtd;
+  const total = casa + full;
+  const preco = precoVendaDe(p, estoqueML);
+  const mediaDiaria = forecast.dias > 0 ? (forecast.vendas[p.id] ?? 0) / forecast.dias : 0;
+  const cobertura = mediaDiaria > 0 ? total / mediaDiaria : Infinity;
+  const reporQtd = mediaDiaria > 0 ? Math.max(0, Math.ceil(mediaDiaria * DIAS_ALVO) - full) : 0;
+  return { preco, casa, full, total, mediaDiaria, cobertura, valorPotencial: total * preco, reporQtd };
+}
+
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [estoqueML, setEstoqueML] = useState<EstoqueML>({});
+  const [forecast, setForecast] = useState<Forecast>({ vendas: {}, dias: DIAS_ALVO });
   const [loadingML, setLoadingML] = useState(false);
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
@@ -65,8 +106,12 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const carregarEstoque = useCallback(async () => {
     setLoadingML(true);
     try {
-      const res = await authedFetch("/api/ml/estoque-ml", { cache: "no-store" });
-      if (res.ok) setEstoqueML((await res.json()).estoque ?? {});
+      const [rMl, rFc] = await Promise.all([
+        authedFetch("/api/ml/estoque-ml", { cache: "no-store" }),
+        authedFetch(`/api/ml/estoque-forecast?dias=${DIAS_ALVO}`, { cache: "no-store" }),
+      ]);
+      if (rMl.ok) setEstoqueML((await rMl.json()).estoque ?? {});
+      if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO }); }
     } catch { /* ignora */ } finally { setLoadingML(false); }
   }, []);
 
@@ -108,6 +153,8 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
     const f = fullDe(p, estoqueML);
     return f.temDado && f.qtd <= FULL_BAIXO && (p.qtdLocal ?? 0) > 0;
   });
+  // Venda potencial = todo o estoque × preço de venda atual do ML.
+  const valorPotencialVenda = data.products.reduce((s, p) => s + previsaoDe(p, estoqueML, forecast).valorPotencial, 0);
 
   function onAdd() {
     setEditProduct({ id: newId(), name: "", custo: "", sku: "", imposto: "", mlbs: [""], ativo: true });
@@ -132,6 +179,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         <div className="kpi k-pos"><div className="k-lbl">Valor em estoque</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div><div className="k-sub">(casa + Full) × custo médio</div></div>
         <div className="kpi k-warn"><div className="k-lbl">🏠 Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
         <div className="kpi k-pos"><div className="k-lbl">🏬 No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
+        <div className="kpi k-acc"><div className="k-lbl">💵 Venda potencial</div><div className="k-val">{fmtBRL(valorPotencialVenda)}</div><div className="k-sub">estoque × preço ML atual</div></div>
       </div>
 
       {/* Busca */}
@@ -184,6 +232,8 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           </div>
         )}
       </div>
+
+      <PrevisaoPanel products={filtered} estoqueML={estoqueML} forecast={forecast} />
 
       {editProduct && (
         <ProductModal
@@ -420,6 +470,72 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
         <button type="button" className="btn btn-ghost" onClick={onClose}>✕ Cancelar</button>
       </div>
     </Modal>
+  );
+}
+
+function coberturaFmt(dias: number): { txt: string; cor: string } {
+  if (!Number.isFinite(dias)) return { txt: "—", cor: "var(--muted)" };
+  const d = Math.round(dias);
+  const cor = d <= 7 ? "var(--red)" : d <= 15 ? "var(--yellow)" : "var(--green)";
+  return { txt: `${d}d`, cor };
+}
+
+function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[]; estoqueML: EstoqueML; forecast: Forecast }) {
+  const linhas = products
+    .map((p) => ({ p, f: previsaoDe(p, estoqueML, forecast) }))
+    .filter(({ f }) => f.total > 0 || f.mediaDiaria > 0 || f.preco > 0)
+    .sort((a, b) => b.f.valorPotencial - a.f.valorPotencial);
+
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 6 }}>
+        <span className="panel-title">📈 Previsão de vendas e reposição</span>
+        <span className="panel-sub">preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias</span>
+      </div>
+      {linhas.length === 0 ? (
+        <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>Sem dados de estoque/vendas ainda. Lance entradas e aguarde vendas para a previsão aparecer.</div>
+      ) : (
+        <div className="table-wrapper" style={{ border: "none" }}>
+          <table className="tbl-modern">
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>Produto</th>
+                <th>Preço ML</th><th>Estoque total</th><th>Vendas/dia</th>
+                <th>Cobertura</th><th>Repor (Full)</th><th>Venda potencial</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map(({ p, f }) => {
+                const cob = coberturaFmt(f.cobertura);
+                const emCasa = Math.min(f.reporQtd, f.casa);
+                return (
+                  <tr key={p.id}>
+                    <td style={{ textAlign: "left", fontWeight: 600 }}>{p.name || "Sem nome"}</td>
+                    <td>{f.preco > 0 ? fmtBRL(f.preco) : "—"}</td>
+                    <td style={{ fontWeight: 700 }}>{f.total} un</td>
+                    <td style={{ color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
+                    <td style={{ color: cob.cor, fontWeight: 700 }}>{cob.txt}</td>
+                    <td>
+                      {f.reporQtd > 0 ? (
+                        <span style={{ color: "var(--yellow)", fontWeight: 700 }}>
+                          {f.reporQtd} un
+                          {emCasa > 0 && (
+                            <span style={{ display: "block", fontSize: ".64rem", color: "var(--muted)", fontWeight: 400 }}>
+                              {emCasa} em casa{f.reporQtd > emCasa ? ` · comprar ${f.reporQtd - emCasa}` : ""}
+                            </span>
+                          )}
+                        </span>
+                      ) : <span style={{ color: "var(--muted)" }}>ok</span>}
+                    </td>
+                    <td style={{ color: "var(--green)", fontWeight: 700 }}>{fmtBRL(f.valorPotencial)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
