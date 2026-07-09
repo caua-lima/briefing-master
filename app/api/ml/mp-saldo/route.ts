@@ -16,7 +16,11 @@ export async function GET(req: Request) {
   if (gate instanceof NextResponse) return gate;
 
   try {
-    const token = await getMlAccessToken();
+    // Prefere a credencial de PRODUÇÃO do Mercado Pago (MP_ACCESS_TOKEN); se não
+    // houver, cai pro token do ML (que normalmente não tem acesso ao saldo).
+    const mpToken = process.env.MP_ACCESS_TOKEN;
+    const token = mpToken || (await getMlAccessToken());
+    const via = mpToken ? "mp" : "ml";
     if (!token) return NextResponse.json({ ok: false, error: "no_token" });
 
     const userId = await getUserId();
@@ -30,7 +34,7 @@ export async function GET(req: Request) {
     if (!res.ok) {
       // Surface do status pra diagnosticar permissão (401/403 = token sem acesso ao MP).
       const details = (await res.text()).slice(0, 300);
-      return NextResponse.json({ ok: false, error: "mp_balance_failed", status: res.status, details });
+      return NextResponse.json({ ok: false, error: "mp_balance_failed", status: res.status, via, details });
     }
 
     const j = (await res.json()) as {
@@ -41,6 +45,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      via,
       disponivel: Number(j.available_balance ?? 0),
       aReceber: Number(j.unavailable_balance ?? 0),
       total: Number(j.total_amount ?? (Number(j.available_balance ?? 0) + Number(j.unavailable_balance ?? 0))),
