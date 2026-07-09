@@ -17,7 +17,8 @@ type Repasse = {
   status: "liberado" | "pendente" | "sem_data";
 };
 type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; exatos: number; count: number };
-type Agenda = { data: string; liquido: number; pedidos: number; pendente: boolean };
+type Agenda = { data: string; liquido: number; pedidos: number; pendente?: boolean };
+type GlobalCF = { aReceber: number; pedidos: number; exatos: number };
 type MpSaldo = { ok: boolean; disponivel?: number; aReceber?: number; total?: number; status?: number; error?: string };
 
 function isoOf(d: Date) {
@@ -48,6 +49,8 @@ export default function FinanceiroTab() {
   const [repasses, setRepasses] = useState<Repasse[]>([]);
   const [resumo, setResumo] = useState<Resumo>({ bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: 0 });
   const [agenda, setAgenda] = useState<Agenda[]>([]);
+  const [agendaTotal, setAgendaTotal] = useState<Agenda[]>([]);
+  const [globalCF, setGlobalCF] = useState<GlobalCF>({ aReceber: 0, pedidos: 0, exatos: 0 });
   const [saldoMP, setSaldoMP] = useState<MpSaldo | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -74,8 +77,10 @@ export default function FinanceiroTab() {
         setRepasses(j.repasses ?? []);
         setResumo(j.resumo ?? { bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: 0 });
         setAgenda(j.agenda ?? []);
-      } else { setRepasses([]); setAgenda([]); }
-    } catch { setRepasses([]); setAgenda([]); } finally { setLoading(false); }
+        setAgendaTotal(j.agendaTotal ?? []);
+        setGlobalCF(j.global ?? { aReceber: 0, pedidos: 0, exatos: 0 });
+      } else { setRepasses([]); setAgenda([]); setAgendaTotal([]); }
+    } catch { setRepasses([]); setAgenda([]); setAgendaTotal([]); } finally { setLoading(false); }
   }, [range]);
 
   useEffect(() => { load(); }, [load]);
@@ -88,7 +93,7 @@ export default function FinanceiroTab() {
   }
 
   const hoje = isoOf(new Date());
-  const proximos = agenda.filter((a) => a.data >= hoje);
+  const proximos = agendaTotal.filter((a) => a.data >= hoje);
 
   return (
     <div className="dash">
@@ -132,12 +137,21 @@ export default function FinanceiroTab() {
         </div>
       )}
 
-      {saldoMP && !saldoMP.ok && (
-        <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
-          ⚠️ Não consegui ler o saldo do Mercado Pago{saldoMP.status ? ` (HTTP ${saldoMP.status})` : ""}.{" "}
-          {saldoMP.status === 401 || saldoMP.status === 403
-            ? <>O token do ML não tem permissão no Mercado Pago — clique em <b>Reconectar ML</b> e autorize o acesso a pagamentos/Mercado Pago.</>
-            : "Tente atualizar novamente; se persistir, reconecte o ML."}
+      {/* Sem acesso ao saldo do MP → mostra o total a receber estimado dos pedidos do ML */}
+      {(!saldoMP || !saldoMP.ok) && (
+        <div>
+          <div className="panel-head" style={{ marginBottom: 8 }}>
+            <span className="panel-title">💰 A receber (total)</span>
+            <span className="panel-sub">todos os repasses futuros dos pedidos do ML</span>
+          </div>
+          <div className="kpi-grid">
+            <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (total)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(globalCF.aReceber)}</div><div className="k-sub">{globalCF.pedidos} pedido(s) a liberar</div></div>
+          </div>
+          {saldoMP && !saldoMP.ok && (
+            <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
+              ℹ️ Não dá pra ler o saldo direto do Mercado Pago{saldoMP.status ? ` (HTTP ${saldoMP.status})` : ""} — o token do ML não tem esse acesso. O valor acima é <b>estimado dos seus pedidos do ML</b>, então <b>não inclui Pix nem antecipação</b>. Bater 100% com o app do MP exigiria uma integração direta com o Mercado Pago (credenciais próprias do MP).
+            </div>
+          )}
         </div>
       )}
 

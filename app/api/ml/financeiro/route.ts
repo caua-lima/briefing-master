@@ -93,7 +93,38 @@ export async function GET(req: Request) {
     }
     const agenda = Array.from(agendaMap.values()).sort((a, b) => a.data.localeCompare(b.data));
 
-    return NextResponse.json({ repasses, resumo, agenda });
+    // ── GLOBAL: "A receber" = TODOS os repasses futuros (independe do período) ──
+    // É o conceito de "Lançamentos futuros → A receber" do Mercado Pago.
+    // money_release_date guardado como ISO completo → comparação lexicográfica
+    // com a data de hoje ("YYYY-MM-DD") funciona.
+    const pendSnap = await db.collection("ml_orders").where("money_release_date", ">=", hojeISO).get();
+    let aReceberTotal = 0;
+    let exatosTotal = 0;
+    let pedidosTotal = 0;
+    const agendaTotalMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
+    for (const doc of pendSnap.docs) {
+      const o = doc.data();
+      const st = String(o.status ?? "").toLowerCase();
+      if (st === "cancelled" || st === "invalid") continue;
+      const dia = String(o.money_release_date ?? "").slice(0, 10);
+      if (!dia || dia < hojeISO) continue;
+      const items = (o.items as OrderItem[]) ?? [];
+      const taxaML = items.reduce((s, it) => s + Number(it.sale_fee ?? 0) * Number(it.quantity ?? 1), 0);
+      const bruto = Number(o.total_amount ?? 0);
+      const netExato = Number(o.net_received ?? 0);
+      const liq = netExato > 0 ? netExato : bruto - taxaML - Number(o.shipping_cost ?? 0);
+      aReceberTotal += liq;
+      pedidosTotal += 1;
+      if (netExato > 0) exatosTotal += 1;
+      const cur = agendaTotalMap.get(dia) ?? { data: dia, liquido: 0, pedidos: 0 };
+      cur.liquido += liq;
+      cur.pedidos += 1;
+      agendaTotalMap.set(dia, cur);
+    }
+    const agendaTotal = Array.from(agendaTotalMap.values()).sort((a, b) => a.data.localeCompare(b.data));
+    const global = { aReceber: aReceberTotal, pedidos: pedidosTotal, exatos: exatosTotal };
+
+    return NextResponse.json({ repasses, resumo, agenda, global, agendaTotal });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "financeiro_failed", details: msg }, { status: 500 });
