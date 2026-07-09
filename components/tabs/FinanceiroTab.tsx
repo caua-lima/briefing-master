@@ -19,7 +19,7 @@ type Repasse = {
 type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; exatos: number; count: number };
 type Agenda = { data: string; liquido: number; pedidos: number; pendente?: boolean };
 type GlobalCF = { aReceber: number; pedidos: number; exatos: number };
-type MpSaldo = { ok: boolean; disponivel?: number; aReceber?: number; total?: number; status?: number; error?: string };
+type FluxoMP = { ok: boolean; aReceber?: number; liberado?: number; pendentes?: number; agenda?: Agenda[]; status?: number; error?: string };
 
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -51,13 +51,13 @@ export default function FinanceiroTab() {
   const [agenda, setAgenda] = useState<Agenda[]>([]);
   const [agendaTotal, setAgendaTotal] = useState<Agenda[]>([]);
   const [globalCF, setGlobalCF] = useState<GlobalCF>({ aReceber: 0, pedidos: 0, exatos: 0 });
-  const [saldoMP, setSaldoMP] = useState<MpSaldo | null>(null);
+  const [fluxoMP, setFluxoMP] = useState<FluxoMP | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadSaldo = useCallback(async () => {
     try {
-      const r = await authedFetch("/api/ml/mp-saldo", { cache: "no-store" });
-      if (r.ok) setSaldoMP(await r.json());
+      const r = await authedFetch("/api/ml/mp-fluxo", { cache: "no-store" });
+      if (r.ok) setFluxoMP(await r.json());
     } catch { /* ignora */ }
   }, []);
 
@@ -93,7 +93,8 @@ export default function FinanceiroTab() {
   }
 
   const hoje = isoOf(new Date());
-  const proximos = agendaTotal.filter((a) => a.data >= hoje);
+  // Se o MP respondeu, usa a agenda real dele (inclui Pix); senão, a reconstruída.
+  const proximos = (fluxoMP?.ok ? (fluxoMP.agenda ?? []) : agendaTotal).filter((a) => a.data >= hoje);
 
   return (
     <div className="dash">
@@ -122,23 +123,22 @@ export default function FinanceiroTab() {
         </div>
       </div>
 
-      {/* Saldo REAL da conta Mercado Pago (igual ao app do MP) */}
-      {saldoMP?.ok && (
+      {/* Fluxo REAL do Mercado Pago (inclui Pix) via /v1/payments/search */}
+      {fluxoMP?.ok && (
         <div>
           <div className="panel-head" style={{ marginBottom: 8 }}>
-            <span className="panel-title">💳 Conta Mercado Pago</span>
-            <span className="panel-sub">direto do MP · igual ao app</span>
+            <span className="panel-title">💳 Mercado Pago</span>
+            <span className="panel-sub">direto do MP · inclui Pix e vendas</span>
           </div>
           <div className="kpi-grid">
-            <div className="kpi k-pos"><div className="k-lbl">Saldo disponível</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(saldoMP.disponivel ?? 0)}</div><div className="k-sub">disponível agora</div></div>
-            <div className="kpi k-warn"><div className="k-lbl">A receber</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(saldoMP.aReceber ?? 0)}</div><div className="k-sub">lançamentos futuros</div></div>
-            <div className="kpi k-acc"><div className="k-lbl">Σ Total na conta</div><div className="k-val">{fmtBRL(saldoMP.total ?? 0)}</div><div className="k-sub">disponível + a receber</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">⏳ A receber</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(fluxoMP.aReceber ?? 0)}</div><div className="k-sub">{fluxoMP.pendentes ?? 0} lançamento(s) futuros</div></div>
+            <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado (120d)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(fluxoMP.liberado ?? 0)}</div><div className="k-sub">líquido já caiu na conta</div></div>
           </div>
         </div>
       )}
 
-      {/* Sem acesso ao saldo do MP → mostra o total a receber estimado dos pedidos do ML */}
-      {(!saldoMP || !saldoMP.ok) && (
+      {/* Sem acesso ao MP → mostra o total a receber estimado dos pedidos do ML */}
+      {(!fluxoMP || !fluxoMP.ok) && (
         <div>
           <div className="panel-head" style={{ marginBottom: 8 }}>
             <span className="panel-title">💰 A receber (total)</span>
@@ -147,9 +147,11 @@ export default function FinanceiroTab() {
           <div className="kpi-grid">
             <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (total)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(globalCF.aReceber)}</div><div className="k-sub">{globalCF.pedidos} pedido(s) a liberar</div></div>
           </div>
-          {saldoMP && !saldoMP.ok && (
+          {fluxoMP && !fluxoMP.ok && (
             <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
-              ℹ️ Não dá pra ler o saldo direto do Mercado Pago{saldoMP.status ? ` (HTTP ${saldoMP.status})` : ""} — o token do ML não tem esse acesso. O valor acima é <b>estimado dos seus pedidos do ML</b>, então <b>não inclui Pix nem antecipação</b>. Bater 100% com o app do MP exigiria uma integração direta com o Mercado Pago (credenciais próprias do MP).
+              ℹ️ Ainda não li o fluxo direto do Mercado Pago
+              {fluxoMP.error === "sem_mp_token" ? " (falta configurar o MP_ACCESS_TOKEN na Vercel)" : fluxoMP.status ? ` (HTTP ${fluxoMP.status})` : ""}.
+              O valor acima é <b>estimado dos seus pedidos do ML</b> (sem Pix). Assim que o MP responder, este bloco vira o número real.
             </div>
           )}
         </div>
