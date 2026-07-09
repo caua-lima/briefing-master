@@ -392,7 +392,8 @@ export async function GET(req: Request) {
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const entry: ProdutoData = {
-        custo: Number(d.custo ?? d.cost ?? 0),
+        // Custo médio (livro de movimentações) tem prioridade; cai pro manual se ainda não houver entradas.
+        custo: Number(d.custoMedio ?? d.custo ?? d.cost ?? 0),
         imposto: Number(d.imposto ?? d.tax ?? 0),
         mlb: String(d.mlb ?? "").trim(),
         name: String(d.name ?? ""),

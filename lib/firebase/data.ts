@@ -12,6 +12,7 @@ import {
   query,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import type {
@@ -19,6 +20,7 @@ import type {
   ArchivedDay,
   Cost,
   DraftToday,
+  EstoqueMovimento,
   GoalEntry,
   Goals,
   Product,
@@ -201,6 +203,75 @@ export async function upsertProduct(_uid: string, product: Product) {
 
 export async function deleteProduct(_uid: string, id: string) {
   await deleteDoc(sDoc("estoque", id));
+}
+
+// ── Movimentações de estoque (galpão) ──────────────────────────
+const MOV_COL = "estoque_movimentos";
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Reprocessa TODAS as movimentações do produto em ordem cronológica e grava
+ * `custoMedio` (média móvel ponderada) e `qtdLocal` no doc do produto.
+ * Reprocessar do zero evita drift de arredondamento.
+ */
+async function recomputeProduto(productId: string): Promise<void> {
+  const snap = await getDocs(query(sCol(MOV_COL), where("productId", "==", productId)));
+  const movs = snap.docs
+    .map((d) => d.data() as EstoqueMovimento)
+    .sort(
+      (a, b) =>
+        (a.data ?? "").localeCompare(b.data ?? "") ||
+        (a.createdAt ?? 0) - (b.createdAt ?? 0),
+    );
+
+  let qty = 0;
+  let avg = 0;
+  for (const m of movs) {
+    if (m.tipo === "entrada") {
+      const q = Math.abs(Number(m.quantidade) || 0);
+      const c = Number(m.custoUnit) || 0;
+      const nova = qty + q;
+      avg = nova > 0 ? (qty * avg + q * c) / nova : 0;
+      qty = nova;
+    } else if (m.tipo === "saida_full") {
+      qty -= Math.abs(Number(m.quantidade) || 0);
+    } else {
+      // ajuste: quantidade com sinal
+      qty += Number(m.quantidade) || 0;
+    }
+  }
+
+  await updateDoc(sDoc("estoque", productId), {
+    custoMedio: round2(avg),
+    qtdLocal: qty,
+  });
+}
+
+export function watchMovimentos(
+  cb: (movs: EstoqueMovimento[]) => void,
+): () => void {
+  return onSnapshot(query(sCol(MOV_COL), orderBy("data", "desc")), (snap) => {
+    cb(snap.docs.map((d) => d.data() as EstoqueMovimento));
+  });
+}
+
+export async function addMovimento(
+  mov: Omit<EstoqueMovimento, "createdBy" | "createdAt">,
+): Promise<void> {
+  const email = getCurrentUserEmail();
+  await setDoc(
+    sDoc(MOV_COL, mov.id),
+    sanitizeUndefined({ ...mov, createdBy: email, createdAt: Date.now() }),
+  );
+  await recomputeProduto(mov.productId);
+}
+
+export async function deleteMovimento(id: string, productId: string): Promise<void> {
+  await deleteDoc(sDoc(MOV_COL, id));
+  await recomputeProduto(productId);
 }
 
 // ── Access Control (global collection) ────────────────────────
