@@ -44,7 +44,11 @@ export async function GET(req: Request) {
         const taxaML = items.reduce((s, it) => s + Number(it.sale_fee ?? 0) * Number(it.quantity ?? 1), 0);
         const envio = Number(o.shipping_cost ?? 0);
         const bruto = Number(o.total_amount ?? 0);
-        const liquido = bruto - taxaML - envio; // estimativa do que cai no Mercado Pago
+        // Líquido REAL do Mercado Pago (net_received_amount) quando disponível;
+        // senão, estimativa (bruto − taxa ML − frete).
+        const netExato = Number(o.net_received ?? 0);
+        const exato = netExato > 0;
+        const liquido = exato ? netExato : bruto - taxaML - envio;
         const repasseEm = String(o.money_release_date ?? "").slice(0, 10);
         const status: "liberado" | "pendente" | "sem_data" =
           !repasseEm ? "sem_data" : repasseEm <= hojeISO ? "liberado" : "pendente";
@@ -57,6 +61,7 @@ export async function GET(req: Request) {
           taxaML,
           envio,
           liquido,
+          exato,
           repasseEm,
           status,
         };
@@ -67,12 +72,13 @@ export async function GET(req: Request) {
       (acc, r) => {
         acc.bruto += r.bruto;
         acc.liquido += r.liquido;
+        if (r.exato) acc.exatos += 1;
         if (r.status === "liberado") acc.liberado += r.liquido;
         else if (r.status === "pendente") acc.aReceber += r.liquido;
         else acc.semData += r.liquido;
         return acc;
       },
-      { bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, count: repasses.length },
+      { bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: repasses.length },
     );
 
     // Agenda: soma por data de repasse (só os que têm data), ordenada.

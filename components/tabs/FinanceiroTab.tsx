@@ -12,10 +12,11 @@ type Repasse = {
   taxaML: number;
   envio: number;
   liquido: number;
+  exato: boolean;
   repasseEm: string;
   status: "liberado" | "pendente" | "sem_data";
 };
-type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; count: number };
+type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; exatos: number; count: number };
 type Agenda = { data: string; liquido: number; pedidos: number; pendente: boolean };
 
 function isoOf(d: Date) {
@@ -44,7 +45,7 @@ export default function FinanceiroTab() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [repasses, setRepasses] = useState<Repasse[]>([]);
-  const [resumo, setResumo] = useState<Resumo>({ bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, count: 0 });
+  const [resumo, setResumo] = useState<Resumo>({ bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: 0 });
   const [agenda, setAgenda] = useState<Agenda[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -62,7 +63,7 @@ export default function FinanceiroTab() {
       if (res.ok) {
         const j = await res.json();
         setRepasses(j.repasses ?? []);
-        setResumo(j.resumo ?? { bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, count: 0 });
+        setResumo(j.resumo ?? { bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: 0 });
         setAgenda(j.agenda ?? []);
       } else { setRepasses([]); setAgenda([]); }
     } catch { setRepasses([]); setAgenda([]); } finally { setLoading(false); }
@@ -171,7 +172,10 @@ export default function FinanceiroTab() {
                       <td style={{ textAlign: "left", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.produto}>{r.produto || "—"}</td>
                       <td style={{ color: "var(--muted)" }}>{fmtBRL(r.bruto)}</td>
                       <td style={{ color: "var(--red)" }}>{fmtBRL(r.taxaML + r.envio)}</td>
-                      <td style={{ color: "var(--green)", fontWeight: 700 }}>{fmtBRL(r.liquido)}</td>
+                      <td style={{ color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {fmtBRL(r.liquido)}
+                        {!r.exato && <span title="Estimado (bruto − taxa − frete)" style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 4, fontSize: ".7rem" }}>~</span>}
+                      </td>
                       <td style={{ textAlign: "left", whiteSpace: "nowrap", fontWeight: r.repasseEm ? 600 : 400, color: r.repasseEm ? "var(--text)" : "var(--muted)" }}>{br(r.repasseEm)}</td>
                       <td style={{ textAlign: "left" }}>
                         <span style={{ fontSize: ".72rem", fontWeight: 700, color: meta.cor, background: `${meta.cor}1f`, border: `1px solid ${meta.cor}`, borderRadius: 6, padding: "1px 8px" }}>{meta.label}</span>
@@ -184,7 +188,7 @@ export default function FinanceiroTab() {
           </div>
         )}
         <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)" }}>
-          Líquido estimado = bruto − taxa do ML − frete. É uma aproximação do que cai no Mercado Pago; o valor exato pode variar com descontos/estornos.
+          Líquido <b>exato</b> vem do Mercado Pago (net recebido por pagamento) — {resumo.exatos} de {resumo.count} pedido(s). Os marcados com <b>~</b> ainda estão estimados (bruto − taxa ML − frete) e viram exatos nas próximas sincronizações.
         </div>
       </div>
     </div>

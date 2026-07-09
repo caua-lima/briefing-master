@@ -2,6 +2,7 @@ import "server-only";
 import { getAdminDb } from "@/lib/firebase/admin";
 
 const ML_API = "https://api.mercadolibre.com";
+const MP_API = "https://api.mercadopago.com";
 const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 export type SyncRange = { from: string; to: string };
@@ -172,19 +173,21 @@ async function idsComCampo(db: FirebaseFirestore.Firestore, orderIds: string[], 
   return set;
 }
 
-/** Busca o money_release_date no detalhe do pedido (quando a busca não traz). */
-async function fetchOrderRelease(accessToken: string, orderId: string): Promise<string> {
+/**
+ * Detalhe do pagamento no Mercado Pago: líquido REAL (net_received_amount) e a
+ * data de liberação. Usa o mesmo token do ML. Retorna null se não autorizado.
+ */
+async function fetchPaymentInfo(accessToken: string, paymentId: string): Promise<{ net: number; release: string } | null> {
   try {
-    const r = await fetch(`${ML_API}/orders/${orderId}`, {
+    const r = await fetch(`${MP_API}/v1/payments/${paymentId}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
       cache: "no-store",
     });
-    if (!r.ok) return "";
-    const j = (await r.json()) as { payments?: Record<string, unknown>[] };
-    const payments = Array.isArray(j.payments) ? j.payments : [];
-    return payments.map((p) => String(p.money_release_date ?? "")).filter(Boolean).sort().pop() ?? "";
+    if (!r.ok) return null;
+    const j = (await r.json()) as { money_release_date?: string; transaction_details?: { net_received_amount?: number } };
+    return { net: Number(j.transaction_details?.net_received_amount ?? 0), release: String(j.money_release_date ?? "") };
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -243,23 +246,34 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     if (info) infoByOrder.set(orderId, info);
   });
 
-  // ── Repasse (money_release_date): do payload de busca; se faltar, do detalhe ──
-  const releaseByOrder = new Map<string, string>();
-  const semRelease: string[] = [];
+  // ── Repasse + líquido REAL (Mercado Pago, por pagamento do pedido) ──
+  // net_received_amount e money_release_date vêm do pagamento. Busca o detalhe
+  // do MP só de quem ainda não tem o líquido salvo (limite por rodada).
+  const releaseByOrder = new Map<string, string>();     // do MP (preferido)
+  const releaseFromSearch = new Map<string, string>();  // do payload de busca (fallback)
+  const netByOrder = new Map<string, number>();
+  const paymentsByOrder = new Map<string, string[]>();
   for (const o of all) {
     const oo = o as Record<string, unknown>;
     const id = String(oo.id);
     const payments = Array.isArray(oo.payments) ? (oo.payments as Record<string, unknown>[]) : [];
+    paymentsByOrder.set(id, payments.map((p) => String(p.id ?? "")).filter(Boolean));
     const rel = payments.map((p) => String(p.money_release_date ?? "")).filter(Boolean).sort().pop() ?? "";
-    if (rel) releaseByOrder.set(id, rel);
-    else semRelease.push(id);
+    if (rel) releaseFromSearch.set(id, rel);
   }
-  // Só busca o detalhe do que ainda não tem a data salva (limite por rodada p/ não estourar o tempo).
-  const jaTem = await idsComCampo(db, semRelease, "money_release_date");
-  const buscarDetalhe = semRelease.filter((id) => !jaTem.has(id)).slice(0, 250);
-  await mapPool(buscarDetalhe, 8, async (id) => {
-    const rel = await fetchOrderRelease(accessToken, id);
-    if (rel) releaseByOrder.set(id, rel);
+  const jaTemNet = await idsComCampo(db, orderIds, "net_received");
+  const buscarMP = orderIds.filter((id) => !jaTemNet.has(id)).slice(0, 250);
+  await mapPool(buscarMP, 8, async (id) => {
+    let net = 0;
+    let release = "";
+    for (const pid of paymentsByOrder.get(id) ?? []) {
+      const info = await fetchPaymentInfo(accessToken, pid);
+      if (!info) continue;
+      net += info.net;
+      if (info.release > release) release = info.release; // libera na data mais tardia
+    }
+    if (net > 0) netByOrder.set(id, net);
+    if (release) releaseByOrder.set(id, release);
   });
 
   // ── Gravação em lote ──
@@ -269,8 +283,9 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     for (const order of all.slice(i, i + BATCH_SIZE)) {
       const o = order as Record<string, unknown>;
       const orderId = String(o.id);
-      // Repasse do Mercado Pago (quando o dinheiro fica disponível na conta).
-      const moneyRelease = releaseByOrder.get(orderId) ?? "";
+      // Repasse (data) e líquido real do Mercado Pago.
+      const moneyRelease = releaseByOrder.get(orderId) ?? releaseFromSearch.get(orderId) ?? "";
+      const netReceived = netByOrder.get(orderId);
       const doc: Record<string, unknown> = {
         order_id: orderId,
         status: o.status ?? null,
@@ -284,6 +299,7 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
         updatedAt: new Date().toISOString(),
       };
       if (moneyRelease) doc.money_release_date = moneyRelease;
+      if (typeof netReceived === "number" && netReceived > 0) doc.net_received = netReceived;
       const info = infoByOrder.get(orderId);
       if (info) {
         if (typeof info.cost === "number") doc.shipping_cost = info.cost;
