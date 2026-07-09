@@ -208,8 +208,10 @@ export async function deleteProduct(_uid: string, id: string) {
 // ── Movimentações de estoque (galpão) ──────────────────────────
 const MOV_COL = "estoque_movimentos";
 
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+// Guarda o custo médio com 4 casas (o display mostra 2). Assim o CMV não
+// acumula erro de centavos em volumes grandes (ex.: 300 un a R$10,3333).
+function round4(n: number): number {
+  return Math.round((n + Number.EPSILON) * 10000) / 10000;
 }
 
 /**
@@ -245,7 +247,7 @@ async function recomputeProduto(productId: string): Promise<void> {
   }
 
   await updateDoc(sDoc("estoque", productId), {
-    custoMedio: round2(avg),
+    custoMedio: round4(avg),
     qtdLocal: qty,
   });
 }
