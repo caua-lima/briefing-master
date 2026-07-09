@@ -104,10 +104,12 @@ export type Product = {
 };
 
 // Livro de movimentações do estoque local (galpão).
-// entrada   = compra (soma qtd, entra no custo médio, exige custoUnit)
-// saida_full = envio pro Full (baixa qtd, NÃO é venda, não mexe no custo)
-// ajuste    = correção/perda/quebra (quantidade com sinal: + ou −)
-export type MovimentoTipo = "entrada" | "saida_full" | "ajuste";
+// entrada       = compra (soma qtd no galpão, entra no custo médio, exige custoUnit)
+// saldo_inicial = estoque que já existia (ex.: já no Full) — entra só no custo
+//                 médio, NÃO soma no galpão. Exige custoUnit.
+// saida_full    = envio pro Full (baixa qtd do galpão, NÃO é venda, não mexe no custo)
+// ajuste        = correção/perda/quebra (quantidade com sinal: + ou −)
+export type MovimentoTipo = "entrada" | "saldo_inicial" | "saida_full" | "ajuste";
 
 export type EstoqueMovimento = {
   id: string;

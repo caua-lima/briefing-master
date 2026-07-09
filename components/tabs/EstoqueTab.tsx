@@ -290,6 +290,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
 const TIPO_LABEL: Record<MovimentoTipo, string> = {
   entrada: "Entrada",
+  saldo_inicial: "Saldo inicial",
   saida_full: "Envio Full",
   ajuste: "Ajuste",
 };
@@ -385,7 +386,10 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>Movimentações</span>
-        <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>📦 Saldo inicial</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
+        </div>
       </div>
       {ordenados.length === 0 ? (
         <div style={{ color: "var(--muted)", fontSize: ".8rem", padding: "6px 0" }}>Nenhuma movimentação ainda. Use <b>＋ Entrada</b> para lançar a primeira compra.</div>
@@ -397,14 +401,15 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
             </thead>
             <tbody>
               {ordenados.map((m) => {
-                const sign = m.tipo === "entrada" ? "+" : m.tipo === "saida_full" ? "−" : (m.quantidade >= 0 ? "+" : "−");
-                const cor = m.tipo === "entrada" ? "var(--green)" : m.tipo === "saida_full" ? "var(--yellow)" : (m.quantidade >= 0 ? "var(--green)" : "var(--red)");
+                const isCompra = m.tipo === "entrada" || m.tipo === "saldo_inicial";
+                const sign = isCompra ? "+" : m.tipo === "saida_full" ? "−" : (m.quantidade >= 0 ? "+" : "−");
+                const cor = isCompra ? "var(--green)" : m.tipo === "saida_full" ? "var(--yellow)" : (m.quantidade >= 0 ? "var(--green)" : "var(--red)");
                 return (
                   <tr key={m.id}>
                     <td style={{ color: "var(--muted)" }}>{m.data}</td>
                     <td style={{ textAlign: "left" }}><span style={{ color: cor, fontWeight: 700 }}>{TIPO_LABEL[m.tipo]}</span></td>
                     <td style={{ color: cor, fontWeight: 700 }}>{sign}{Math.abs(m.quantidade)}</td>
-                    <td>{m.tipo === "entrada" && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
+                    <td>{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
                     <td style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
                     <td>
                       <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => { if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return; deleteMovimento(m.id, product.id).catch(() => {}); }}>🗑</button>
@@ -422,15 +427,17 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
 
 function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product; tipo: MovimentoTipo; onClose: () => void; onSaved: () => void }) {
   const isEntrada = tipo === "entrada";
+  const isSaldo = tipo === "saldo_inicial";
   const isAjuste = tipo === "ajuste";
+  const precisaCusto = isEntrada || isSaldo; // compra e saldo inicial exigem custo
   const [qtd, setQtd] = useState("");
-  const [custo, setCusto] = useState(isEntrada ? (product.custoMedio ? String(product.custoMedio) : product.custo || "") : "");
+  const [custo, setCusto] = useState(precisaCusto ? (product.custoMedio ? String(product.custoMedio) : product.custo || "") : "");
   const [data, setData] = useState(todayISO());
   const [obs, setObs] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const titulo = isEntrada ? "＋ Entrada (compra)" : tipo === "saida_full" ? "➖ Envio pro Full" : "⚖️ Ajuste de estoque";
-  const icon = isEntrada ? "📥" : tipo === "saida_full" ? "🚚" : "⚖️";
+  const titulo = isEntrada ? "＋ Entrada (compra)" : isSaldo ? "📦 Saldo inicial" : tipo === "saida_full" ? "➖ Envio pro Full" : "⚖️ Ajuste de estoque";
+  const icon = isEntrada ? "📥" : isSaldo ? "📦" : tipo === "saida_full" ? "🚚" : "⚖️";
 
   const qNum = parseNum(qtd);
   const cNum = parseNum(custo);
@@ -440,7 +447,7 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
 
   async function handleSave() {
     if (!qNum || (!isAjuste && qNum <= 0)) { alert("Informe a quantidade."); return; }
-    if (isEntrada && cNum <= 0) { alert("Informe o custo unitário da compra."); return; }
+    if (precisaCusto && cNum <= 0) { alert("Informe o custo unitário."); return; }
     setSaving(true);
     try {
       await addMovimento({
@@ -448,7 +455,7 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
         productId: product.id,
         tipo,
         quantidade: isAjuste ? qNum : Math.abs(qNum),
-        custoUnit: isEntrada ? cNum : undefined,
+        custoUnit: precisaCusto ? cNum : undefined,
         data,
         obs: obs.trim() || undefined,
       });
@@ -471,16 +478,22 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
         <input type="number" step="1" placeholder={isAjuste ? "Ex: -3" : "Ex: 40"} value={qtd} onChange={(e) => setQtd(e.target.value)} />
       </div>
 
-      {isEntrada && (
+      {precisaCusto && (
         <div className="config-field">
-          <label>💰 Custo unitário desta compra (R$)</label>
+          <label>💰 Custo unitário {isSaldo ? "do estoque que já existe" : "desta compra"} (R$)</label>
           <input type="number" min="0" step="0.01" placeholder="Ex: 11.50" value={custo} onChange={(e) => setCusto(e.target.value)} />
-          {qNum > 0 && cNum > 0 && (
+          {isEntrada && qNum > 0 && cNum > 0 && (
             <div className="hint">
               Custo médio após esta entrada: <b style={{ color: "var(--green)" }}>{fmtBRL(novoAvg)}</b>
               {avgAtual > 0 && <> (era {fmtBRL(avgAtual)})</>}
             </div>
           )}
+        </div>
+      )}
+
+      {isSaldo && (
+        <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(79,142,247,.08)", border: "1px solid rgba(79,142,247,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
+          📦 <b>Saldo inicial</b> = estoque que você já tinha antes de começar a lançar (ex.: o que já está no Full). Entra na <b>média do custo</b> com a quantidade e o custo reais, mas <b>não soma no “em casa”</b> (essas unidades já estão fora).
         </div>
       )}
 

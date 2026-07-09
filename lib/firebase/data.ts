@@ -229,15 +229,18 @@ async function recomputeProduto(productId: string): Promise<void> {
         (a.createdAt ?? 0) - (b.createdAt ?? 0),
     );
 
-  let qty = 0;
-  let avg = 0;
+  let avgQty = 0; // qtd usada na média ponderada (compras + saldo inicial)
+  let avg = 0;    // custo médio ponderado
+  let qty = 0;    // estoque no galpão (em casa)
   for (const m of movs) {
-    if (m.tipo === "entrada") {
+    if (m.tipo === "entrada" || m.tipo === "saldo_inicial") {
       const q = Math.abs(Number(m.quantidade) || 0);
       const c = Number(m.custoUnit) || 0;
-      const nova = qty + q;
-      avg = nova > 0 ? (qty * avg + q * c) / nova : 0;
-      qty = nova;
+      const nova = avgQty + q;
+      avg = nova > 0 ? (avgQty * avg + q * c) / nova : 0;
+      avgQty = nova;
+      // Compra entra no galpão; saldo inicial já está fora (ex.: no Full).
+      if (m.tipo === "entrada") qty += q;
     } else if (m.tipo === "saida_full") {
       qty -= Math.abs(Number(m.quantidade) || 0);
     } else {
