@@ -8,7 +8,7 @@ import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
-type EstoqueML = Record<string, { available: number; sold: number; status: string; price: number }>;
+type EstoqueML = Record<string, { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean }>;
 type Forecast = { vendas: Record<string, number>; dias: number };
 
 // dias-alvo de cobertura pra sugestão de reposição
@@ -209,7 +209,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                 <tr>
                   <th style={{ textAlign: "left" }}>Produto</th>
                   <th>🏠 Em casa</th><th>🏬 Full (ML)</th><th>Σ Total</th>
-                  <th>Custo médio</th><th>Imposto</th>
+                  <th>Custo médio</th><th>Preço venda</th><th>Imposto</th>
                   <th>Movimentar</th><th>Ações</th>
                 </tr>
               </thead>
@@ -289,6 +289,8 @@ function ProductRow({
   const custoMedio = custoMedioDe(product);
   const totalUn = casa + full;
   const fullBaixo = temFull && full <= FULL_BAIXO;
+  const precoVenda = precoVendaDe(product, estoqueML);
+  const temPromo = mlbs.some((m) => estoqueML[normMlb(m)]?.hasPromo);
 
   return (
     <>
@@ -319,6 +321,10 @@ function ProductRow({
           {custoMedio > 0 ? fmtBRL(custoMedio) : "—"}
           {product.custoMedio == null && custoMedio > 0 && <span style={{ display: "block", fontSize: ".62rem", color: "var(--muted)" }}>manual</span>}
         </td>
+        <td style={{ color: precoVenda > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600 }}>
+          {precoVenda > 0 ? fmtBRL(precoVenda) : "—"}
+          {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>🔖 promoção</span>}
+        </td>
         <td style={{ color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
         <td>
           <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
@@ -335,7 +341,7 @@ function ProductRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={8} style={{ background: "var(--bg)", padding: "10px 14px" }}>
+          <td colSpan={9} style={{ background: "var(--bg)", padding: "10px 14px" }}>
             <MovimentosHistorico product={product} movs={movs} onMov={onMov} />
           </td>
         </tr>

@@ -71,6 +71,7 @@ type ShipmentInfo = {
   logistic: string;
   tracking: string;
   estimated: string;
+  dateDelivered: string;   // data real da entrega (status_history)
 };
 
 /**
@@ -97,11 +98,13 @@ async function fetchShipment(accessToken: string, shipmentId: string): Promise<S
       status?: string; substatus?: string; logistic_type?: string; tracking_number?: string;
       shipping_option?: { cost?: number; list_cost?: number; estimated_delivery_time?: { date?: string }; estimated_delivery_final?: { date?: string } };
       base_cost?: number; lead_time?: LeadTime;
+      status_history?: { date_delivered?: string };
     };
     const status = String(j.status ?? "");
     const substatus = String(j.substatus ?? "");
     const logistic = String(j.logistic_type ?? "");
     const tracking = String(j.tracking_number ?? "");
+    const dateDelivered = String(j.status_history?.date_delivered ?? "");
     let estimated = pickEstimate(j.lead_time) ||
       String(j.shipping_option?.estimated_delivery_final?.date ?? j.shipping_option?.estimated_delivery_time?.date ?? "");
     // fallback: sub-recurso de prazo, quando o envio não trouxe lead_time
@@ -130,7 +133,7 @@ async function fetchShipment(accessToken: string, shipmentId: string): Promise<S
     } catch { /* segue */ }
     if (cost == null) cost = buyerCost === 0 ? (listCost > 0 ? listCost : baseCost > 0 ? baseCost : 0) : 0;
 
-    return { cost, status, substatus, logistic, tracking, estimated };
+    return { cost, status, substatus, logistic, tracking, estimated, dateDelivered };
   } catch {
     return null;
   }
@@ -146,7 +149,11 @@ async function terminalShipmentIds(db: FirebaseFirestore.Firestore, orderIds: st
     if (refs.length === 0) continue;
     const snaps = await db.getAll(...refs);
     for (const snap of snaps) {
-      if (terminal.has(String(snap.get("shipping_status") ?? ""))) set.add(snap.id);
+      const st = String(snap.get("shipping_status") ?? "");
+      if (!terminal.has(st)) continue;
+      // Entregue mas ainda sem a data de entrega salva → re-busca uma vez pra capturá-la.
+      if (st === "delivered" && !snap.get("date_delivered")) continue;
+      set.add(snap.id);
     }
   }
   return set;
@@ -214,6 +221,14 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     for (const order of all.slice(i, i + BATCH_SIZE)) {
       const o = order as Record<string, unknown>;
       const orderId = String(o.id);
+      // Repasse do Mercado Pago (money_release_date): quando o dinheiro fica
+      // disponível na conta. Pega a data mais tardia entre os pagamentos.
+      const payments = Array.isArray(o.payments) ? (o.payments as Record<string, unknown>[]) : [];
+      const moneyRelease = payments
+        .map((p) => String(p.money_release_date ?? ""))
+        .filter(Boolean)
+        .sort()
+        .pop() ?? "";
       const doc: Record<string, unknown> = {
         order_id: orderId,
         status: o.status ?? null,
@@ -226,6 +241,7 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
         items: mapOrderItems(o),
         updatedAt: new Date().toISOString(),
       };
+      if (moneyRelease) doc.money_release_date = moneyRelease;
       const info = infoByOrder.get(orderId);
       if (info) {
         if (typeof info.cost === "number") doc.shipping_cost = info.cost;
@@ -234,6 +250,7 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
         doc.logistic_type = info.logistic;
         doc.tracking = info.tracking;
         doc.estimated_delivery = info.estimated;
+        if (info.dateDelivered) doc.date_delivered = info.dateDelivered;
       }
 
       batch.set(db.collection("ml_orders").doc(orderId), doc, { merge: true });
