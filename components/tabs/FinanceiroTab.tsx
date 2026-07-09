@@ -19,7 +19,7 @@ type Repasse = {
 type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; exatos: number; count: number };
 type Agenda = { data: string; liquido: number; pedidos: number; pendente?: boolean };
 type GlobalCF = { aReceber: number; pedidos: number; exatos: number };
-type FluxoMP = { ok: boolean; aReceber?: number; liberado?: number; pendentes?: number; agenda?: Agenda[]; status?: number; error?: string };
+type FluxoMP = { ok: boolean; aReceber?: number; liberado?: number; pendentes?: number; aprovados?: number; count?: number; totalMp?: number; agenda?: Agenda[]; status?: number; error?: string };
 
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -134,6 +134,11 @@ export default function FinanceiroTab() {
             <div className="kpi k-warn"><div className="k-lbl">⏳ A receber</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(fluxoMP.aReceber ?? 0)}</div><div className="k-sub">{fluxoMP.pendentes ?? 0} lançamento(s) futuros</div></div>
             <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado (120d)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(fluxoMP.liberado ?? 0)}</div><div className="k-sub">líquido já caiu na conta</div></div>
           </div>
+          {(fluxoMP.count ?? 0) === 0 && (
+            <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
+              🔎 O MP respondeu, mas trouxe <b>0 pagamentos</b> (total reportado: {fluxoMP.totalMp ?? 0}). Provável que o <b>MP_ACCESS_TOKEN seja de outra aplicação/conta</b> que não é a que recebe as vendas. Precisa ser o token de <b>produção da conta VaZXPress</b> (a mesma que recebe no Mercado Pago).
+            </div>
+          )}
         </div>
       )}
 

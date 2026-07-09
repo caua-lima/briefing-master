@@ -27,19 +27,17 @@ export async function GET(req: Request) {
 
   try {
     const now = Date.now();
-    const nowISO = new Date(now).toISOString();
-    const begin = new Date(now - 120 * 86400000).toISOString(); // 120 dias cobrem os pendentes
 
     let offset = 0;
     const limit = 100;
-    let aReceber = 0, liberado = 0, pendentes = 0, count = 0;
+    let aReceber = 0, liberado = 0, pendentes = 0, count = 0, aprovados = 0;
+    let totalMp = 0; // total que o MP reporta (diagnóstico)
     const agendaMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
 
     while (offset < 3000) {
-      const url =
-        `${MP_API}/v1/payments/search?sort=date_created&criteria=desc` +
-        `&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(nowISO)}` +
-        `&status=approved&limit=${limit}&offset=${offset}`;
+      // Sem filtro de data (evita o silêncio quando o range é rejeitado);
+      // ordenado do mais recente → os repasses pendentes vêm nas 1ªs páginas.
+      const url = `${MP_API}/v1/payments/search?sort=date_created&criteria=desc&limit=${limit}&offset=${offset}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" });
       if (!r.ok) {
         const details = (await r.text()).slice(0, 300);
@@ -47,12 +45,14 @@ export async function GET(req: Request) {
       }
       const j = (await r.json()) as { results?: MpPayment[]; paging?: { total?: number } };
       const results = j.results ?? [];
+      totalMp = j.paging?.total ?? totalMp;
       for (const p of results) {
+        count++;
         if (String(p.status ?? "") !== "approved") continue;
+        aprovados++;
         const net = Number(p.transaction_details?.net_received_amount ?? p.transaction_amount ?? 0);
         const rel = String(p.money_release_date ?? "");
         const relMs = rel ? Date.parse(rel) : NaN;
-        count++;
         if (Number.isFinite(relMs) && relMs > now) {
           aReceber += net;
           pendentes++;
@@ -65,13 +65,12 @@ export async function GET(req: Request) {
           liberado += net;
         }
       }
-      const total = j.paging?.total ?? 0;
       offset += results.length;
-      if (results.length === 0 || offset >= total) break;
+      if (results.length === 0 || offset >= totalMp) break;
     }
 
     const agenda = Array.from(agendaMap.values()).sort((a, b) => a.data.localeCompare(b.data));
-    return NextResponse.json({ ok: true, via: "mp", aReceber, liberado, pendentes, count, agenda });
+    return NextResponse.json({ ok: true, via: "mp", aReceber, liberado, pendentes, aprovados, count, totalMp, agenda });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: "unexpected", details: msg });
