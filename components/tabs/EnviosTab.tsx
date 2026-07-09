@@ -15,7 +15,6 @@ type Envio = {
   tracking: string;
   estimated: string;
   entregaEm: string;
-  repasseEm: string;
   valor: number;
 };
 type Resumo = { entregue: number; aCaminho: number; preparando: number; problema: number; outros: number; total: number };
@@ -149,7 +148,6 @@ export default function EnviosTab() {
                   <th style={{ textAlign: "left" }}>Status</th>
                   <th style={{ textAlign: "left" }}>Previsão de entrega</th>
                   <th style={{ textAlign: "left" }}>Entregue em</th>
-                  <th style={{ textAlign: "left" }}>💰 Repasse (MP)</th>
                   <th>Valor</th>
                 </tr>
               </thead>
@@ -170,7 +168,6 @@ export default function EnviosTab() {
                       </td>
                       <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap" }}>{e.estimated ? e.estimated.split("-").reverse().join("/") : "—"}</td>
                       <td style={{ textAlign: "left", color: e.entregaEm ? "var(--green)" : "var(--muted)", whiteSpace: "nowrap", fontWeight: e.entregaEm ? 600 : 400 }}>{e.entregaEm ? e.entregaEm.split("-").reverse().join("/") : "—"}</td>
-                      <td style={{ textAlign: "left", color: e.repasseEm ? "var(--text)" : "var(--muted)", whiteSpace: "nowrap" }}>{e.repasseEm ? e.repasseEm.split("-").reverse().join("/") : "—"}</td>
                       <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(e.valor)}</td>
                     </tr>
                   );

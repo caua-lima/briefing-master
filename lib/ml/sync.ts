@@ -159,6 +159,35 @@ async function terminalShipmentIds(db: FirebaseFirestore.Firestore, orderIds: st
   return set;
 }
 
+/** Ids de pedidos que já têm o campo salvo no Firestore (evita re-buscar). */
+async function idsComCampo(db: FirebaseFirestore.Firestore, orderIds: string[], field: string): Promise<Set<string>> {
+  const set = new Set<string>();
+  const CHUNK = 300;
+  for (let i = 0; i < orderIds.length; i += CHUNK) {
+    const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
+    if (refs.length === 0) continue;
+    const snaps = await db.getAll(...refs);
+    for (const snap of snaps) if (snap.get(field)) set.add(snap.id);
+  }
+  return set;
+}
+
+/** Busca o money_release_date no detalhe do pedido (quando a busca não traz). */
+async function fetchOrderRelease(accessToken: string, orderId: string): Promise<string> {
+  try {
+    const r = await fetch(`${ML_API}/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!r.ok) return "";
+    const j = (await r.json()) as { payments?: Record<string, unknown>[] };
+    const payments = Array.isArray(j.payments) ? j.payments : [];
+    return payments.map((p) => String(p.money_release_date ?? "")).filter(Boolean).sort().pop() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function fetchAllOrders(
   accessToken: string,
   range: SyncRange,
@@ -214,6 +243,25 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     if (info) infoByOrder.set(orderId, info);
   });
 
+  // ── Repasse (money_release_date): do payload de busca; se faltar, do detalhe ──
+  const releaseByOrder = new Map<string, string>();
+  const semRelease: string[] = [];
+  for (const o of all) {
+    const oo = o as Record<string, unknown>;
+    const id = String(oo.id);
+    const payments = Array.isArray(oo.payments) ? (oo.payments as Record<string, unknown>[]) : [];
+    const rel = payments.map((p) => String(p.money_release_date ?? "")).filter(Boolean).sort().pop() ?? "";
+    if (rel) releaseByOrder.set(id, rel);
+    else semRelease.push(id);
+  }
+  // Só busca o detalhe do que ainda não tem a data salva (limite por rodada p/ não estourar o tempo).
+  const jaTem = await idsComCampo(db, semRelease, "money_release_date");
+  const buscarDetalhe = semRelease.filter((id) => !jaTem.has(id)).slice(0, 250);
+  await mapPool(buscarDetalhe, 8, async (id) => {
+    const rel = await fetchOrderRelease(accessToken, id);
+    if (rel) releaseByOrder.set(id, rel);
+  });
+
   // ── Gravação em lote ──
   const BATCH_SIZE = 400;
   for (let i = 0; i < all.length; i += BATCH_SIZE) {
@@ -221,14 +269,8 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     for (const order of all.slice(i, i + BATCH_SIZE)) {
       const o = order as Record<string, unknown>;
       const orderId = String(o.id);
-      // Repasse do Mercado Pago (money_release_date): quando o dinheiro fica
-      // disponível na conta. Pega a data mais tardia entre os pagamentos.
-      const payments = Array.isArray(o.payments) ? (o.payments as Record<string, unknown>[]) : [];
-      const moneyRelease = payments
-        .map((p) => String(p.money_release_date ?? ""))
-        .filter(Boolean)
-        .sort()
-        .pop() ?? "";
+      // Repasse do Mercado Pago (quando o dinheiro fica disponível na conta).
+      const moneyRelease = releaseByOrder.get(orderId) ?? "";
       const doc: Record<string, unknown> = {
         order_id: orderId,
         status: o.status ?? null,

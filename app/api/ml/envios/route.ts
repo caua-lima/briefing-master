@@ -56,7 +56,6 @@ export async function GET(req: Request) {
           tracking: String(o.tracking ?? ""),
           estimated: String(o.estimated_delivery ?? "").slice(0, 10),
           entregaEm: String(o.date_delivered ?? "").slice(0, 10),
-          repasseEm: String(o.money_release_date ?? "").slice(0, 10),
           valor: Number(o.total_amount ?? 0),
         };
       })
