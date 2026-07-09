@@ -592,6 +592,10 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
 
 export function ProductModal({ product: initial, isNew, onClose, onSave }: { product: Product; isNew: boolean; onClose: () => void; onSave: (p: Product) => Promise<void> }) {
   const [p, setP] = useState<Product>({ ...initial, mlbs: mlbsDe(initial).length ? mlbsDe(initial) : [""] });
+  // Custo do estoque atual (custo médio efetivo). É o ponto de partida do blend.
+  const [custoStr, setCustoStr] = useState(
+    initial.custoMedio != null ? String(Math.round(initial.custoMedio * 100) / 100) : (initial.custo ?? ""),
+  );
   const [saving, setSaving] = useState(false);
 
   function set(patch: Partial<Product>) {
@@ -612,9 +616,13 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
   async function handleSave() {
     if (!p.name.trim()) { alert("Informe o nome do produto."); return; }
     const cleaned = mlbs.map((m) => m.trim()).filter(Boolean);
+    // O custo digitado vira o custo médio efetivo (base do estoque atual).
+    const saveObj: Product = { ...p, mlbs: cleaned, mlb: cleaned[0] ?? "", custo: custoStr };
+    if (custoStr.trim()) saveObj.custoMedio = parseNum(custoStr);
+    else delete saveObj.custoMedio;
     setSaving(true);
     try {
-      await onSave({ ...p, mlbs: cleaned, mlb: cleaned[0] ?? "" });
+      await onSave(saveObj);
     } catch (err: unknown) {
       alert("Erro ao salvar produto: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -653,9 +661,9 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
       </div>
 
       <div className="config-field">
-        <label>💰 Custo manual do produto/unidade (R$)</label>
-        <input type="number" min="0" step="0.01" placeholder="0.00" value={p.custo} onChange={(e) => set({ custo: e.target.value })} />
-        <div className="hint">Usado só como fallback. Com <strong>entradas</strong> lançadas, o CMV usa o <strong>custo médio</strong> calculado automaticamente.</div>
+        <label>💰 Custo do estoque atual — R$/unidade (inclui o que já está no Full)</label>
+        <input type="number" min="0" step="0.01" placeholder="Ex: 13.80" value={custoStr} onChange={(e) => setCustoStr(e.target.value)} />
+        <div className="hint">Informe o custo das unidades que você <strong>já tem hoje</strong> (galpão + Full). A cada <strong>＋ Entrada</strong>, esse custo é ajustado sozinho pela média — vai ficando certinho.</div>
       </div>
 
       <div className="config-field">
