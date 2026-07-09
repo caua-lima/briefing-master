@@ -30,13 +30,13 @@ export async function GET(req: Request) {
       for (const m of list) { const n = normId(m); if (n) ids.add(n); }
     }
     const arr = Array.from(ids);
-    const estoque: Record<string, { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean }> = {};
+    const estoque: Record<string, { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string }> = {};
 
-    // Multi-get de 20 em 20 (preço de lista + original)
+    // Multi-get de 20 em 20 (preço de lista + original + logística p/ saber se é Full)
     for (let i = 0; i < arr.length; i += 20) {
       const chunk = arr.slice(i, i + 20);
       const res = await fetch(
-        `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,available_quantity,sold_quantity,status,price,original_price`,
+        `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,available_quantity,sold_quantity,status,price,original_price,shipping`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" },
       );
       if (!res.ok) continue;
@@ -48,6 +48,7 @@ export async function GET(req: Request) {
         if (!id) continue;
         const base = Number(b.price ?? 0);
         const orig = Number(b.original_price ?? 0);
+        const logistic = String((b.shipping as Record<string, unknown>)?.logistic_type ?? "");
         estoque[id] = {
           available: Number(b.available_quantity ?? 0),
           sold: Number(b.sold_quantity ?? 0),
@@ -55,6 +56,7 @@ export async function GET(req: Request) {
           price: base,
           regularPrice: orig > base ? orig : base,
           hasPromo: orig > base,
+          logistic, // "fulfillment" = Full; outros = anúncio próprio
         };
       }
     }

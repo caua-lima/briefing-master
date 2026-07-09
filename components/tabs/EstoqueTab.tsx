@@ -8,8 +8,13 @@ import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
-type EstoqueML = Record<string, { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean }>;
+type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string };
+type EstoqueML = Record<string, MlItem>;
 type Forecast = { vendas: Record<string, number>; dias: number };
+
+function ehFullLogistic(l: string) {
+  return l === "fulfillment";
+}
 
 // dias-alvo de cobertura pra sugestão de reposição
 const DIAS_ALVO = 30;
@@ -43,54 +48,72 @@ function custoMedioDe(p: Product): number {
   return p.custoMedio ?? parseNum(p.custo);
 }
 
-// Estoque no Full (ML) do produto = soma dos MLBs. temDado=false quando o ML ainda não respondeu.
-function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; temDado: boolean } {
-  let qtd = 0;
-  let temDado = false;
-  for (const m of mlbsDe(p)) {
-    const v = estoqueML[normMlb(m)];
-    if (v != null) { qtd += v.available; temDado = true; }
+// Anúncios (MLBs) do produto com os dados do ML de cada um.
+type AnuncioML = { mlb: string; item: MlItem | null };
+function anunciosDe(p: Product, estoqueML: EstoqueML): AnuncioML[] {
+  return mlbsDe(p).map((m) => ({ mlb: normMlb(m), item: estoqueML[normMlb(m)] ?? null }));
+}
+
+// Estoque do ML por logística: qtd = Full (fulfillment); proprio = anúncio
+// próprio (não-Full). ehFull = tem anúncio no Full. temDado = ML já respondeu.
+function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean } {
+  let qtd = 0, proprio = 0, ehFull = false, temDado = false;
+  for (const { item } of anunciosDe(p, estoqueML)) {
+    if (!item) continue;
+    temDado = true;
+    if (ehFullLogistic(item.logistic)) { ehFull = true; qtd += item.available; }
+    else proprio += item.available;
   }
-  return { qtd, temDado };
+  return { qtd, proprio, ehFull, temDado };
 }
 
 // Full considerado "baixo" → sugere reabastecer com o estoque de casa.
 const FULL_BAIXO = 5;
 
-// Preço de venda do produto (atual, ML): média ponderada pelo estoque de cada
-// anúncio; se nenhum tem estoque, cai pra média simples dos preços.
-function precoVendaDe(p: Product, estoqueML: EstoqueML): number {
-  let pondPreco = 0, pondQtd = 0, somaPreco = 0, n = 0;
-  for (const m of mlbsDe(p)) {
-    const v = estoqueML[normMlb(m)];
-    if (!v || !v.price) continue;
-    somaPreco += v.price; n++;
-    pondPreco += v.price * v.available; pondQtd += v.available;
+// Faixa de preços dos anúncios (por anúncio, sem média). Retorna min/max/único.
+function precosDe(p: Product, estoqueML: EstoqueML): { min: number; max: number; temPromo: boolean; count: number } {
+  const precos: number[] = [];
+  let temPromo = false;
+  for (const { item } of anunciosDe(p, estoqueML)) {
+    if (!item || !item.price) continue;
+    precos.push(item.price);
+    if (item.hasPromo) temPromo = true;
   }
-  if (pondQtd > 0) return pondPreco / pondQtd;
-  return n > 0 ? somaPreco / n : 0;
+  if (!precos.length) return { min: 0, max: 0, temPromo: false, count: 0 };
+  return { min: Math.min(...precos), max: Math.max(...precos), temPromo, count: precos.length };
 }
 
 type PrevisaoProduto = {
-  preco: number;
+  precoMin: number;
+  precoMax: number;
   casa: number;
   full: number;
+  proprio: number;
+  ehFull: boolean;
   total: number;
   mediaDiaria: number;
-  cobertura: number;    // dias até acabar o total (Infinity = sem vendas)
+  cobertura: number;    // dias até acabar o total (Infinity = sem vendas ou sem estoque)
   valorPotencial: number;
-  reporQtd: number;     // unidades pra levar o Full a cobrir DIAS_ALVO
+  reporQtd: number;     // unidades pra levar o Full a cobrir DIAS_ALVO (só produtos no Full)
 };
 
 function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): PrevisaoProduto {
   const casa = Math.max(p.qtdLocal ?? 0, 0);
-  const full = fullDe(p, estoqueML).qtd;
-  const total = casa + full;
-  const preco = precoVendaDe(p, estoqueML);
+  const { qtd: full, proprio, ehFull } = fullDe(p, estoqueML);
+  const total = casa + full + proprio;
+  const { min: precoMin, max: precoMax } = precosDe(p, estoqueML);
+  // Venda potencial: cada anúncio pelo SEU preço (Full + próprio); o estoque de
+  // casa pelo maior preço dos anúncios (sem média entre anúncios diferentes).
+  let potencialAnuncios = 0;
+  for (const { item } of anunciosDe(p, estoqueML)) {
+    if (item) potencialAnuncios += item.available * item.price;
+  }
+  const valorPotencial = potencialAnuncios + casa * (precoMax || precoMin);
   const mediaDiaria = forecast.dias > 0 ? (forecast.vendas[p.id] ?? 0) / forecast.dias : 0;
-  const cobertura = mediaDiaria > 0 ? total / mediaDiaria : Infinity;
-  const reporQtd = mediaDiaria > 0 ? Math.max(0, Math.ceil(mediaDiaria * DIAS_ALVO) - full) : 0;
-  return { preco, casa, full, total, mediaDiaria, cobertura, valorPotencial: total * preco, reporQtd };
+  const cobertura = mediaDiaria > 0 && total > 0 ? total / mediaDiaria : Infinity;
+  // Reposição só faz sentido pra quem está no Full.
+  const reporQtd = ehFull && mediaDiaria > 0 ? Math.max(0, Math.ceil(mediaDiaria * DIAS_ALVO) - full) : 0;
+  return { precoMin, precoMax, casa, full, proprio, ehFull, total, mediaDiaria, cobertura, valorPotencial, reporQtd };
 }
 
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
@@ -141,17 +164,18 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const total = data.products.length;
   const ativos = data.products.filter((p) => p.ativo).length;
   const unCasa = data.products.reduce((s, p) => s + (p.qtdLocal ?? 0), 0);
-  const unFull = Object.values(estoqueML).reduce((s, v) => s + v.available, 0);
-  // Valor parado = (casa + Full) × custo médio — capital nos dois locais.
+  // Só conta como Full o que é realmente fulfillment.
+  const unFull = Object.values(estoqueML).reduce((s, v) => s + (ehFullLogistic(v.logistic) ? v.available : 0), 0);
+  // Valor parado = (casa + Full + próprio) × custo médio.
   const valorEstoque = data.products.reduce((s, p) => {
     const casa = Math.max(p.qtdLocal ?? 0, 0);
-    const full = fullDe(p, estoqueML).qtd;
-    return s + (casa + full) * custoMedioDe(p);
+    const { qtd: full, proprio } = fullDe(p, estoqueML);
+    return s + (casa + full + proprio) * custoMedioDe(p);
   }, 0);
-  // Produtos com Full baixo E unidades em casa pra reabastecer.
+  // Produtos NO FULL com estoque baixo E unidades em casa pra reabastecer.
   const reabastecer = data.products.filter((p) => {
     const f = fullDe(p, estoqueML);
-    return f.temDado && f.qtd <= FULL_BAIXO && (p.qtdLocal ?? 0) > 0;
+    return f.ehFull && f.qtd <= FULL_BAIXO && (p.qtdLocal ?? 0) > 0;
   });
   // Venda potencial = todo o estoque × preço de venda atual do ML.
   const valorPotencialVenda = data.products.reduce((s, p) => s + previsaoDe(p, estoqueML, forecast).valorPotencial, 0);
@@ -283,14 +307,13 @@ function ProductRow({
   onMov: (tipo: MovimentoTipo) => void;
 }) {
   const imposto = parseNum(product.imposto ?? "0");
-  const mlbs = mlbsDe(product);
-  const { qtd: full, temDado: temFull } = fullDe(product, estoqueML);
+  const anuncios = anunciosDe(product, estoqueML);
+  const { qtd: full, proprio, ehFull } = fullDe(product, estoqueML);
   const casa = product.qtdLocal ?? 0;
   const custoMedio = custoMedioDe(product);
-  const totalUn = casa + full;
-  const fullBaixo = temFull && full <= FULL_BAIXO;
-  const precoVenda = precoVendaDe(product, estoqueML);
-  const temPromo = mlbs.some((m) => estoqueML[normMlb(m)]?.hasPromo);
+  const totalUn = casa + full + proprio;
+  const fullBaixo = ehFull && full <= FULL_BAIXO;
+  const { min: precoMin, max: precoMax, temPromo } = precosDe(product, estoqueML);
 
   return (
     <>
@@ -304,25 +327,31 @@ function ProductRow({
                 {product.sku
                   ? <span style={{ background: "rgba(79,142,247,.12)", color: "#4f8ef7", padding: "1px 7px", borderRadius: 6, fontWeight: 700, fontSize: ".7rem" }}>SKU {product.sku}</span>
                   : <span style={{ color: "var(--red)", fontSize: ".7rem" }}>⚠️ sem SKU</span>}
-                {mlbs.map((m) => (
-                  <span key={m} style={{ fontSize: ".7rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, color: "var(--muted)" }}>{m}</span>
+                {anuncios.map(({ mlb, item }) => (
+                  <span key={mlb} style={{ fontSize: ".7rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, color: "var(--muted)" }}>
+                    {mlb}
+                    {item && item.price > 0 && <b style={{ color: "var(--green)", marginLeft: 4 }}>{fmtBRL(item.price)}</b>}
+                    {item && item.hasPromo && <span style={{ marginLeft: 3 }}>🔖</span>}
+                    {item && <span style={{ marginLeft: 4, color: ehFullLogistic(item.logistic) ? "#4f8ef7" : "var(--muted)" }}>{ehFullLogistic(item.logistic) ? "Full" : "próprio"}</span>}
+                  </span>
                 ))}
               </div>
             </div>
           </div>
         </td>
         <td style={{ fontWeight: 700, color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
-        <td style={{ fontWeight: 700, color: !temFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
-          {temFull ? `${full} un` : "—"}
+        <td style={{ fontWeight: 700, color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
+          {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>🔄 reabastecer</span>}
+          {proprio > 0 && <span title="Anúncio próprio (não é Full)" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} un próprio</span>}
         </td>
         <td style={{ fontWeight: 700 }}>{totalUn} un</td>
         <td style={{ color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
           {custoMedio > 0 ? fmtBRL(custoMedio) : "—"}
           {product.custoMedio == null && custoMedio > 0 && <span style={{ display: "block", fontSize: ".62rem", color: "var(--muted)" }}>manual</span>}
         </td>
-        <td style={{ color: precoVenda > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600 }}>
-          {precoVenda > 0 ? fmtBRL(precoVenda) : "—"}
+        <td style={{ color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
+          {precoMax > 0 ? (precoMin === precoMax ? fmtBRL(precoMax) : `${fmtBRL(precoMin)}–${fmtBRL(precoMax)}`) : "—"}
           {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>🔖 promoção</span>}
         </td>
         <td style={{ color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
@@ -489,7 +518,7 @@ function coberturaFmt(dias: number): { txt: string; cor: string } {
 function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[]; estoqueML: EstoqueML; forecast: Forecast }) {
   const linhas = products
     .map((p) => ({ p, f: previsaoDe(p, estoqueML, forecast) }))
-    .filter(({ f }) => f.total > 0 || f.mediaDiaria > 0 || f.preco > 0)
+    .filter(({ f }) => f.total > 0 || f.mediaDiaria > 0 || f.precoMax > 0)
     .sort((a, b) => b.f.valorPotencial - a.f.valorPotencial);
 
   return (
@@ -517,7 +546,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                 return (
                   <tr key={p.id}>
                     <td style={{ textAlign: "left", fontWeight: 600 }}>{p.name || "Sem nome"}</td>
-                    <td>{f.preco > 0 ? fmtBRL(f.preco) : "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{f.precoMax > 0 ? (f.precoMin === f.precoMax ? fmtBRL(f.precoMax) : `${fmtBRL(f.precoMin)}–${fmtBRL(f.precoMax)}`) : "—"}</td>
                     <td style={{ fontWeight: 700 }}>{f.total} un</td>
                     <td style={{ color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
                     <td style={{ color: cob.cor, fontWeight: 700 }}>{cob.txt}</td>
