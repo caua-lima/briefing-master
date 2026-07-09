@@ -18,6 +18,7 @@ type Repasse = {
 };
 type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; exatos: number; count: number };
 type Agenda = { data: string; liquido: number; pedidos: number; pendente: boolean };
+type MpSaldo = { ok: boolean; disponivel?: number; aReceber?: number; total?: number; status?: number; error?: string };
 
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -47,7 +48,15 @@ export default function FinanceiroTab() {
   const [repasses, setRepasses] = useState<Repasse[]>([]);
   const [resumo, setResumo] = useState<Resumo>({ bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: 0 });
   const [agenda, setAgenda] = useState<Agenda[]>([]);
+  const [saldoMP, setSaldoMP] = useState<MpSaldo | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const loadSaldo = useCallback(async () => {
+    try {
+      const r = await authedFetch("/api/ml/mp-saldo", { cache: "no-store" });
+      if (r.ok) setSaldoMP(await r.json());
+    } catch { /* ignora */ }
+  }, []);
 
   const range = useMemo(() => {
     const today = isoOf(new Date());
@@ -70,11 +79,12 @@ export default function FinanceiroTab() {
   }, [range]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadSaldo(); }, [loadSaldo]);
 
   async function atualizar() {
     setLoading(true);
     try { await authedFetch("/api/ml/sync-all", { method: "POST" }); } catch { /* ignora */ }
-    await load();
+    await Promise.all([load(), loadSaldo()]);
   }
 
   const hoje = isoOf(new Date());
@@ -107,10 +117,38 @@ export default function FinanceiroTab() {
         </div>
       </div>
 
-      {/* Resumo do fluxo de caixa */}
+      {/* Saldo REAL da conta Mercado Pago (igual ao app do MP) */}
+      {saldoMP?.ok && (
+        <div>
+          <div className="panel-head" style={{ marginBottom: 8 }}>
+            <span className="panel-title">💳 Conta Mercado Pago</span>
+            <span className="panel-sub">direto do MP · igual ao app</span>
+          </div>
+          <div className="kpi-grid">
+            <div className="kpi k-pos"><div className="k-lbl">Saldo disponível</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(saldoMP.disponivel ?? 0)}</div><div className="k-sub">disponível agora</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">A receber</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(saldoMP.aReceber ?? 0)}</div><div className="k-sub">lançamentos futuros</div></div>
+            <div className="kpi k-acc"><div className="k-lbl">Σ Total na conta</div><div className="k-val">{fmtBRL(saldoMP.total ?? 0)}</div><div className="k-sub">disponível + a receber</div></div>
+          </div>
+        </div>
+      )}
+
+      {saldoMP && !saldoMP.ok && (
+        <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
+          ⚠️ Não consegui ler o saldo do Mercado Pago{saldoMP.status ? ` (HTTP ${saldoMP.status})` : ""}.{" "}
+          {saldoMP.status === 401 || saldoMP.status === 403
+            ? <>O token do ML não tem permissão no Mercado Pago — clique em <b>Reconectar ML</b> e autorize o acesso a pagamentos/Mercado Pago.</>
+            : "Tente atualizar novamente; se persistir, reconecte o ML."}
+        </div>
+      )}
+
+      {/* Reconstruído pelos pedidos do ML — detalhe do período selecionado */}
+      <div className="panel-head" style={{ marginBottom: -4 }}>
+        <span className="panel-title">🧾 Pelos pedidos do ML — período</span>
+        <span className="panel-sub">detalhe estimado por pedido (pode diferir do saldo do MP)</span>
+      </div>
       <div className="kpi-grid">
-        <div className="kpi k-warn"><div className="k-lbl">⏳ A receber</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(resumo.aReceber)}</div><div className="k-sub">líquido, ainda não liberado</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(resumo.liberado)}</div><div className="k-sub">já disponível no MP</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (período)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(resumo.aReceber)}</div><div className="k-sub">líquido, ainda não liberado</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado (período)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(resumo.liberado)}</div><div className="k-sub">repasse já na data</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Σ Líquido do período</div><div className="k-val">{fmtBRL(resumo.liquido)}</div><div className="k-sub">{resumo.count} pedido(s)</div></div>
         <div className="kpi k-neg"><div className="k-lbl">Bruto do período</div><div className="k-val">{fmtBRL(resumo.bruto)}</div><div className="k-sub">antes de taxas/frete</div></div>
       </div>
