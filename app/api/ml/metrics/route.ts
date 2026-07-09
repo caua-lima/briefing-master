@@ -47,7 +47,9 @@ type AnuncioResult = {
 };
 
 type Aggregates = {
-  faturamentoBruto: number;
+  faturamentoBruto: number;      // TUDO (inclui cancelados e devolvidos)
+  vendasCanceladas: number;      // valor dos pedidos cancelados (não venda)
+  vendasDevolvidas: number;      // valor dos pedidos devolvidos (venda revertida, 0 a 0)
   totalRetorno: number;
   totalCMV: number;
   totalEnvio: number;
@@ -66,6 +68,13 @@ function parseDateParam(p: string | null) {
 
 function normalizeSku(s: string) {
   return s.trim().toLowerCase();
+}
+
+// Pedido que NÃO é venda de verdade (cancelado antes de enviar / inválido).
+// Sai do faturamento e do lucro — não é prejuízo, é "não venda".
+function isNaoVenda(status: unknown): boolean {
+  const s = String(status ?? "").toLowerCase();
+  return s === "cancelled" || s === "invalid";
 }
 
 // Remove prefixo "MLB" e retorna apenas o número, em maiúsculas
@@ -152,6 +161,7 @@ async function fetchOrdersLive(
         const rawItems = (o.order_items as Record<string, unknown>[]) ?? [];
         all.push({
           order_id: String(o.id),
+          status: String(o.status ?? ""),
           date_created: String(o.date_created ?? ""),
           total_amount: Number(o.total_amount ?? 0),
           shipping_id: String((o.shipping as Record<string, unknown>)?.id ?? ""),
@@ -209,8 +219,12 @@ function computeAggregates(
   porMlb: Map<string, ProdutoData>,
   porSku: Map<string, ProdutoData>,
   adsByItem: Record<string, number>,
+  cancelIds: Set<string> = new Set(),
+  devolIds: Set<string> = new Set(),
 ): Aggregates {
   let faturamentoBruto = 0;
+  let vendasCanceladas = 0;
+  let vendasDevolvidas = 0;
   let totalRetorno = 0;
   let totalCMV = 0;
   let totalEnvio = 0;
@@ -219,9 +233,21 @@ function computeAggregates(
   let pedidosSemVinculo = 0;
 
   const anunciosMap = new Map<string, AnuncioResult>();
+  let ordersCount = 0;
 
   for (const o of orders) {
-    faturamentoBruto += Number(o.total_amount ?? 0);
+    const oid = String(o.order_id ?? "");
+    const totalAmt = Number(o.total_amount ?? 0);
+    // Faturamento BRUTO inclui tudo (inclusive cancelado/devolvido).
+    faturamentoBruto += totalAmt;
+
+    // Cancelado = "não venda" (estoque nem saiu). Fica só no bruto; sai do
+    // faturamento líquido e do lucro. Status vem do próprio pedido (robusto).
+    if (isNaoVenda(o.status) || cancelIds.has(oid)) { vendasCanceladas += totalAmt; continue; }
+    // Devolvido = venda revertida, produto volta ao estoque → 0 a 0. Idem: só no bruto.
+    if (devolIds.has(oid)) { vendasDevolvidas += totalAmt; continue; }
+
+    ordersCount++;
     const items = (o.items as OrderItem[]) ?? [];
 
     // Frete Full do pedido distribuído por unidade (envio é por pedido)
@@ -321,6 +347,8 @@ function computeAggregates(
 
   return {
     faturamentoBruto,
+    vendasCanceladas,
+    vendasDevolvidas,
     totalRetorno,
     totalCMV,
     totalEnvio,
@@ -330,7 +358,7 @@ function computeAggregates(
     adsNaoVinculado,
     anuncios,
     pedidosSemVinculo,
-    ordersCount: orders.length,
+    ordersCount,
   };
 }
 
@@ -411,12 +439,32 @@ export async function GET(req: Request) {
     for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
     for (const o of ordersHoje) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
 
-    const agg = computeAggregates(orders, porMlb, porSku, adsByItem);
-    const aggHoje = computeAggregates(ordersHoje, porMlb, porSku, adsHoje);
+    // ── Devoluções + cancelamentos: separa por tipo ───────────
+    // Cancelamento = venda que não aconteceu (estoque não saiu/voltou).
+    // Devolução = venda revertida, produto volta ao estoque → 0 a 0.
+    // Os dois entram no faturamento BRUTO, mas saem do líquido e do lucro.
+    const [retUTC, retBR] = await Promise.all([
+      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+    ]);
+    const retMap = new Map<string, FirebaseFirestore.DocumentData>();
+    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
+    const cancelIds = new Set<string>();
+    const devolIds = new Set<string>();
+    for (const [id, r] of retMap) {
+      if (String(r.tipo ?? "") === "devolucao") devolIds.add(id);
+      else cancelIds.add(id); // cancelamento (ou sem tipo definido)
+    }
 
-    // Série diária de faturamento bruto (para o gráfico de metas)
+    const agg = computeAggregates(orders, porMlb, porSku, adsByItem, cancelIds, devolIds);
+    const aggHoje = computeAggregates(ordersHoje, porMlb, porSku, adsHoje, cancelIds, devolIds);
+
+    // Série diária de faturamento líquido (para o gráfico de metas): sem
+    // cancelados/devolvidos, pois representa a venda que de fato valeu.
     const serieMap = new Map<string, number>();
     for (const o of orders) {
+      const oid = String(o.order_id ?? "");
+      if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
       const dia = String(o.date_created ?? "").slice(0, 10);
       if (dia) serieMap.set(dia, (serieMap.get(dia) ?? 0) + Number(o.total_amount ?? 0));
     }
@@ -427,13 +475,7 @@ export async function GET(req: Request) {
     // Diagnóstico de ADS quando o total do período vem 0 (identifica a causa)
     const adsDiag = agg.totalAds === 0 && fromStr <= adsTo ? await probeAds(fromStr, adsTo) : null;
 
-    // ── 5. Devoluções ─────────────────────────────────────────
-    const [retUTC, retBR] = await Promise.all([
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
-    ]);
-    const retMap = new Map<string, FirebaseFirestore.DocumentData>();
-    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
+    // ── 5. Devoluções (informativo — já excluídas do faturamento/lucro acima) ──
     const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
     const devolucoesDetalhe = Array.from(retMap.values())
       .map((r) => ({
@@ -480,16 +522,25 @@ export async function GET(req: Request) {
       aggHoje.totalRetorno - aggHoje.totalCMV - aggHoje.totalEnvio - aggHoje.totalAds - aggHoje.totalTaxasML - aggHoje.totalImposto;
 
     // ── 8. Totais finais do período ───────────────────────────
+    // Devoluções/cancelamentos NÃO entram aqui: o pedido já foi removido do
+    // faturamento e dos custos no agregado, resultando em 0 a 0 (não é descontado cheio).
     const lucroSemCustos =
-      agg.totalRetorno - agg.totalCMV - agg.totalEnvio - agg.totalAds - agg.totalImposto - agg.totalTaxasML - devolucoes;
+      agg.totalRetorno - agg.totalCMV - agg.totalEnvio - agg.totalAds - agg.totalImposto - agg.totalTaxasML;
     const lucroComCustos = lucroSemCustos - custosOp;
     const margemSemCustos = agg.totalRetorno > 0 ? (lucroSemCustos / agg.totalRetorno) * 100 : 0;
     const margemComCustos = agg.totalRetorno > 0 ? (lucroComCustos / agg.totalRetorno) * 100 : 0;
 
+    // Faturamento líquido = bruto − vendas canceladas − vendas devolvidas.
+    const faturamentoLiquido = agg.faturamentoBruto - agg.vendasCanceladas - agg.vendasDevolvidas;
+    const faturamentoLiquidoHoje = aggHoje.faturamentoBruto - aggHoje.vendasCanceladas - aggHoje.vendasDevolvidas;
+
     const responseBody: Record<string, unknown> = {
       faturamentoBruto: agg.faturamentoBruto,
+      faturamentoLiquido,
+      vendasCanceladas: agg.vendasCanceladas,
+      vendasDevolvidas: agg.vendasDevolvidas,
       totalRetorno: agg.totalRetorno,
-      faturamentoHoje: aggHoje.faturamentoBruto,
+      faturamentoHoje: faturamentoLiquidoHoje,
       pedidosHoje: aggHoje.ordersCount,
       ordersCount: agg.ordersCount,
       devolucoes,
@@ -510,6 +561,9 @@ export async function GET(req: Request) {
       // Breakdown do dia para o card "Vendas do Dia"
       hoje: {
         faturamentoBruto: aggHoje.faturamentoBruto,
+        faturamentoLiquido: faturamentoLiquidoHoje,
+        vendasCanceladas: aggHoje.vendasCanceladas,
+        vendasDevolvidas: aggHoje.vendasDevolvidas,
         totalCMV: aggHoje.totalCMV,
         totalAds: aggHoje.totalAds,
         totalEnvio: aggHoje.totalEnvio,

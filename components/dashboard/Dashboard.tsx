@@ -14,6 +14,7 @@ import type { UserData } from "@/components/useUserData";
 import ExpensesDoughnut from "./ExpensesDoughnut";
 import MetasGauge from "./MetasGauge";
 import Gauge from "./Gauge";
+import DateRangePicker from "./DateRangePicker";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
 type Props = { data: UserData };
@@ -36,6 +37,9 @@ type AnuncioResult = {
 
 type HojeBreakdown = {
   faturamentoBruto: number;
+  faturamentoLiquido: number;
+  vendasCanceladas: number;
+  vendasDevolvidas: number;
   totalCMV:         number;
   totalAds:         number;
   totalEnvio:       number;
@@ -47,6 +51,9 @@ type HojeBreakdown = {
 
 type MlMetrics = {
   faturamentoBruto:   number;
+  faturamentoLiquido: number;
+  vendasCanceladas:   number;
+  vendasDevolvidas:   number;
   totalRetorno:       number;
   faturamentoHoje:    number;
   pedidosHoje:        number;
@@ -236,7 +243,8 @@ function DevolucoesPanel({ total, detalhe }: { total: number; detalhe: Devolucao
 // ── Vendas do Dia (hero) ───────────────────────────────────────
 function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   const h: HojeBreakdown = hoje ?? {
-    faturamentoBruto: 0, totalCMV: 0, totalAds: 0, totalEnvio: 0,
+    faturamentoBruto: 0, faturamentoLiquido: 0, vendasCanceladas: 0, vendasDevolvidas: 0,
+    totalCMV: 0, totalAds: 0, totalEnvio: 0,
     totalTaxasML: 0, totalImposto: 0, lucroLiquido: 0, pedidos: 0,
   };
   const margem = h.faturamentoBruto > 0 ? (h.lucroLiquido / h.faturamentoBruto) * 100 : 0;
@@ -393,10 +401,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
 export default function Dashboard({ data }: Props) {
   const mes = mesAtual();
 
-  type PeriodoMode = "hoje" | "mes" | "custom";
-  const [periodoMode, setPeriodoMode] = useState<PeriodoMode>("mes");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [range, setRange] = useState<{ from: string; to: string }>(() => monthRange(mes));
   const [mlRefreshing, setMlRefreshing] = useState(false);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlMetrics, setMlMetrics] = useState<MlMetrics | null>(null);
@@ -410,13 +415,20 @@ export default function Dashboard({ data }: Props) {
     setDiag(d ? JSON.stringify(d, null, 2) : "Sem diagnóstico disponível (ADS pode estar OK ou período sem dados).");
   }
 
-  const periodoRange = useMemo((): { from: string; to: string } => {
+  const periodoRange = range;
+
+  // "Mês atual" ativa o acompanhamento de metas e as projeções de fechamento.
+  const isMesAtual = useMemo(() => {
+    const m = monthRange(mes);
+    return range.from === m.from && range.to === m.to;
+  }, [range, mes]);
+
+  const periodoLabel = useMemo(() => {
     const today = todayISO();
-    if (periodoMode === "hoje") return { from: today, to: today };
-    if (periodoMode === "mes") return monthRange(mes);
-    if (customFrom && customTo) return { from: customFrom, to: customTo };
-    return monthRange(mes);
-  }, [periodoMode, customFrom, customTo, mes]);
+    if (range.from === today && range.to === today) return "Hoje";
+    if (isMesAtual) return "Mês atual";
+    return "Personalizado";
+  }, [range, isMesAtual]);
 
   const fetchMetrics = useCallback(async (from: string, to: string, silent = false, fresh = false) => {
     if (!silent) setMlLoading(true);
@@ -500,34 +512,32 @@ export default function Dashboard({ data }: Props) {
     : data.goals;
 
   const fatBruto = mlMetrics?.faturamentoBruto ?? 0;
+  // Líquido = bruto − canceladas − devoluções. É a base real das metas.
+  const fatLiquido = mlMetrics?.faturamentoLiquido ?? 0;
   const retorno = mlMetrics?.totalRetorno ?? 0;
   const lucroLiquido = mlMetrics?.lucroComCustos ?? 0;
 
   const projecao = useMemo(() => {
-    if (periodoMode !== "mes" || !mlMetrics) return 0;
+    if (!isMesAtual || !mlMetrics) return 0;
     const diaAtual = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     if (diaAtual <= 0) return 0;
-    return (fatBruto / diaAtual) * totalDias;
-  }, [periodoMode, mlMetrics, fatBruto, mes]);
+    return (fatLiquido / diaAtual) * totalDias;
+  }, [isMesAtual, mlMetrics, fatLiquido, mes]);
 
   // Projeção de LUCRO: escala a parte variável (sem custos op.) e mantém o
   // custo operacional do mês fixo.
   const projecaoLucro = useMemo(() => {
-    if (periodoMode !== "mes" || !mlMetrics) return 0;
+    if (!isMesAtual || !mlMetrics) return 0;
     const diaAtual = diaAtualNoMes();
     const totalDias = diasNoMes(mes);
     if (diaAtual <= 0) return 0;
     const variavel = mlMetrics.lucroSemCustos;
     return (variavel / diaAtual) * totalDias - (mlMetrics.custosOperacionais ?? 0);
-  }, [periodoMode, mlMetrics, mes]);
+  }, [isMesAtual, mlMetrics, mes]);
 
   // Meta diária automática = meta mensal (Meta 1) ÷ dias do mês
   const metaDiariaAtiva = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
-
-  const PERIOD_LABELS: Record<PeriodoMode, string> = {
-    hoje: "Hoje", mes: "Mês", custom: "Personalizado",
-  };
 
   const totalCustos =
     (mlMetrics?.totalCMV ?? 0) + (mlMetrics?.totalEnvio ?? 0) + (mlMetrics?.totalTaxasML ?? 0) +
@@ -560,20 +570,11 @@ export default function Dashboard({ data }: Props) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div className="seg">
-            {(["hoje", "mes", "custom"] as PeriodoMode[]).map((mode) => (
-              <button key={mode} type="button" className={`seg-btn ${periodoMode === mode ? "active" : ""}`} onClick={() => setPeriodoMode(mode)}>
-                {PERIOD_LABELS[mode]}
-              </button>
-            ))}
-          </div>
-          {periodoMode === "custom" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="date" className="date-input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-              <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>até</span>
-              <input type="date" className="date-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-            </div>
-          )}
+          <DateRangePicker
+            from={range.from}
+            to={range.to}
+            onApply={(from, to) => setRange({ from, to })}
+          />
         </div>
       </div>
 
@@ -606,7 +607,7 @@ export default function Dashboard({ data }: Props) {
       ) : (
         <>
           {/* Acompanhamento das metas (topo, modo mês) */}
-          {periodoMode === "mes" && (
+          {isMesAtual && (
             <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div className="panel-head" style={{ marginBottom: 0 }}>
                 <span className="panel-title">🎯 Acompanhamento das Metas — {formatMesBR(mes)}</span>
@@ -614,7 +615,7 @@ export default function Dashboard({ data }: Props) {
               </div>
               {goals?.meta1 ? (
                 <MetasGauge
-                  fatBruto={fatBruto}
+                  fatBruto={fatLiquido}
                   meta1={goals.meta1}
                   meta2={goals.meta2 ?? null}
                   meta3={goals.meta3 ?? null}
@@ -640,15 +641,17 @@ export default function Dashboard({ data }: Props) {
           <section>
             <div className="panel-head">
               <span className="panel-title">💰 Resultado do período</span>
-              {mlMetrics && <span className="panel-sub">{mlMetrics.from} → {mlMetrics.to} · {PERIOD_LABELS[periodoMode]}</span>}
+              {mlMetrics && <span className="panel-sub">{mlMetrics.from} → {mlMetrics.to} · {periodoLabel}</span>}
             </div>
             <div className="kpi-grid">
-              <Kpi label="Faturamento bruto" value={fatBruto} tone="acc" />
+              <Kpi label="Faturamento bruto" value={fatBruto} tone="acc" sub="tudo, inclui cancelados/devolvidos" />
+              <Kpi label="Faturamento líquido" value={fatLiquido} tone="acc" sub="− canceladas − devoluções" />
               <Kpi label="Retorno sobre vendas" value={retorno} tone="acc" />
               <Kpi label="Lucro líquido" value={lucroLiquido} tone={lucroLiquido >= 0 ? "pos" : "neg"} sub="já com custos operacionais" />
               <Kpi label="Margem líquida" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct />
               <Kpi label="Gasto com ADS" value={mlMetrics?.totalAds ?? 0} tone="neg" />
-              <Kpi label="Devoluções" value={mlMetrics?.devolucoes ?? 0} tone="neg" />
+              <Kpi label="Vendas canceladas" value={mlMetrics?.vendasCanceladas ?? 0} tone="neg" sub="não contam no lucro" />
+              <Kpi label="Devoluções" value={mlMetrics?.vendasDevolvidas ?? 0} tone="neg" sub="0 a 0 (produto volta ao estoque)" />
             </div>
           </section>
 
