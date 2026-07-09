@@ -280,6 +280,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         <MovimentoModal
           product={movModal.product}
           tipo={movModal.tipo}
+          estoqueML={estoqueML}
           onClose={() => setMovModal(null)}
           onSaved={() => setMovModal(null)}
         />
@@ -386,10 +387,7 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>Movimentações</span>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>📦 Saldo inicial</button>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
-        </div>
+        <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
       </div>
       {ordenados.length === 0 ? (
         <div style={{ color: "var(--muted)", fontSize: ".8rem", padding: "6px 0" }}>Nenhuma movimentação ainda. Use <b>＋ Entrada</b> para lançar a primeira compra.</div>
@@ -425,11 +423,11 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
   );
 }
 
-function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product; tipo: MovimentoTipo; onClose: () => void; onSaved: () => void }) {
+function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { product: Product; tipo: MovimentoTipo; estoqueML: EstoqueML; onClose: () => void; onSaved: () => void }) {
   const isEntrada = tipo === "entrada";
   const isSaldo = tipo === "saldo_inicial";
   const isAjuste = tipo === "ajuste";
-  const precisaCusto = isEntrada || isSaldo; // compra e saldo inicial exigem custo
+  const precisaCusto = isEntrada || isSaldo;
   const [qtd, setQtd] = useState("");
   const [custo, setCusto] = useState(precisaCusto ? (product.custoMedio ? String(product.custoMedio) : product.custo || "") : "");
   const [data, setData] = useState(todayISO());
@@ -441,9 +439,14 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
 
   const qNum = parseNum(qtd);
   const cNum = parseNum(custo);
-  const qAtual = product.qtdLocal ?? 0;
+  // Estoque atual = tudo que você tem hoje (em casa + Full + próprio). É a base
+  // do blend: o custo médio parte do custo atual sobre esse estoque.
+  const { qtd: full, proprio } = fullDe(product, estoqueML);
+  const estoqueAtual = (product.qtdLocal ?? 0) + full + proprio;
   const avgAtual = custoMedioDe(product);
-  const novoAvg = isEntrada && qNum > 0 ? (qAtual * avgAtual + qNum * cNum) / (qAtual + qNum) : avgAtual;
+  const novoAvg = precisaCusto && qNum > 0 && estoqueAtual + qNum > 0
+    ? (estoqueAtual * avgAtual + qNum * cNum) / (estoqueAtual + qNum)
+    : avgAtual;
 
   async function handleSave() {
     if (!qNum || (!isAjuste && qNum <= 0)) { alert("Informe a quantidade."); return; }
@@ -458,7 +461,7 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
         custoUnit: precisaCusto ? cNum : undefined,
         data,
         obs: obs.trim() || undefined,
-      });
+      }, precisaCusto ? novoAvg : undefined);
       onSaved();
     } catch (err: unknown) {
       alert("Erro ao salvar movimentação: " + (err instanceof Error ? err.message : String(err)));
@@ -471,7 +474,7 @@ function MovimentoModal({ product, tipo, onClose, onSaved }: { product: Product;
     <Modal open onClose={onClose}>
       <div className="modal-icon">{icon}</div>
       <div className="modal-title">{titulo}</div>
-      <div className="modal-sub">{product.name || "Produto"} · 🏠 em casa: <b>{qAtual} un</b>{avgAtual > 0 && <> · custo médio {fmtBRL(avgAtual)}</>}</div>
+      <div className="modal-sub">{product.name || "Produto"} · estoque atual: <b>{estoqueAtual} un</b>{avgAtual > 0 && <> · custo médio {fmtBRL(avgAtual)}</>}</div>
 
       <div className="config-field">
         <label>{isAjuste ? "🔢 Quantidade (use − para baixa)" : "🔢 Quantidade (unidades)"}</label>

@@ -215,44 +215,26 @@ function round4(n: number): number {
 }
 
 /**
- * Reprocessa TODAS as movimentações do produto em ordem cronológica e grava
- * `custoMedio` (média móvel ponderada) e `qtdLocal` no doc do produto.
- * Reprocessar do zero evita drift de arredondamento.
+ * Recalcula o `qtdLocal` (estoque no galpão) a partir do livro e, se informado,
+ * grava também o `custoMedio` já calculado pela entrada (blend contra o estoque
+ * atual — feito no cliente, que conhece o estoque do Full).
  */
-async function recomputeProduto(productId: string): Promise<void> {
+async function recomputeProduto(productId: string, custoMedio?: number): Promise<void> {
   const snap = await getDocs(query(sCol(MOV_COL), where("productId", "==", productId)));
-  const movs = snap.docs
-    .map((d) => d.data() as EstoqueMovimento)
-    .sort(
-      (a, b) =>
-        (a.data ?? "").localeCompare(b.data ?? "") ||
-        (a.createdAt ?? 0) - (b.createdAt ?? 0),
-    );
+  const movs = snap.docs.map((d) => d.data() as EstoqueMovimento);
 
-  let avgQty = 0; // qtd usada na média ponderada (compras + saldo inicial)
-  let avg = 0;    // custo médio ponderado
-  let qty = 0;    // estoque no galpão (em casa)
+  let qty = 0; // estoque no galpão (em casa)
   for (const m of movs) {
-    if (m.tipo === "entrada" || m.tipo === "saldo_inicial") {
-      const q = Math.abs(Number(m.quantidade) || 0);
-      const c = Number(m.custoUnit) || 0;
-      const nova = avgQty + q;
-      avg = nova > 0 ? (avgQty * avg + q * c) / nova : 0;
-      avgQty = nova;
-      // Compra entra no galpão; saldo inicial já está fora (ex.: no Full).
-      if (m.tipo === "entrada") qty += q;
-    } else if (m.tipo === "saida_full") {
-      qty -= Math.abs(Number(m.quantidade) || 0);
-    } else {
-      // ajuste: quantidade com sinal
-      qty += Number(m.quantidade) || 0;
-    }
+    const q = Number(m.quantidade) || 0;
+    if (m.tipo === "entrada") qty += Math.abs(q);
+    else if (m.tipo === "saida_full") qty -= Math.abs(q);
+    else if (m.tipo === "saldo_inicial") { /* já está fora do galpão (ex.: Full) */ }
+    else qty += q; // ajuste: com sinal
   }
 
-  await updateDoc(sDoc("estoque", productId), {
-    custoMedio: round4(avg),
-    qtdLocal: qty,
-  });
+  const patch: Record<string, unknown> = { qtdLocal: qty };
+  if (custoMedio != null && Number.isFinite(custoMedio)) patch.custoMedio = round4(custoMedio);
+  await updateDoc(sDoc("estoque", productId), patch);
 }
 
 export function watchMovimentos(
@@ -265,13 +247,14 @@ export function watchMovimentos(
 
 export async function addMovimento(
   mov: Omit<EstoqueMovimento, "createdBy" | "createdAt">,
+  custoMedio?: number,
 ): Promise<void> {
   const email = getCurrentUserEmail();
   await setDoc(
     sDoc(MOV_COL, mov.id),
     sanitizeUndefined({ ...mov, createdBy: email, createdAt: Date.now() }),
   );
-  await recomputeProduto(mov.productId);
+  await recomputeProduto(mov.productId, custoMedio);
 }
 
 export async function deleteMovimento(id: string, productId: string): Promise<void> {
