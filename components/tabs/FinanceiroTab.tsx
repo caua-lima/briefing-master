@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { watchFinanceiroManual, saveFinanceiroManual, type FinanceiroManual } from "@/lib/firebase/data";
+
+function parseBR(s: string): number {
+  const n = parseFloat(String(s).replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
 
 type Repasse = {
   order_id: string;
@@ -58,7 +64,22 @@ export default function FinanceiroTab() {
   const [agendaTotal, setAgendaTotal] = useState<Agenda[]>([]);
   const [globalCF, setGlobalCF] = useState<GlobalCF>({ aReceber: 0, pedidos: 0, exatos: 0 });
   const [fluxoMP, setFluxoMP] = useState<FluxoMP | null>(null);
+  const [manual, setManual] = useState<FinanceiroManual>({ saldoConta: 0, cofrinho: 0 });
+  const [editSaldo, setEditSaldo] = useState(false);
+  const [saldoInput, setSaldoInput] = useState("");
+  const [cofrinhoInput, setCofrinhoInput] = useState("");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => watchFinanceiroManual(setManual), []);
+
+  async function salvarManual() {
+    try {
+      await saveFinanceiroManual({ saldoConta: parseBR(saldoInput), cofrinho: parseBR(cofrinhoInput) });
+      setEditSaldo(false);
+    } catch (e) {
+      alert("Erro ao salvar: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
 
   const loadSaldo = useCallback(async () => {
     try {
@@ -126,6 +147,37 @@ export default function FinanceiroTab() {
               <input type="date" className="date-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Saldo da conta + Cofrinho (manual — o MP não expõe pela API) */}
+      <div>
+        <div className="panel-head" style={{ marginBottom: 8 }}>
+          <span className="panel-title">💰 Saldo & Cofrinho</span>
+          {!editSaldo ? (
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setSaldoInput(manual.saldoConta ? String(manual.saldoConta) : ""); setCofrinhoInput(manual.cofrinho ? String(manual.cofrinho) : ""); setEditSaldo(true); }}>✏️ Editar</button>
+          ) : (
+            <span style={{ display: "flex", gap: 6 }}>
+              <button type="button" className="btn btn-success btn-xs" onClick={salvarManual}>💾 Salvar</button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditSaldo(false)}>✕</button>
+            </span>
+          )}
+        </div>
+        <div className="kpi-grid">
+          <div className="kpi k-pos">
+            <div className="k-lbl">🏦 Saldo disponível</div>
+            {editSaldo
+              ? <input type="number" step="0.01" placeholder="0,00" value={saldoInput} onChange={(e) => setSaldoInput(e.target.value)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: "1.2rem", fontWeight: 800, width: "100%", outline: "none" }} />
+              : <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(manual.saldoConta)}</div>}
+            <div className="k-sub">na conta MP · manual</div>
+          </div>
+          <div className="kpi k-acc">
+            <div className="k-lbl">🐷 Cofrinho</div>
+            {editSaldo
+              ? <input type="number" step="0.01" placeholder="0,00" value={cofrinhoInput} onChange={(e) => setCofrinhoInput(e.target.value)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: "1.2rem", fontWeight: 800, width: "100%", outline: "none" }} />
+              : <div className="k-val">{fmtBRL(manual.cofrinho)}</div>}
+            <div className="k-sub">reservado/rendendo · manual</div>
+          </div>
         </div>
       </div>
 

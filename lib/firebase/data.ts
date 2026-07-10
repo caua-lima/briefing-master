@@ -262,6 +262,27 @@ export async function deleteMovimento(id: string, productId: string): Promise<vo
   await recomputeProduto(productId);
 }
 
+// ── Financeiro manual (saldo da conta + cofrinho, editados à mão) ──
+// Guardado em metas/financeiro_manual (mesma coleção, doc próprio) — não
+// precisa de regra nova. O MP não expõe saldo/cofrinho pela API.
+export type FinanceiroManual = { saldoConta: number; cofrinho: number; updatedAt?: number; updatedBy?: string };
+
+export function watchFinanceiroManual(cb: (f: FinanceiroManual) => void): () => void {
+  return onSnapshot(sDoc("metas", "financeiro_manual"), (snap) => {
+    const d = snap.data() ?? {};
+    cb({ saldoConta: Number(d.saldoConta ?? 0), cofrinho: Number(d.cofrinho ?? 0), updatedAt: d.updatedAt, updatedBy: d.updatedBy });
+  });
+}
+
+export async function saveFinanceiroManual(v: { saldoConta: number; cofrinho: number }): Promise<void> {
+  const email = getCurrentUserEmail();
+  await setDoc(
+    sDoc("metas", "financeiro_manual"),
+    { saldoConta: v.saldoConta, cofrinho: v.cofrinho, updatedAt: Date.now(), updatedBy: email },
+    { merge: true },
+  );
+}
+
 // ── Access Control (global collection) ────────────────────────
 export function watchAccessList(
   cb: (entries: AccessEntry[]) => void,
