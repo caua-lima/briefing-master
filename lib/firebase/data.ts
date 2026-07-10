@@ -262,23 +262,53 @@ export async function deleteMovimento(id: string, productId: string): Promise<vo
   await recomputeProduto(productId);
 }
 
-// ── Financeiro manual (saldo da conta + cofrinho, editados à mão) ──
-// Guardado em metas/financeiro_manual (mesma coleção, doc próprio) — não
-// precisa de regra nova. O MP não expõe saldo/cofrinho pela API.
-export type FinanceiroManual = { saldoConta: number; cofrinho: number; updatedAt?: number; updatedBy?: string };
+// ── Financeiro: cofrinho semi-automático ──────────────────────
+// Guardado em metas/financeiro_manual. Cofrinho = base + repasses liberados
+// (auto do MP) − saídas (manuais) + rendimento (120% CDI). O MP não expõe
+// saldo/cofrinho pela API, então a base é informada por você e re-sincronizada.
+export type SaidaFin = { id: string; data: string; valor: number; desc?: string };
+export type FinanceiroManual = {
+  cofrinhoBase: number;   // valor do cofrinho quando você fixou a base
+  baseTs: number;         // quando a base foi fixada (ms) — a partir daqui soma o liberado
+  saldoConta: number;     // saldo disponível na conta (≈0, manual)
+  cdiAnual: number;       // CDI anual em % (ex.: 15) — rende 120% disso
+  saidas: SaidaFin[];     // saques/transferências manuais
+  updatedAt?: number;
+  updatedBy?: string;
+};
 
 export function watchFinanceiroManual(cb: (f: FinanceiroManual) => void): () => void {
   return onSnapshot(sDoc("metas", "financeiro_manual"), (snap) => {
     const d = snap.data() ?? {};
-    cb({ saldoConta: Number(d.saldoConta ?? 0), cofrinho: Number(d.cofrinho ?? 0), updatedAt: d.updatedAt, updatedBy: d.updatedBy });
+    cb({
+      cofrinhoBase: Number(d.cofrinhoBase ?? d.cofrinho ?? 0),
+      baseTs: Number(d.baseTs ?? 0),
+      saldoConta: Number(d.saldoConta ?? 0),
+      cdiAnual: Number(d.cdiAnual ?? 0),
+      saidas: Array.isArray(d.saidas) ? (d.saidas as SaidaFin[]) : [],
+      updatedAt: d.updatedAt,
+      updatedBy: d.updatedBy,
+    });
   });
 }
 
-export async function saveFinanceiroManual(v: { saldoConta: number; cofrinho: number }): Promise<void> {
+/** Fixa a base do cofrinho (valor + CDI + saldo). Registra o instante (baseTs). */
+export async function saveFinanceiroBase(v: { cofrinhoBase: number; cdiAnual: number; saldoConta: number }): Promise<void> {
   const email = getCurrentUserEmail();
   await setDoc(
     sDoc("metas", "financeiro_manual"),
-    { saldoConta: v.saldoConta, cofrinho: v.cofrinho, updatedAt: Date.now(), updatedBy: email },
+    // Re-ancorar zera as saídas: a base nova já reflete tudo até agora.
+    { cofrinhoBase: v.cofrinhoBase, cdiAnual: v.cdiAnual, saldoConta: v.saldoConta, baseTs: Date.now(), saidas: [], updatedAt: Date.now(), updatedBy: email },
+    { merge: true },
+  );
+}
+
+/** Grava a lista de saídas (saques/transferências). */
+export async function saveFinanceiroSaidas(saidas: SaidaFin[]): Promise<void> {
+  const email = getCurrentUserEmail();
+  await setDoc(
+    sDoc("metas", "financeiro_manual"),
+    { saidas, updatedAt: Date.now(), updatedBy: email },
     { merge: true },
   );
 }

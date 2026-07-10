@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
-import { watchFinanceiroManual, saveFinanceiroManual, type FinanceiroManual } from "@/lib/firebase/data";
+import { watchFinanceiroManual, saveFinanceiroBase, saveFinanceiroSaidas, type FinanceiroManual, type SaidaFin } from "@/lib/firebase/data";
 
 function parseBR(s: string): number {
   const n = parseFloat(String(s).replace(",", "."));
@@ -25,7 +25,7 @@ type Repasse = {
 type Resumo = { bruto: number; liquido: number; liberado: number; aReceber: number; semData: number; exatos: number; count: number };
 type Agenda = { data: string; liquido: number; pedidos: number; pendente?: boolean };
 type GlobalCF = { aReceber: number; pedidos: number; exatos: number };
-type FluxoMP = { ok: boolean; aReceber?: number; liberado?: number; pendentes?: number; aprovados?: number; count?: number; totalMp?: number; agenda?: Agenda[]; status?: number; error?: string };
+type FluxoMP = { ok: boolean; aReceber?: number; liberado?: number; liberadoDesde?: number; pendentes?: number; aprovados?: number; count?: number; totalMp?: number; agenda?: Agenda[]; status?: number; error?: string };
 
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -48,6 +48,8 @@ function fmtDia(iso: string): string {
 
 type Periodo = "hoje" | "mes" | "custom";
 
+const inpBase: CSSProperties = { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", color: "var(--text)", fontSize: "1.05rem", fontWeight: 800, width: "100%", outline: "none", marginTop: 4 };
+
 const STATUS_META: Record<Repasse["status"], { label: string; cor: string }> = {
   liberado: { label: "Liberado", cor: "var(--green)" },
   pendente: { label: "A receber", cor: "var(--yellow)" },
@@ -64,26 +66,37 @@ export default function FinanceiroTab() {
   const [agendaTotal, setAgendaTotal] = useState<Agenda[]>([]);
   const [globalCF, setGlobalCF] = useState<GlobalCF>({ aReceber: 0, pedidos: 0, exatos: 0 });
   const [fluxoMP, setFluxoMP] = useState<FluxoMP | null>(null);
-  const [manual, setManual] = useState<FinanceiroManual>({ saldoConta: 0, cofrinho: 0 });
-  const [editSaldo, setEditSaldo] = useState(false);
-  const [saldoInput, setSaldoInput] = useState("");
-  const [cofrinhoInput, setCofrinhoInput] = useState("");
+  const [manual, setManual] = useState<FinanceiroManual>({ cofrinhoBase: 0, baseTs: 0, saldoConta: 0, cdiAnual: 0, saidas: [] });
+  const [editBase, setEditBase] = useState(false);
+  const [baseIn, setBaseIn] = useState({ cofrinho: "", cdi: "", saldo: "" });
+  const [novaSaida, setNovaSaida] = useState({ data: isoOf(new Date()), valor: "", desc: "" });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => watchFinanceiroManual(setManual), []);
 
-  async function salvarManual() {
+  async function salvarBase() {
     try {
-      await saveFinanceiroManual({ saldoConta: parseBR(saldoInput), cofrinho: parseBR(cofrinhoInput) });
-      setEditSaldo(false);
-    } catch (e) {
-      alert("Erro ao salvar: " + (e instanceof Error ? e.message : String(e)));
-    }
+      await saveFinanceiroBase({ cofrinhoBase: parseBR(baseIn.cofrinho), cdiAnual: parseBR(baseIn.cdi), saldoConta: parseBR(baseIn.saldo) });
+      setEditBase(false);
+    } catch (e) { alert("Erro ao salvar: " + (e instanceof Error ? e.message : String(e))); }
+  }
+  async function addSaida() {
+    const valor = parseBR(novaSaida.valor);
+    if (!valor || valor <= 0) { alert("Informe o valor da saída."); return; }
+    const nova: SaidaFin = { id: "s" + Date.now(), data: novaSaida.data, valor, desc: novaSaida.desc.trim() || undefined };
+    try {
+      await saveFinanceiroSaidas([...(manual.saidas ?? []), nova]);
+      setNovaSaida({ data: isoOf(new Date()), valor: "", desc: "" });
+    } catch (e) { alert("Erro ao salvar saída: " + (e instanceof Error ? e.message : String(e))); }
+  }
+  async function removeSaida(id: string) {
+    try { await saveFinanceiroSaidas((manual.saidas ?? []).filter((s) => s.id !== id)); }
+    catch (e) { alert("Erro ao remover: " + (e instanceof Error ? e.message : String(e))); }
   }
 
-  const loadSaldo = useCallback(async () => {
+  const loadSaldo = useCallback(async (desde: number) => {
     try {
-      const r = await authedFetch("/api/ml/mp-fluxo", { cache: "no-store" });
+      const r = await authedFetch(`/api/ml/mp-fluxo?desde=${desde || 0}`, { cache: "no-store" });
       if (r.ok) setFluxoMP(await r.json());
     } catch { /* ignora */ }
   }, []);
@@ -111,17 +124,27 @@ export default function FinanceiroTab() {
   }, [range]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadSaldo(); }, [loadSaldo]);
+  useEffect(() => { loadSaldo(manual.baseTs); }, [loadSaldo, manual.baseTs]);
 
   async function atualizar() {
     setLoading(true);
     try { await authedFetch("/api/ml/sync-all", { method: "POST" }); } catch { /* ignora */ }
-    await Promise.all([load(), loadSaldo()]);
+    await Promise.all([load(), loadSaldo(manual.baseTs)]);
   }
 
   const hoje = isoOf(new Date());
   // Se o MP respondeu, usa a agenda real dele (inclui Pix); senão, a reconstruída.
   const proximos = (fluxoMP?.ok ? (fluxoMP.agenda ?? []) : agendaTotal).filter((a) => a.data >= hoje);
+
+  // ── Cofrinho automático = base + liberado desde a base − saídas + rendimento ──
+  const saidasTotal = (manual.saidas ?? []).reduce((s, x) => s + (x.valor || 0), 0);
+  const liberadoDesde = manual.baseTs > 0 ? (fluxoMP?.liberadoDesde ?? 0) : 0;
+  const diasBase = manual.baseTs > 0 ? Math.max(0, (Date.now() - manual.baseTs) / 86400000) : 0;
+  const taxaDia = manual.cdiAnual > 0 ? (manual.cdiAnual / 100) * 1.2 / 365 : 0;
+  const saldoMedio = manual.cofrinhoBase + liberadoDesde / 2;         // aporte entra gradual
+  const rendimento = manual.baseTs > 0 ? saldoMedio * taxaDia * diasBase : 0;
+  const cofrinhoAtual = manual.cofrinhoBase + liberadoDesde - saidasTotal + rendimento;
+  const semBase = manual.baseTs === 0;
 
   return (
     <div className="dash">
@@ -151,34 +174,90 @@ export default function FinanceiroTab() {
       </div>
 
       {/* Saldo da conta + Cofrinho (manual — o MP não expõe pela API) */}
-      <div>
-        <div className="panel-head" style={{ marginBottom: 8 }}>
-          <span className="panel-title">💰 Saldo & Cofrinho</span>
-          {!editSaldo ? (
-            <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setSaldoInput(manual.saldoConta ? String(manual.saldoConta) : ""); setCofrinhoInput(manual.cofrinho ? String(manual.cofrinho) : ""); setEditSaldo(true); }}>✏️ Editar</button>
+      {/* Cofrinho automático + saldo da conta */}
+      <div className="panel">
+        <div className="panel-head" style={{ marginBottom: 12 }}>
+          <span className="panel-title">🐷 Cofrinho & Saldo</span>
+          {!editBase ? (
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setBaseIn({ cofrinho: manual.cofrinhoBase ? String(manual.cofrinhoBase) : "", cdi: manual.cdiAnual ? String(manual.cdiAnual) : "", saldo: manual.saldoConta ? String(manual.saldoConta) : "" }); setEditBase(true); }}>
+              {semBase ? "＋ Definir base" : "🔄 Re-sincronizar base"}
+            </button>
           ) : (
             <span style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="btn btn-success btn-xs" onClick={salvarManual}>💾 Salvar</button>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditSaldo(false)}>✕</button>
+              <button type="button" className="btn btn-success btn-xs" onClick={salvarBase}>💾 Salvar base</button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditBase(false)}>✕</button>
             </span>
           )}
         </div>
-        <div className="kpi-grid">
-          <div className="kpi k-pos">
-            <div className="k-lbl">🏦 Saldo disponível</div>
-            {editSaldo
-              ? <input type="number" step="0.01" placeholder="0,00" value={saldoInput} onChange={(e) => setSaldoInput(e.target.value)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: "1.2rem", fontWeight: 800, width: "100%", outline: "none" }} />
-              : <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(manual.saldoConta)}</div>}
-            <div className="k-sub">na conta MP · manual</div>
+
+        {editBase ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 4 }}>
+            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>🐷 Cofrinho hoje (R$)
+              <input type="number" step="0.01" placeholder="Ex: 1298,07" value={baseIn.cofrinho} onChange={(e) => setBaseIn({ ...baseIn, cofrinho: e.target.value })} style={inpBase} />
+            </label>
+            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>📈 CDI anual (%)
+              <input type="number" step="0.01" placeholder="Ex: 15" value={baseIn.cdi} onChange={(e) => setBaseIn({ ...baseIn, cdi: e.target.value })} style={inpBase} />
+            </label>
+            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>🏦 Saldo na conta (R$)
+              <input type="number" step="0.01" placeholder="Ex: 0" value={baseIn.saldo} onChange={(e) => setBaseIn({ ...baseIn, saldo: e.target.value })} style={inpBase} />
+            </label>
+            <div style={{ gridColumn: "1/-1", fontSize: ".72rem", color: "var(--muted)" }}>
+              Ao salvar, fixo o valor de agora como base — daí pra frente eu somo os repasses liberados e o rendimento sozinho, e você só lança as <b>saídas</b>. Re-sincronize quando quiser (zera as saídas).
+            </div>
           </div>
-          <div className="kpi k-acc">
-            <div className="k-lbl">🐷 Cofrinho</div>
-            {editSaldo
-              ? <input type="number" step="0.01" placeholder="0,00" value={cofrinhoInput} onChange={(e) => setCofrinhoInput(e.target.value)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: "1.2rem", fontWeight: 800, width: "100%", outline: "none" }} />
-              : <div className="k-val">{fmtBRL(manual.cofrinho)}</div>}
-            <div className="k-sub">reservado/rendendo · manual</div>
+        ) : (
+          <div className="kpi-grid">
+            <div className="kpi k-acc">
+              <div className="k-lbl">🐷 Cofrinho (estimado)</div>
+              <div className="k-val" style={{ color: "var(--purple)" }}>{fmtBRL(cofrinhoAtual)}</div>
+              <div className="k-sub">{semBase ? "defina a base pra começar" : `base ${br(isoOf(new Date(manual.baseTs)))} · 120% CDI`}</div>
+            </div>
+            <div className="kpi k-pos">
+              <div className="k-lbl">🏦 Saldo na conta</div>
+              <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(manual.saldoConta)}</div>
+              <div className="k-sub">disponível · manual</div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {!editBase && !semBase && (
+          <div style={{ marginTop: 10, fontSize: ".74rem", color: "var(--muted)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <span>base {fmtBRL(manual.cofrinhoBase)}</span>
+            <span style={{ color: "var(--green)" }}>+ liberado {fmtBRL(liberadoDesde)}</span>
+            <span style={{ color: "var(--red)" }}>− saídas {fmtBRL(saidasTotal)}</span>
+            <span style={{ color: "var(--purple)" }}>+ rend. {fmtBRL(rendimento)}</span>
+          </div>
+        )}
+
+        {/* Saídas (saques/transferências) */}
+        {!semBase && (
+          <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>➖ Saídas (saques / transferências)</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+              <input type="date" value={novaSaida.data} onChange={(e) => setNovaSaida({ ...novaSaida, data: e.target.value })} className="date-input" />
+              <input type="number" step="0.01" placeholder="Valor" value={novaSaida.valor} onChange={(e) => setNovaSaida({ ...novaSaida, valor: e.target.value })} style={{ ...inpBase, width: 110, marginTop: 0 }} />
+              <input type="text" placeholder="Descrição / conta (opcional)" value={novaSaida.desc} onChange={(e) => setNovaSaida({ ...novaSaida, desc: e.target.value })} style={{ ...inpBase, flex: "1 1 160px", marginTop: 0, fontWeight: 400, fontSize: ".85rem" }} />
+              <button type="button" className="btn btn-ghost btn-xs" onClick={addSaida}>＋ Lançar</button>
+            </div>
+            {(manual.saidas ?? []).length > 0 && (
+              <div className="table-wrapper" style={{ border: "1px solid var(--border)" }}>
+                <table className="tbl-modern">
+                  <thead><tr><th>Data</th><th style={{ textAlign: "left" }}>Descrição</th><th>Valor</th><th></th></tr></thead>
+                  <tbody>
+                    {[...(manual.saidas ?? [])].sort((a, b) => (b.data ?? "").localeCompare(a.data ?? "")).map((s) => (
+                      <tr key={s.id}>
+                        <td style={{ color: "var(--muted)" }}>{br(s.data)}</td>
+                        <td style={{ textAlign: "left" }}>{s.desc || "—"}</td>
+                        <td style={{ color: "var(--red)", fontWeight: 700 }}>− {fmtBRL(s.valor)}</td>
+                        <td><button type="button" className="btn btn-danger btn-xs" onClick={() => removeSaida(s.id)}>🗑</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Fluxo REAL do Mercado Pago (inclui Pix) via /v1/payments/search */}

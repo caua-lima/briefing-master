@@ -27,10 +27,12 @@ export async function GET(req: Request) {
 
   try {
     const now = Date.now();
+    // "desde" (ms) = base do cofrinho; liberadoDesde = repasses que caíram depois disso.
+    const desdeMs = Number(new URL(req.url).searchParams.get("desde") ?? 0) || 0;
 
     let offset = 0;
     const limit = 100;
-    let aReceber = 0, liberado = 0, pendentes = 0, count = 0, aprovados = 0;
+    let aReceber = 0, liberado = 0, liberadoDesde = 0, pendentes = 0, count = 0, aprovados = 0;
     let totalMp = 0; // total que o MP reporta (diagnóstico)
     const agendaMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
 
@@ -65,6 +67,7 @@ export async function GET(req: Request) {
           agendaMap.set(dia, cur);
         } else {
           liberado += net;
+          if (desdeMs > 0 && Number.isFinite(relMs) && relMs >= desdeMs) liberadoDesde += net;
         }
       }
       offset += results.length;
@@ -72,7 +75,7 @@ export async function GET(req: Request) {
     }
 
     const agenda = Array.from(agendaMap.values()).sort((a, b) => a.data.localeCompare(b.data));
-    return NextResponse.json({ ok: true, via: "mp", aReceber, liberado, pendentes, aprovados, count, totalMp, agenda });
+    return NextResponse.json({ ok: true, via: "mp", aReceber, liberado, liberadoDesde, pendentes, aprovados, count, totalMp, agenda });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: "unexpected", details: msg });
