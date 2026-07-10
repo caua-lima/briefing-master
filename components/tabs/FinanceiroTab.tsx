@@ -33,6 +33,12 @@ function monthRange() {
 function br(d: string) {
   return d ? d.split("-").reverse().join("/") : "—";
 }
+function fmtDia(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const wd = new Date(y, m - 1, d).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+  return `${wd} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+}
 
 type Periodo = "hoje" | "mes" | "custom";
 
@@ -182,23 +188,37 @@ export default function FinanceiroTab() {
 
       {/* Próximos repasses (agenda) */}
       <div className="panel">
-        <div className="panel-head" style={{ marginBottom: 8 }}>
+        <div className="panel-head" style={{ marginBottom: 12 }}>
           <span className="panel-title">📅 Próximos repasses</span>
-          <span className="panel-sub">quando e quanto cai no Mercado Pago (líquido estimado)</span>
+          <span className="panel-sub">quando e quanto cai no Mercado Pago{fluxoMP?.ok ? " · líquido real, inclui Pix" : " · líquido estimado"}</span>
         </div>
         {proximos.length === 0 ? (
           <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "6px 0" }}>Nenhum repasse futuro no período selecionado.</div>
-        ) : (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {proximos.map((a) => (
-              <div key={a.data} style={{ flex: "1 1 150px", minWidth: 150, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>{br(a.data)}</div>
-                <div style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--green)" }}>{fmtBRL(a.liquido)}</div>
-                <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>{a.pedidos} pedido(s)</div>
+        ) : (() => {
+          const totalProx = proximos.reduce((s, a) => s + a.liquido, 0);
+          const maxV = Math.max(...proximos.map((a) => a.liquido), 1);
+          return (
+            <>
+              <div style={{ fontSize: ".8rem", color: "var(--muted)", marginBottom: 12 }}>
+                Total: <b style={{ color: "var(--yellow)" }}>{fmtBRL(totalProx)}</b> em {proximos.length} data(s) · {proximos.reduce((s, a) => s + a.pedidos, 0)} pedido(s)
               </div>
-            ))}
-          </div>
-        )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 10 }}>
+                {proximos.map((a) => (
+                  <div key={a.data} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 7 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                      <span style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", textTransform: "capitalize" }}>{fmtDia(a.data)}</span>
+                      <span style={{ fontSize: ".64rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{a.pedidos} ped.</span>
+                    </div>
+                    <div style={{ fontSize: "1.18rem", fontWeight: 800, color: "var(--green)", lineHeight: 1.1 }}>{fmtBRL(a.liquido)}</div>
+                    <div style={{ height: 5, borderRadius: 99, background: "var(--surface)", overflow: "hidden" }}>
+                      <div style={{ width: `${Math.max(6, (a.liquido / maxV) * 100)}%`, height: "100%", background: "linear-gradient(90deg, var(--green), #34d399)" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* Detalhe por pedido */}
