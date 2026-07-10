@@ -34,10 +34,12 @@ export async function GET(req: Request) {
     let totalMp = 0; // total que o MP reporta (diagnóstico)
     const agendaMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
 
-    while (offset < 3000) {
-      // Sem filtro de data (evita o silêncio quando o range é rejeitado);
-      // ordenado do mais recente → os repasses pendentes vêm nas 1ªs páginas.
-      const url = `${MP_API}/v1/payments/search?sort=date_created&criteria=desc&limit=${limit}&offset=${offset}`;
+    while (offset < 5000) {
+      // Filtro de data RELATIVO (NOW-90DAYS) — o formato ISO era rejeitado em
+      // silêncio; o macro funciona. 90 dias cobrem todos os repasses pendentes.
+      const url =
+        `${MP_API}/v1/payments/search?range=date_created&begin_date=NOW-90DAYS&end_date=NOW` +
+        `&sort=date_created&criteria=desc&limit=${limit}&offset=${offset}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" });
       if (!r.ok) {
         const details = (await r.text()).slice(0, 300);
