@@ -13,7 +13,9 @@ type Pedido = {
   produto: string;
   qtd: number;
   valor: number;
-  retorno: number;
+  bruto: number;
+  retorno: number;      // líquido que volta (MP quando exato)
+  retornoExato: boolean;
   cmv: number;
   envio: number;
   taxaML: number;
@@ -65,6 +67,7 @@ export default function PedidosTab() {
 
   const totalLucro = filtrados.reduce((s, p) => s + p.lucro, 0);
   const totalValor = filtrados.reduce((s, p) => s + p.valor, 0);
+  const totalRetorno = filtrados.reduce((s, p) => s + p.retorno, 0);
   const margemMedia = filtrados.length
     ? filtrados.reduce((s, p) => s + p.margem, 0) / filtrados.length
     : 0;
@@ -86,7 +89,8 @@ export default function PedidosTab() {
       {/* Resumo */}
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Pedidos</div><div className="k-val">{filtrados.length}</div></div>
-        <div className="kpi k-acc"><div className="k-lbl">Faturamento</div><div className="k-val">{fmtBRL(totalValor)}</div></div>
+        <div className="kpi k-acc"><div className="k-lbl">Faturamento</div><div className="k-val">{fmtBRL(totalValor)}</div><div className="k-sub">bruto</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">↩️ Retorno</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(totalRetorno)}</div><div className="k-sub">líquido que volta</div></div>
         <div className={`kpi ${totalLucro >= 0 ? "k-pos" : "k-neg"}`}><div className="k-lbl">Lucro líquido</div><div className="k-val" style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Margem média</div><div className="k-val" style={{ color: "var(--yellow)" }}>{margemMedia.toFixed(1)}%</div></div>
       </div>
@@ -101,7 +105,7 @@ export default function PedidosTab() {
       {/* Tabela */}
       <div className="panel">
         <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 12 }}>
-          Margem líquida por venda = Retorno − CMV − Envio Full − Taxa ML − Imposto
+          <b>Retorno</b> = o que volta pra você (líquido do Mercado Pago, já com taxas/frete/descontos) · <b>Lucro</b> = Retorno − CMV − Imposto · <b>~</b> = ainda estimado (sincronize pra virar exato)
         </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando pedidos…</div>
@@ -114,7 +118,7 @@ export default function PedidosTab() {
                 <tr>
                   <th style={{ textAlign: "left" }}>Data</th>
                   <th style={{ textAlign: "left" }}>Produto</th>
-                  <th>Qtd</th><th>Valor</th><th>CMV</th><th>Envio Full</th>
+                  <th>Qtd</th><th>Valor</th><th>↩️ Retorno</th><th>CMV</th><th>Envio Full</th>
                   <th>Taxa ML</th><th>Imposto</th><th>Lucro Líq.</th><th>Margem</th>
                 </tr>
               </thead>
@@ -130,7 +134,11 @@ export default function PedidosTab() {
                       <span style={{ display: "block", fontSize: ".68rem", color: "var(--muted)" }}>#{p.order_id}</span>
                     </td>
                     <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
-                    <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(p.valor)}</td>
+                    <td style={{ color: "var(--muted)" }}>{fmtBRL(p.valor)}</td>
+                    <td style={{ color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {fmtBRL(p.retorno)}
+                      {!p.retornoExato && <span title="Estimado — sincronize pra virar exato" style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 3, fontSize: ".72rem" }}>~</span>}
+                    </td>
                     <td style={{ color: "var(--red)" }}>{fmtBRL(p.cmv)}</td>
                     <td style={{ color: "var(--red)" }}>{fmtBRL(p.envio)}</td>
                     <td style={{ color: "var(--red)" }}>{fmtBRL(p.taxaML)}</td>

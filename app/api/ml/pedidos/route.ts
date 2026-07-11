@@ -74,7 +74,7 @@ export async function GET(req: Request) {
       const orderShipping = Number(o.shipping_cost ?? 0);
       const envioPerUnit = totalUnits > 0 ? orderShipping / totalUnits : 0;
 
-      let retorno = 0, cmv = 0, envio = 0, taxaML = 0, imposto = 0;
+      let bruto = 0, cmv = 0, envio = 0, taxaML = 0, imposto = 0;
       let vinculado = true;
       const nomes: string[] = [];
 
@@ -83,7 +83,7 @@ export async function GET(req: Request) {
         const skuRaw = String(item.sku ?? "").trim();
         const itemId = String(item.item_id ?? "").trim();
         const ret = Number(item.unit_price ?? 0) * qty;
-        retorno += ret;
+        bruto += ret;
         taxaML += Number(item.sale_fee ?? 0) * qty;
         envio += envioPerUnit * qty;
 
@@ -98,8 +98,13 @@ export async function GET(req: Request) {
         }
       }
 
-      const lucro = retorno - cmv - envio - taxaML - imposto;
-      const margem = retorno > 0 ? (lucro / retorno) * 100 : 0;
+      // Retorno = o que REALMENTE volta. Prioriza o líquido do Mercado Pago
+      // (exato, já com descontos/atacado/taxas); senão estima (bruto − taxa − frete).
+      const netMp = Number(o.net_received ?? 0);
+      const retornoExato = netMp > 0;
+      const retorno = retornoExato ? netMp : bruto - taxaML - envio;
+      const lucro = retorno - cmv - imposto;
+      const margem = bruto > 0 ? (lucro / bruto) * 100 : 0;
 
       return {
         order_id: String(o.order_id ?? ""),
@@ -109,7 +114,7 @@ export async function GET(req: Request) {
         produto: nomes.join(", "),
         qtd: totalUnits,
         valor: Number(o.total_amount ?? 0),
-        retorno, cmv, envio, taxaML, imposto,
+        bruto, retorno, retornoExato, cmv, envio, taxaML, imposto,
         lucro, margem, vinculado,
       };
     });
