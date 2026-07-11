@@ -268,7 +268,7 @@ export default function FinanceiroTab() {
             <span className="panel-sub">direto do MP · inclui Pix e vendas</span>
           </div>
           <div className="kpi-grid">
-            <div className="kpi k-warn"><div className="k-lbl">⏳ A receber</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(fluxoMP.aReceber ?? 0)}</div><div className="k-sub">{fluxoMP.pendentes ?? 0} lançamento(s) futuros</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (≈)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(fluxoMP.aReceber ?? 0)}</div><div className="k-sub">{fluxoMP.pendentes ?? 0} futuros · ±3% do MP</div></div>
             <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado (90d)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(fluxoMP.liberado ?? 0)}</div><div className="k-sub">líquido que já caiu (últimos 90 dias)</div></div>
           </div>
           {(fluxoMP.count ?? 0) === 0 && (

@@ -6,6 +6,7 @@ const MP_API = "https://api.mercadopago.com";
 export const maxDuration = 30;
 
 type MpPayment = {
+  id?: number | string;
   status?: string;
   transaction_amount?: number;
   money_release_date?: string;
@@ -34,6 +35,7 @@ export async function GET(req: Request) {
     const limit = 100;
     let aReceber = 0, liberado = 0, liberadoDesde = 0, pendentes = 0, count = 0, aprovados = 0;
     let totalMp = 0; // total que o MP reporta (diagnóstico)
+    const seen = new Set<string>(); // dedupe: a lista é ao vivo e pode repetir na paginação
     const agendaMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
 
     while (offset < 5000) {
@@ -51,6 +53,9 @@ export async function GET(req: Request) {
       const results = j.results ?? [];
       totalMp = j.paging?.total ?? totalMp;
       for (const p of results) {
+        const pid = String(p.id ?? "");
+        if (pid && seen.has(pid)) continue; // já contado numa página anterior
+        if (pid) seen.add(pid);
         count++;
         if (String(p.status ?? "") !== "approved") continue;
         aprovados++;
