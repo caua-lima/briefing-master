@@ -11,6 +11,7 @@ type AdItem = {
   directSales: number; directUnits: number;
   adSales: number; adUnits: number;
   totalSales: number; totalUnits: number;
+  lucroAntesAds: number; lucroLiquido: number;
 };
 
 type Modo = "pub" | "geral";
@@ -46,8 +47,9 @@ export default function AdsTab() {
     a.cost += i.cost; a.clicks += i.clicks; a.prints += i.prints;
     a.direct += i.directSales; a.directUn += i.directUnits;
     a.adSales += i.adSales; a.total += i.totalSales; a.totalUn += i.totalUnits;
+    a.lucroAntes += i.lucroAntesAds; a.lucroLiq += i.lucroLiquido;
     return a;
-  }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0 }), [items]);
+  }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0, lucroAntes: 0, lucroLiq: 0 }), [items]);
 
   const pub = modo === "pub";
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
@@ -64,6 +66,7 @@ export default function AdsTab() {
     { lbl: "🎯 ACOS direto", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas diretas", cor: corAcos(acos, t.direct > 0) },
     { lbl: "👁️ Impressões", val: num(t.prints), tone: "acc", sub: `CTR ${num(t.prints > 0 ? (t.clicks / t.prints) * 100 : 0, 2)}%` },
     { lbl: "🖱️ Cliques", val: num(t.clicks), tone: "acc", sub: `CPC ${fmtBRL(t.clicks > 0 ? t.cost / t.clicks : 0)}` },
+    { lbl: "💵 Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads ✅" : "ads não se paga ⚠️", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ] : [
     { lbl: "💸 Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
     { lbl: "💰 Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
@@ -71,6 +74,7 @@ export default function AdsTab() {
     { lbl: "🎯 TACOS", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas totais", cor: corAcos(acos, t.total > 0) },
     { lbl: "🧲 Vendas via ads", val: `${num(pctViaAds, 0)}%`, tone: "acc", sub: `${fmtBRL(t.adSales)} vieram do ad` },
     { lbl: "🌱 Orgânico", val: `${num(100 - pctViaAds, 0)}%`, tone: "pos", sub: "vendas sem tráfego pago" },
+    { lbl: "💵 Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads ✅" : "ads não se paga ⚠️", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
   return (
@@ -127,9 +131,9 @@ export default function AdsTab() {
                 <table className="tbl-modern">
                   <thead>
                     {pub ? (
-                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>Investido</th><th>Vendas diretas</th><th>Un</th><th>ACOS</th><th>ROAS</th></tr>
+                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>Investido</th><th>Vendas diretas</th><th>Un</th><th>ACOS</th><th>ROAS</th><th>💵 Lucro</th></tr>
                     ) : (
-                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Investido</th><th>Vendas totais</th><th>Un</th><th>% via ads</th><th>TACOS</th><th>ROAS</th></tr>
+                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Investido</th><th>Vendas totais</th><th>Un</th><th>% via ads</th><th>TACOS</th><th>ROAS</th><th>💵 Lucro</th></tr>
                     )}
                   </thead>
                   <tbody>
@@ -159,6 +163,7 @@ export default function AdsTab() {
                           {!pub && <td style={{ color: "var(--muted)" }}>{num(pctAds, 0)}%</td>}
                           <td style={{ color: corAcos(a, v > 0), fontWeight: 700 }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
                           <td style={{ color: corRoas(r), fontWeight: 700 }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
+                          <td style={{ color: i.lucroLiquido >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(i.lucroLiquido)}</td>
                         </tr>
                       );
                     })}

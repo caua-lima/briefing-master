@@ -1,49 +1,58 @@
 import { NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, probeAds } from "@/lib/ml/ads";
-import { getMlAccessToken } from "../token";
 
 export const maxDuration = 30;
-const ML_API = "https://api.mercadolibre.com";
-const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
+
+type ProdutoData = { custo: number; imposto: number };
+type OrderItem = { sku?: string; item_id?: string; quantity?: number; unit_price?: number; sale_fee?: number };
 
 function todayISO(offsetDays = 0): string {
   const d = new Date(Date.now() - 3 * 3600 * 1000 - offsetDays * 86400000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
+const normSku = (s: string) => s.trim().toLowerCase();
+const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
 
-/** Vendas totais (todos os canais) por item MLB no período — base da análise "Geral". */
-async function vendasTotaisPorItem(token: string, from: string, to: string): Promise<Map<string, { receita: number; unidades: number }>> {
-  const map = new Map<string, { receita: number; unidades: number }>();
-  const fromISO = `${from}T00:00:00.000-03:00`;
-  const toISO = `${to}T23:59:59.999-03:00`;
-  let offset = 0;
-  while (offset < 4000) {
-    const url =
-      `${ML_API}/orders/search?seller=${SELLER_ID}` +
-      `&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}` +
-      `&limit=50&offset=${offset}`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" });
-    if (!r.ok) break;
-    const j = (await r.json()) as { results?: Record<string, unknown>[]; paging?: { total?: number } };
-    const results = j.results ?? [];
-    for (const o of results) {
-      const st = String(o.status ?? "").toLowerCase();
-      if (st === "cancelled" || st === "invalid") continue;
-      for (const it of (o.order_items as Record<string, unknown>[]) ?? []) {
-        const item = (it.item as Record<string, unknown>) ?? {};
-        const id = String(item.id ?? "").trim().toUpperCase();
-        if (!id) continue;
-        const qty = Number(it.quantity ?? 0) || 0;
-        const cur = map.get(id) ?? { receita: 0, unidades: 0 };
-        cur.receita += Number(it.unit_price ?? 0) * qty;
-        cur.unidades += qty;
-        map.set(id, cur);
-      }
+type VendaItem = { receita: number; unidades: number; cmv: number; imposto: number; taxaML: number; envio: number };
+
+/** Vendas + lucro (antes de ads) por item MLB, lidos do Firestore (todos os canais). */
+async function vendasPorItem(
+  db: FirebaseFirestore.Firestore, from: string, to: string,
+  porMlb: Map<string, ProdutoData>, porSku: Map<string, ProdutoData>,
+): Promise<Map<string, VendaItem>> {
+  const start = `${from}T00:00:00.000Z`, end = `${to}T23:59:59.999Z`;
+  const startBR = `${from}T00:00:00.000-03:00`, endBR = `${to}T23:59:59.999-03:00`;
+  const [a, b] = await Promise.all([
+    db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+    db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+  ]);
+  const orders = new Map<string, FirebaseFirestore.DocumentData>();
+  for (const snap of [a, b]) for (const d of snap.docs) orders.set(d.get("order_id") ?? d.id, d.data());
+
+  const map = new Map<string, VendaItem>();
+  for (const o of orders.values()) {
+    const st = String(o.status ?? "").toLowerCase();
+    if (st === "cancelled" || st === "invalid") continue;
+    const items = (o.items as OrderItem[]) ?? [];
+    const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
+    const envioPerUnit = totalUnits > 0 ? Number(o.shipping_cost ?? 0) / totalUnits : 0;
+    for (const it of items) {
+      const id = String(it.item_id ?? "").trim().toUpperCase();
+      if (!id) continue;
+      const qty = Number(it.quantity ?? 1);
+      const receita = Number(it.unit_price ?? 0) * qty;
+      const prod = porMlb.get(normId(id)) ?? porSku.get(normSku(String(it.sku ?? "")));
+      const cur = map.get(id) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
+      cur.receita += receita;
+      cur.unidades += qty;
+      cur.taxaML += Number(it.sale_fee ?? 0) * qty;
+      cur.envio += envioPerUnit * qty;
+      cur.cmv += (prod?.custo ?? 0) * qty;
+      cur.imposto += receita * ((prod?.imposto ?? 0) / 100);
+      map.set(id, cur);
     }
-    const total = j.paging?.total ?? 0;
-    offset += results.length;
-    if (results.length === 0 || offset >= total) break;
   }
   return map;
 }
@@ -65,23 +74,31 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "ads_failed", diag, from, to, items: [] });
     }
 
-    const token = await getMlAccessToken();
-    const vendas = token ? await vendasTotaisPorItem(token, from, to).catch(() => new Map()) : new Map();
+    const db = getAdminDb();
+    const prodSnap = await db.collection("estoque").get();
+    const porMlb = new Map<string, ProdutoData>();
+    const porSku = new Map<string, ProdutoData>();
+    for (const doc of prodSnap.docs) {
+      const d = doc.data();
+      const entry: ProdutoData = { custo: Number(d.custoMedio ?? d.custo ?? 0), imposto: Number(d.imposto ?? 0) };
+      const mlbs: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
+      for (const m of mlbs) { const n = normId(String(m)); if (n) porMlb.set(n, entry); }
+      const sku = String(d.sku ?? "").trim();
+      if (sku) porSku.set(normSku(sku), entry);
+    }
+    const vendas = await vendasPorItem(db, from, to, porMlb, porSku).catch(() => new Map<string, VendaItem>());
 
     const items = ads.map((a) => {
-      const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0 };
+      const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
+      const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
+      const lucroLiquido = lucroAntesAds - a.cost; // ⭐ já descontando o ads
       return {
-        itemId: a.itemId,
-        title: a.title,
-        clicks: a.clicks,
-        prints: a.prints,
-        cost: a.cost,
-        directSales: a.directSales,
-        directUnits: a.directUnits,
-        adSales: a.sales,           // atribuída (direto+indireto)
-        adUnits: a.units,
-        totalSales: v.receita,      // GERAL: todos os canais (inclui sem tráfego)
-        totalUnits: v.unidades,
+        itemId: a.itemId, title: a.title,
+        clicks: a.clicks, prints: a.prints, cost: a.cost,
+        directSales: a.directSales, directUnits: a.directUnits,
+        adSales: a.sales, adUnits: a.units,
+        totalSales: v.receita, totalUnits: v.unidades,
+        lucroAntesAds, lucroLiquido,
       };
     }).sort((x, y) => y.cost - x.cost);
 

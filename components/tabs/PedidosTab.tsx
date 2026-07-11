@@ -37,6 +37,7 @@ export default function PedidosTab() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad">("todos");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,9 +62,17 @@ export default function PedidosTab() {
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return pedidos;
-    return pedidos.filter((p) => p.produto.toLowerCase().includes(q) || p.order_id.includes(q));
-  }, [pedidos, busca]);
+    return pedidos.filter((p) => {
+      if (q && !(p.produto.toLowerCase().includes(q) || p.order_id.includes(q))) return false;
+      if (filtro === "lucro" && p.lucro <= 0) return false;
+      if (filtro === "prejuizo" && p.lucro >= 0) return false;
+      if (filtro === "semcad" && p.vinculado) return false;
+      return true;
+    });
+  }, [pedidos, busca, filtro]);
+
+  const prejuizoN = pedidos.filter((p) => p.lucro < 0).length;
+  const semCadN = pedidos.filter((p) => !p.vinculado).length;
 
   const totalLucro = filtrados.reduce((s, p) => s + p.lucro, 0);
   const totalValor = filtrados.reduce((s, p) => s + p.valor, 0);
@@ -95,12 +104,29 @@ export default function PedidosTab() {
         <div className="kpi k-warn"><div className="k-lbl">Margem média</div><div className="k-val" style={{ color: "var(--yellow)" }}>{margemMedia.toFixed(1)}%</div></div>
       </div>
 
-      {/* Busca */}
+      {/* Busca + filtros */}
       <input
         type="text" placeholder="🔍 Buscar por produto ou nº do pedido…" value={busca}
         onChange={(e) => setBusca(e.target.value)}
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
       />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {([
+          ["todos", `Todos (${pedidos.length})`, "var(--accent)"],
+          ["lucro", "✅ Lucrativos", "var(--green)"],
+          ["prejuizo", `⚠️ Prejuízo (${prejuizoN})`, "var(--red)"],
+          ["semcad", `🏷️ Sem cadastro (${semCadN})`, "var(--yellow)"],
+        ] as const).map(([id, label, cor]) => (
+          <button
+            key={id} type="button" onClick={() => setFiltro(id)}
+            style={{
+              fontSize: ".78rem", fontWeight: 600, padding: "5px 12px", borderRadius: 20, cursor: "pointer",
+              background: filtro === id ? cor : "var(--surface2)", color: filtro === id ? "#fff" : "var(--muted)",
+              border: `1px solid ${filtro === id ? cor : "var(--border)"}`,
+            }}
+          >{label}</button>
+        ))}
+      </div>
 
       {/* Tabela */}
       <div className="panel">
@@ -124,7 +150,7 @@ export default function PedidosTab() {
               </thead>
               <tbody>
                 {filtrados.map((p) => (
-                  <tr key={p.order_id}>
+                  <tr key={p.order_id} style={p.lucro < 0 ? { background: "rgba(239,68,68,.06)" } : undefined}>
                     <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap" }}>
                       {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".7rem", display: "block" }}>{p.hora}</span>
                     </td>
