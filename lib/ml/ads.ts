@@ -95,17 +95,20 @@ export type AdItemFull = {
   title: string;
   status: string;
   clicks: number;
-  prints: number;   // impressões
-  ctr: number;      // %
-  cost: number;     // investimento R$
-  cpc: number;      // custo por clique
-  acos: number;     // % (custo / receita)
-  cvr: number;      // % (conversão)
-  sales: number;    // receita atribuída (R$)
-  units: number;    // unidades vendidas via ads
+  prints: number;      // impressões
+  ctr: number;         // %
+  cost: number;        // investimento R$
+  cpc: number;         // custo por clique
+  acos: number;        // % (custo / receita atribuída)
+  cvr: number;         // % (conversão)
+  sales: number;       // receita atribuída total (direto + indireto)
+  units: number;       // unidades atribuídas
+  directSales: number; // ⭐ receita das vendas DIRETAS do anúncio
+  directUnits: number; // unidades diretas
+  indirectSales: number;
 };
 
-const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,units_quantity,total_amount";
+const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,units_quantity,total_amount,direct_amount,indirect_amount,direct_units_quantity";
 
 /** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
 export async function getAdsFullByItem(from: string, to: string): Promise<AdItemFull[]> {
@@ -140,6 +143,9 @@ export async function getAdsFullByItem(from: string, to: string): Promise<AdItem
         cvr: n("cvr"),
         sales: n("total_amount"),
         units: n("units_quantity"),
+        directSales: n("direct_amount"),
+        directUnits: n("direct_units_quantity"),
+        indirectSales: n("indirect_amount"),
       });
     }
     const total = j?.paging?.total ?? results.length;

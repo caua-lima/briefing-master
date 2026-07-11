@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import DateRangePicker from "@/components/dashboard/DateRangePicker";
 
 type Pedido = {
   order_id: string;
@@ -22,9 +23,6 @@ type Pedido = {
   vinculado: boolean;
 };
 
-function isoOf(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 function monthRange() {
   const d = new Date();
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -32,22 +30,11 @@ function monthRange() {
   return { from: `${d.getFullYear()}-${mm}-01`, to: `${d.getFullYear()}-${mm}-${String(last).padStart(2, "0")}` };
 }
 
-type Periodo = "hoje" | "mes" | "custom";
-
 export default function PedidosTab() {
-  const [periodo, setPeriodo] = useState<Periodo>("mes");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [range, setRange] = useState(() => monthRange());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
-
-  const range = useMemo(() => {
-    const today = isoOf(new Date());
-    if (periodo === "hoje") return { from: today, to: today };
-    if (periodo === "custom" && customFrom && customTo) return { from: customFrom, to: customTo };
-    return monthRange();
-  }, [periodo, customFrom, customTo]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,22 +80,7 @@ export default function PedidosTab() {
             {loading ? "⏳ Atualizando..." : "⟳ Atualizar"}
           </button>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="seg">
-            {(["hoje", "mes", "custom"] as Periodo[]).map((m) => (
-              <button key={m} type="button" className={`seg-btn ${periodo === m ? "active" : ""}`} onClick={() => setPeriodo(m)}>
-                {m === "hoje" ? "Hoje" : m === "mes" ? "Mês" : "Personalizado"}
-              </button>
-            ))}
-          </div>
-          {periodo === "custom" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="date" className="date-input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-              <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>até</span>
-              <input type="date" className="date-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-            </div>
-          )}
-        </div>
+        <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
       </div>
 
       {/* Resumo */}

@@ -330,6 +330,20 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .seg-btn{padding:7px 10px;font-size:.76rem}
 }
 
+/* Ajustes finos de responsividade (celular) */
+@media(max-width:600px){
+  .dash-top{flex-direction:column;align-items:stretch}
+  .dash-top-left{justify-content:space-between}
+  .dash-top-left h2{font-size:1rem}
+  .dash-top>div:last-child{width:100%}
+  .drp,.drp-trigger{width:100%;justify-content:space-between}
+  .seg{width:100%}
+  .seg .seg-btn{flex:1 1 auto;text-align:center}
+  .panel-head{align-items:flex-start}
+  .modal-box{padding:20px 18px}
+  .config-field input,.config-field select{font-size:16px} /* evita zoom do iOS */
+}
+
 /* Sidebar layout */
 .app-sidebar{display:flex}
 .sidebar-toggle{display:none}
