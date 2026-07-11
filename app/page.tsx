@@ -9,19 +9,21 @@ import MetasTab from "@/components/tabs/MetasTab";
 import PedidosTab from "@/components/tabs/PedidosTab";
 import EnviosTab from "@/components/tabs/EnviosTab";
 import FinanceiroTab from "@/components/tabs/FinanceiroTab";
+import AdsTab from "@/components/tabs/AdsTab";
 import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 
-type Tab = "dashboard" | "pedidos" | "envios" | "financeiro" | "metas" | "custos" | "estoque" | "acesso";
+type Tab = "dashboard" | "pedidos" | "envios" | "financeiro" | "ads" | "metas" | "custos" | "estoque" | "acesso";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string; adminOnly?: boolean }[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
   { id: "pedidos", label: "Pedidos", icon: "🧾" },
   { id: "envios", label: "Entregas", icon: "📦" },
   { id: "financeiro", label: "Financeiro", icon: "💰", adminOnly: true },
+  { id: "ads", label: "Ads", icon: "📢", adminOnly: true },
   { id: "metas", label: "Metas", icon: "🎯", adminOnly: true },
   { id: "custos", label: "Custos", icon: "💸", adminOnly: true },
   { id: "estoque", label: "Estoque", icon: "📦", adminOnly: true },
@@ -334,6 +336,7 @@ function AppShell() {
                 {activeTab === "pedidos" && <PedidosTab />}
                 {activeTab === "envios" && <EnviosTab />}
                 {activeTab === "financeiro" && isAdmin && <FinanceiroTab />}
+                {activeTab === "ads" && isAdmin && <AdsTab />}
                 {activeTab === "metas" && isAdmin && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && isAdmin && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && isAdmin && <EstoqueTab uid={user.uid} data={data} />}

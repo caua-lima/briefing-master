@@ -90,6 +90,65 @@ export async function getAdsSpendByItem(
   return adsByItem;
 }
 
+export type AdItemFull = {
+  itemId: string;
+  title: string;
+  status: string;
+  clicks: number;
+  prints: number;   // impressões
+  ctr: number;      // %
+  cost: number;     // investimento R$
+  cpc: number;      // custo por clique
+  acos: number;     // % (custo / receita)
+  cvr: number;      // % (conversão)
+  sales: number;    // receita atribuída (R$)
+  units: number;    // unidades vendidas via ads
+};
+
+const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,units_quantity,total_amount";
+
+/** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
+export async function getAdsFullByItem(from: string, to: string): Promise<AdItemFull[]> {
+  const token = await getValidMlAccessToken();
+  const advertiserId = await getAdvertiserId(token);
+  if (!advertiserId) return [];
+
+  const out: AdItemFull[] = [];
+  let offset = 0;
+  const limit = 50;
+  while (true) {
+    const url =
+      `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
+      `date_from=${from}&date_to=${to}&metrics=${AD_METRICS}&limit=${limit}&offset=${offset}`;
+    const res = await fetchJsonRetry(url, token);
+    if (!res.ok) throw new Error(`ml_ads_full_failed: ${res.status} ${await res.text()}`);
+    const j = (await res.json()) as { results?: Record<string, unknown>[]; paging?: { total?: number } };
+    const results = Array.isArray(j?.results) ? j.results : [];
+    for (const row of results) {
+      const m = (row.metrics as Record<string, unknown>) ?? row;
+      const n = (k: string) => Number(m[k] ?? row[k] ?? 0) || 0;
+      out.push({
+        itemId: String(row.id ?? row.item_id ?? "").trim().toUpperCase(),
+        title: String(row.title ?? row.name ?? ""),
+        status: String(row.status ?? ""),
+        clicks: n("clicks"),
+        prints: n("prints"),
+        ctr: n("ctr"),
+        cost: n("cost"),
+        cpc: n("cpc"),
+        acos: n("acos"),
+        cvr: n("cvr"),
+        sales: n("total_amount"),
+        units: n("units_quantity"),
+      });
+    }
+    const total = j?.paging?.total ?? results.length;
+    offset += results.length;
+    if (offset >= total || results.length === 0) break;
+  }
+  return out;
+}
+
 /** Diagnóstico da API de ADS: mostra advertiser, status e amostra dos itens. */
 export async function probeAds(from: string, to: string): Promise<Record<string, unknown>> {
   try {
