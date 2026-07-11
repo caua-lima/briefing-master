@@ -10,6 +10,7 @@ import {
 } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { useAccess } from "@/components/tabs/AccessGuard";
 
 export default function AccessControlTab({
   uid,
@@ -20,6 +21,7 @@ export default function AccessControlTab({
 }) {
   void uid;
   void data;
+  const { canEdit } = useAccess();
 
   const [entries, setEntries] = useState<AccessEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +81,7 @@ export default function AccessControlTab({
   }
 
   async function saveEntry() {
+    if (!canEdit) { setError("Somente o owner pode alterar acessos."); return; }
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail) {
       setError("Informe um e-mail válido.");
@@ -129,6 +132,7 @@ export default function AccessControlTab({
   }
 
   async function deleteEntry(entryEmail: string) {
+    if (!canEdit) return;
     const target = entries.find((entry) => entry.email === entryEmail) ?? null;
     if (target?.role === "owner") {
       setError("Owner não pode ser removido.");
@@ -147,9 +151,9 @@ export default function AccessControlTab({
     }
   }
 
-  const admins = entries.filter((e) => e.role === "owner" || e.role === "admin").length;
+  const owners = entries.filter((e) => e.role === "owner").length;
   const roleBadge = (r: AccessEntry["role"]) => {
-    const map: Record<string, [string, string]> = { owner: ["Owner", "#a855f7"], admin: ["Admin", "#4f8ef7"], user: ["Usuário", "#64748b"] };
+    const map: Record<string, [string, string]> = { owner: ["Owner", "#a855f7"], admin: ["Legado", "#64748b"], user: ["Usuário", "#64748b"] };
     const [txt, cor] = map[r] ?? map.user;
     return <span style={{ fontSize: ".7rem", fontWeight: 700, color: cor, background: `${cor}1f`, border: `1px solid ${cor}`, borderRadius: 6, padding: "1px 8px" }}>{txt}</span>;
   };
@@ -162,8 +166,8 @@ export default function AccessControlTab({
 
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Acessos</div><div className="k-val">{entries.length}</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">Admins / Owner</div><div className="k-val" style={{ color: "var(--green)" }}>{admins}</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Usuários</div><div className="k-val" style={{ color: "var(--yellow)" }}>{entries.length - admins}</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Owners</div><div className="k-val" style={{ color: "var(--green)" }}>{owners}</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Usuários (só leitura)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{entries.length - owners}</div></div>
       </div>
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr)" }}>
@@ -222,9 +226,8 @@ export default function AccessControlTab({
                   onChange={(e) => setRole(e.target.value as AccessEntry["role"]) }
                   disabled={editingEntry?.role === "owner"}
                 >
-                  <option value="owner">Owner</option>
-                  <option value="user">Usuário</option>
-                  <option value="admin">Admin</option>
+                  <option value="owner">Owner (acesso total)</option>
+                  <option value="user">Usuário (somente leitura)</option>
                 </select>
               </div>
 
@@ -244,10 +247,11 @@ export default function AccessControlTab({
             ) : null}
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-success" onClick={saveEntry}>
+              <button type="button" className="btn btn-success" onClick={saveEntry} disabled={!canEdit} style={{ opacity: canEdit ? 1 : 0.5 }}>
                 {editingEmail ? "💾 Salvar alterações" : "＋ Adicionar e-mail"}
               </button>
               <button type="button" className="btn btn-ghost" onClick={resetForm}>Limpar</button>
+              {!canEdit && <span style={{ fontSize: ".78rem", color: "var(--muted)", alignSelf: "center" }}>👁️ somente leitura</span>}
             </div>
           </div>
         </div>
@@ -278,10 +282,12 @@ export default function AccessControlTab({
                       {entry.addedAt ? ` · desde ${new Date(entry.addedAt).toLocaleDateString("pt-BR")}` : ""}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>✏️ Editar</button>
-                    <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>🗑 Remover</button>
-                  </div>
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>✏️ Editar</button>
+                      <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>🗑 Remover</button>
+                    </div>
+                  )}
                 </div>
               ))
             ) : (

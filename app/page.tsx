@@ -7,7 +7,6 @@ import { AccessGuard, useAccess } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
 import MetasTab from "@/components/tabs/MetasTab";
 import PedidosTab from "@/components/tabs/PedidosTab";
-import EnviosTab from "@/components/tabs/EnviosTab";
 import FinanceiroTab from "@/components/tabs/FinanceiroTab";
 import AdsTab from "@/components/tabs/AdsTab";
 import CustosTab from "@/components/tabs/CustosTab";
@@ -16,18 +15,18 @@ import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 
-type Tab = "dashboard" | "pedidos" | "envios" | "financeiro" | "ads" | "metas" | "custos" | "estoque" | "acesso";
+type Tab = "dashboard" | "pedidos" | "financeiro" | "ads" | "metas" | "custos" | "estoque" | "acesso";
 
-const NAV_ITEMS: { id: Tab; label: string; icon: string; adminOnly?: boolean }[] = [
+// Todos veem tudo. Só o owner edita (as regras do Firestore garantem isso).
+const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
   { id: "pedidos", label: "Pedidos", icon: "🧾" },
-  { id: "envios", label: "Entregas", icon: "📦" },
-  { id: "financeiro", label: "Financeiro", icon: "💰", adminOnly: true },
-  { id: "ads", label: "Ads", icon: "📢", adminOnly: true },
-  { id: "metas", label: "Metas", icon: "🎯", adminOnly: true },
-  { id: "custos", label: "Custos", icon: "💸", adminOnly: true },
-  { id: "estoque", label: "Estoque", icon: "📦", adminOnly: true },
-  { id: "acesso", label: "Acesso", icon: "🔐", adminOnly: true },
+  { id: "financeiro", label: "Financeiro", icon: "💰" },
+  { id: "ads", label: "Ads", icon: "📢" },
+  { id: "metas", label: "Metas", icon: "🎯" },
+  { id: "custos", label: "Custos", icon: "💸" },
+  { id: "estoque", label: "Estoque", icon: "📦" },
+  { id: "acesso", label: "Acesso", icon: "🔐" },
 ];
 
 export default function Page() {
@@ -66,11 +65,9 @@ function AppShell() {
   const [swappingAccount, setSwappingAccount] = useState(false);
 
   const data = useUserData(user?.uid);
-  const { isAdmin } = useAccess();
-  const navItems = NAV_ITEMS.filter((item) => isAdmin || !item.adminOnly);
-  // aba efetiva: só bloqueia abas admin-only para quem não é admin
-  const tabIsAdminOnly = NAV_ITEMS.find((n) => n.id === tab)?.adminOnly ?? false;
-  const activeTab: Tab = tabIsAdminOnly && !isAdmin ? "dashboard" : tab;
+  const { isOwner } = useAccess();
+  const navItems = NAV_ITEMS;          // todos veem todas as abas
+  const activeTab: Tab = tab;
 
   if (!user) return null;
 
@@ -332,17 +329,19 @@ function AppShell() {
               </div>
             ) : (
               <>
+                {!isOwner && (
+                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
+                    👁️ Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
+                  </div>
+                )}
                 {activeTab === "dashboard" && <Dashboard data={data} />}
                 {activeTab === "pedidos" && <PedidosTab />}
-                {activeTab === "envios" && <EnviosTab />}
-                {activeTab === "financeiro" && isAdmin && <FinanceiroTab />}
-                {activeTab === "ads" && isAdmin && <AdsTab />}
-                {activeTab === "metas" && isAdmin && <MetasTab uid={user.uid} data={data} />}
-                {activeTab === "custos" && isAdmin && <CustosTab uid={user.uid} data={data} />}
-                {activeTab === "estoque" && isAdmin && <EstoqueTab uid={user.uid} data={data} />}
-                {activeTab === "acesso" && isAdmin && (
-                  <AccessControlTab uid={user.uid} data={data} />
-                )}
+                {activeTab === "financeiro" && <FinanceiroTab />}
+                {activeTab === "ads" && <AdsTab />}
+                {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
+                {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
+                {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
+                {activeTab === "acesso" && <AccessControlTab uid={user.uid} data={data} />}
               </>
             )}
           </main>

@@ -387,7 +387,10 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>Movimentações</span>
-        <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>📦 Saldo inicial</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
+        </div>
       </div>
       {ordenados.length === 0 ? (
         <div style={{ color: "var(--muted)", fontSize: ".8rem", padding: "6px 0" }}>Nenhuma movimentação ainda. Use <b>＋ Entrada</b> para lançar a primeira compra.</div>
@@ -461,7 +464,8 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
         custoUnit: precisaCusto ? cNum : undefined,
         data,
         obs: obs.trim() || undefined,
-      }, precisaCusto ? novoAvg : undefined);
+        // Entrada faz o blend; saldo inicial DEFINE o custo médio das unidades que já existem.
+      }, isEntrada ? novoAvg : isSaldo ? cNum : undefined);
       onSaved();
     } catch (err: unknown) {
       alert("Erro ao salvar movimentação: " + (err instanceof Error ? err.message : String(err)));

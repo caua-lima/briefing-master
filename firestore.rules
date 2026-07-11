@@ -9,10 +9,11 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
     }
 
-    function isOwnerOrAdmin() {
+    // Só o owner pode escrever. Admin foi removido — qualquer outro papel é leitura.
+    function isOwner() {
       return signedIn()
         && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email))
-        && requesterDoc().data.role in ["owner", "admin"];
+        && requesterDoc().data.role == "owner";
     }
 
     function isAuthorized() {
@@ -26,56 +27,58 @@ service cloud.firestore {
         && docId == "config"
         && !exists(/databases/$(database)/documents/controleAcessoMeta/config)
         && request.resource.data.ownerEmail == request.auth.token.email;
-      allow update, delete: if isOwnerOrAdmin();
+      allow update, delete: if isOwner();
     }
 
     match /controleAcesso/{email} {
-      allow read: if signedIn() && (request.auth.token.email == email || isOwnerOrAdmin());
-      allow list: if isOwnerOrAdmin();
+      allow read: if signedIn() && (request.auth.token.email == email || isOwner());
+      allow list: if isOwner();
       allow create: if signedIn() && (
         (!exists(/databases/$(database)/documents/controleAcessoMeta/config)
           && request.auth.token.email == email
           && request.resource.data.role == "owner")
-        || isOwnerOrAdmin()
+        || isOwner()
       );
-      allow update, delete: if isOwnerOrAdmin() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
+      allow update, delete: if isOwner() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
     }
 
-    // Shared collections for team
+    // Coleções do time: leitura por autorizados, escrita só do owner.
     match /rascunho/{docId} {
-      allow read, write: if isAuthorized();
+      allow read: if isAuthorized();
+      allow write: if isOwner();
     }
 
     match /dias/{docId} {
-      allow read, write: if isAuthorized();
+      allow read: if isAuthorized();
+      allow write: if isOwner();
     }
 
     // Configurações internas: leitura por autorizados (o dashboard lê),
     // escrita somente por admin/owner.
     match /metas/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwnerOrAdmin();
+      allow write: if isOwner();
     }
 
     match /metasHistorico/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwnerOrAdmin();
+      allow write: if isOwner();
     }
 
     match /custos/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwnerOrAdmin();
+      allow write: if isOwner();
     }
 
     match /estoque/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwnerOrAdmin();
+      allow write: if isOwner();
     }
 
     // Livro de movimentações do estoque (entradas/baixas/ajustes)
     match /estoque_movimentos/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwnerOrAdmin();
+      allow write: if isOwner();
     }
 
     // Legacy: Allow authorized users read old data, writes only own uid

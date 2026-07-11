@@ -5,7 +5,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 export type AuthContext = {
   email: string;
   uid: string;
-  role: "owner" | "admin" | "user";
+  role: "owner" | "user"; // admin foi removido; papéis legados viram "user"
 };
 
 function bearer(req: Request): string | null {
@@ -67,9 +67,10 @@ export async function requireAccess(
     return NextResponse.json({ error: "forbidden", details: "Not authorized" }, { status: 403 });
   }
 
-  const role = (snap.data()?.role as AuthContext["role"]) || "user";
-  if (opts.adminOnly && role !== "owner" && role !== "admin") {
-    return NextResponse.json({ error: "forbidden", details: "Admin only" }, { status: 403 });
+  // Qualquer papel que não seja "owner" é tratado como somente-leitura ("user").
+  const role: AuthContext["role"] = snap.data()?.role === "owner" ? "owner" : "user";
+  if (opts.adminOnly && role !== "owner") {
+    return NextResponse.json({ error: "forbidden", details: "Owner only" }, { status: 403 });
   }
 
   return { email, uid: decoded.uid, role };

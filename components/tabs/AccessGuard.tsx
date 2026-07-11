@@ -10,8 +10,8 @@ import {
 } from "@/lib/firebase/data";
 import type { AccessEntry } from "@/lib/domain/types";
 
-type AccessInfo = { role: AccessEntry["role"]; email: string; isAdmin: boolean };
-const AccessCtx = createContext<AccessInfo>({ role: "user", email: "", isAdmin: false });
+type AccessInfo = { role: AccessEntry["role"]; email: string; isOwner: boolean; canEdit: boolean };
+const AccessCtx = createContext<AccessInfo>({ role: "user", email: "", isOwner: false, canEdit: false });
 export function useAccess() {
   return useContext(AccessCtx);
 }
@@ -198,8 +198,9 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
     return <DeniedScreen onLogout={signOut} userEmail={user.email ?? ""} />;
 
   const role = access.entry?.role ?? "user";
+  const isOwner = role === "owner"; // só o owner edita; todo o resto é somente leitura
   return (
-    <AccessCtx.Provider value={{ role, email: currentEmail, isAdmin: role === "owner" || role === "admin" }}>
+    <AccessCtx.Provider value={{ role, email: currentEmail, isOwner, canEdit: isOwner }}>
       {children}
     </AccessCtx.Provider>
   );
