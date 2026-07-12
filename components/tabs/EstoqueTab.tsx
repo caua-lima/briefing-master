@@ -7,6 +7,7 @@ import { fmtBRL } from "@/lib/domain/calc";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { useAccess } from "@/components/tabs/AccessGuard";
 
 type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string };
 type EstoqueML = Record<string, MlItem>;
@@ -117,6 +118,7 @@ function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): Previ
 }
 
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
+  const { canEdit } = useAccess();
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [estoqueML, setEstoqueML] = useState<EstoqueML>({});
@@ -194,7 +196,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
             {loadingML ? "⏳ Atualizando..." : "⟳ Atualizar Full (ML)"}
           </button>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>
+        {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>}
       </div>
 
       {/* Resumo */}

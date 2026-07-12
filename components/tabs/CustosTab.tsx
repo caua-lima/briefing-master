@@ -5,12 +5,14 @@ import { fmtBRL, mesAtual, todayStr, totalCustosMes } from "@/lib/domain/calc";
 import type { Cost } from "@/lib/domain/types";
 import { deleteCost, upsertCost } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
+import { useAccess } from "@/components/tabs/AccessGuard";
 
 function newId() {
   return "c" + Date.now() + Math.random().toString(36).slice(2, 6);
 }
 
 export default function CustosTab({ uid, data }: { uid: string; data: UserData }) {
+  const { canEdit } = useAccess();
   const totalDia = data.costs.filter((c) => c.freq === "diario").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
   const totalMes = totalCustosMes(data.costs, mesAtual());
 
@@ -22,7 +24,7 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
     <div className="dash">
       <div className="dash-top">
         <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>💸 Custos Operacionais</h2></div>
-        <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Adicionar Custo</button>
+        {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Adicionar Custo</button>}
       </div>
 
       <div className="kpi-grid">

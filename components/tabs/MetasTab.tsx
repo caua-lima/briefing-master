@@ -10,6 +10,7 @@ import {
   updateGoalEntry,
 } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
+import { useAccess } from "@/components/tabs/AccessGuard";
 
 export default function MetasTab({
   uid,
@@ -18,6 +19,7 @@ export default function MetasTab({
   uid: string;
   data: UserData;
 }) {
+  const { canEdit } = useAccess();
   const [openNew, setOpenNew] = useState(false);
   const [editEntry, setEditEntry] = useState<GoalEntry | null>(null);
 
@@ -35,11 +37,27 @@ export default function MetasTab({
     <div className="dash">
       <div className="dash-top">
         <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🎯 Definição de Metas</h2></div>
-        <button type="button" className="btn btn-purple btn-sm" onClick={() => setOpenNew(true)}>＋ Nova Meta</button>
+        {canEdit && <button type="button" className="btn btn-purple btn-sm" onClick={() => setOpenNew(true)}>＋ Nova Meta</button>}
       </div>
 
+      {/* Resumo da meta ativa */}
+      {activeEntry && (
+        <>
+          <div className="panel-head" style={{ marginBottom: -4 }}>
+            <span className="panel-title">🎯 Meta ativa — {formatMesBR(activeEntry.mes)}</span>
+            <span className="panel-sub">acompanhamento (velocímetros) no Dashboard</span>
+          </div>
+          <div className="kpi-grid">
+            <div className="kpi k-acc"><div className="k-lbl">🥇 Meta 1</div><div className="k-val">{fmtBRL(activeEntry.meta1)}</div><div className="k-sub">objetivo principal</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">🥈 Meta 2</div><div className="k-val" style={{ color: "var(--yellow)" }}>{activeEntry.meta2 ? fmtBRL(activeEntry.meta2) : "—"}</div></div>
+            <div className="kpi" style={{ borderLeft: "3px solid var(--purple)" }}><div className="k-lbl">🥉 Meta 3</div><div className="k-val" style={{ color: "var(--purple)" }}>{activeEntry.meta3 ? fmtBRL(activeEntry.meta3) : "—"}</div></div>
+            <div className="kpi k-pos"><div className="k-lbl">📈 Margem alvo</div><div className="k-val" style={{ color: "var(--green)" }}>{activeEntry.metaMargem ?? 10}%</div><div className="k-sub">lucro líquido</div></div>
+          </div>
+        </>
+      )}
+
       <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(167,139,250,.07)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 8, padding: "10px 14px" }}>
-        💡 Defina as metas de faturamento (🥇🥈🥉) e a margem de lucro líquido alvo. O <strong>acompanhamento com velocímetros</strong> aparece no Dashboard.
+        💡 Defina as metas de faturamento (🥇🥈🥉) e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
       </div>
 
       <div className="panel">
@@ -55,6 +73,7 @@ export default function MetasTab({
                 key={entry.id}
                 entry={entry}
                 isActive={entry.id === activeEntry?.id}
+                canEdit={canEdit}
                 onEdit={() => setEditEntry(entry)}
                 onDelete={() => { if (!confirm("Remover esta meta?")) return; deleteGoalEntry(uid, entry.id).catch(() => {}); }}
               />
@@ -72,11 +91,13 @@ export default function MetasTab({
 function GoalEntryRow({
   entry,
   isActive,
+  canEdit,
   onEdit,
   onDelete,
 }: {
   entry: GoalEntry;
   isActive: boolean;
+  canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -109,10 +130,12 @@ function GoalEntryRow({
           </span>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 6 }}>
-        <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>✏️ Editar</button>
-        <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>🗑</button>
-      </div>
+      {canEdit && (
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>✏️ Editar</button>
+          <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>🗑</button>
+        </div>
+      )}
     </div>
   );
 }
