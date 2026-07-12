@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import DateRangePicker from "@/components/dashboard/DateRangePicker";
 import { watchFinanceiroManual, saveFinanceiroBase, saveFinanceiroSaidas, type FinanceiroManual, type SaidaFin } from "@/lib/firebase/data";
 
 function parseBR(s: string): number {
@@ -46,8 +47,6 @@ function fmtDia(iso: string): string {
   return `${wd} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
 }
 
-type Periodo = "hoje" | "mes" | "custom";
-
 const inpBase: CSSProperties = { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", color: "var(--text)", fontSize: "1.05rem", fontWeight: 800, width: "100%", outline: "none", marginTop: 4 };
 
 const STATUS_META: Record<Repasse["status"], { label: string; cor: string }> = {
@@ -57,9 +56,7 @@ const STATUS_META: Record<Repasse["status"], { label: string; cor: string }> = {
 };
 
 export default function FinanceiroTab() {
-  const [periodo, setPeriodo] = useState<Periodo>("mes");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [range, setRange] = useState(() => monthRange());
   const [repasses, setRepasses] = useState<Repasse[]>([]);
   const [resumo, setResumo] = useState<Resumo>({ bruto: 0, liquido: 0, liberado: 0, aReceber: 0, semData: 0, exatos: 0, count: 0 });
   const [agenda, setAgenda] = useState<Agenda[]>([]);
@@ -100,13 +97,6 @@ export default function FinanceiroTab() {
       if (r.ok) setFluxoMP(await r.json());
     } catch { /* ignora */ }
   }, []);
-
-  const range = useMemo(() => {
-    const today = isoOf(new Date());
-    if (periodo === "hoje") return { from: today, to: today };
-    if (periodo === "custom" && customFrom && customTo) return { from: customFrom, to: customTo };
-    return monthRange();
-  }, [periodo, customFrom, customTo]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -155,22 +145,7 @@ export default function FinanceiroTab() {
             {loading ? "Atualizando..." : "⟳ Atualizar"}
           </button>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="seg">
-            {(["hoje", "mes", "custom"] as Periodo[]).map((m) => (
-              <button key={m} type="button" className={`seg-btn ${periodo === m ? "active" : ""}`} onClick={() => setPeriodo(m)}>
-                {m === "hoje" ? "Hoje" : m === "mes" ? "Mês" : "Personalizado"}
-              </button>
-            ))}
-          </div>
-          {periodo === "custom" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="date" className="date-input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-              <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>até</span>
-              <input type="date" className="date-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-            </div>
-          )}
-        </div>
+        <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
       </div>
 
       {/* Saldo da conta + Cofrinho (manual — o MP não expõe pela API) */}
@@ -206,26 +181,33 @@ export default function FinanceiroTab() {
             </div>
           </div>
         ) : (
-          <div className="kpi-grid">
-            <div className="kpi k-acc">
-              <div className="k-lbl">Cofrinho (estimado)</div>
-              <div className="k-val" style={{ color: "var(--purple)" }}>{fmtBRL(cofrinhoAtual)}</div>
-              <div className="k-sub">{semBase ? "defina a base pra começar" : `base ${br(isoOf(new Date(manual.baseTs)))} · 120% CDI`}</div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: "2 1 280px", borderRadius: 14, padding: "18px 20px", background: "radial-gradient(900px 300px at 0% 0%, rgba(167,139,250,.12), transparent), var(--surface2)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: ".7rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700 }}>Cofrinho (estimado)</div>
+              <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--purple)", lineHeight: 1.1, marginTop: 4 }}>{fmtBRL(cofrinhoAtual)}</div>
+              <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 2 }}>
+                {semBase ? "defina a base pra começar" : `base ${br(isoOf(new Date(manual.baseTs)))} · rende 120% do CDI`}
+              </div>
+              {!semBase && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, fontSize: ".74rem" }}>
+                  {[
+                    ["base", fmtBRL(manual.cofrinhoBase), "var(--muted)"],
+                    ["+ liberado", fmtBRL(liberadoDesde), "var(--green)"],
+                    ["− saídas", fmtBRL(saidasTotal), "var(--red)"],
+                    ["+ rendimento", fmtBRL(rendimento), "var(--purple)"],
+                  ].map(([lbl, val, cor]) => (
+                    <span key={lbl} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px" }}>
+                      <span style={{ color: "var(--muted)" }}>{lbl} </span><b style={{ color: cor }}>{val}</b>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="kpi k-pos">
-              <div className="k-lbl">Saldo na conta</div>
-              <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(manual.saldoConta)}</div>
-              <div className="k-sub">disponível · manual</div>
+            <div style={{ flex: "1 1 170px", borderRadius: 14, padding: "18px 20px", background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <div style={{ fontSize: ".7rem", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)", fontWeight: 700 }}>Saldo na conta</div>
+              <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--green)", marginTop: 4 }}>{fmtBRL(manual.saldoConta)}</div>
+              <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>disponível · manual</div>
             </div>
-          </div>
-        )}
-
-        {!editBase && !semBase && (
-          <div style={{ marginTop: 10, fontSize: ".74rem", color: "var(--muted)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <span>base {fmtBRL(manual.cofrinhoBase)}</span>
-            <span style={{ color: "var(--green)" }}>+ liberado {fmtBRL(liberadoDesde)}</span>
-            <span style={{ color: "var(--red)" }}>− saídas {fmtBRL(saidasTotal)}</span>
-            <span style={{ color: "var(--purple)" }}>+ rend. {fmtBRL(rendimento)}</span>
           </div>
         )}
 
@@ -291,7 +273,7 @@ export default function FinanceiroTab() {
           </div>
           {fluxoMP && !fluxoMP.ok && (
             <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
-              ℹAinda não li o fluxo direto do Mercado Pago
+              Ainda não li o fluxo direto do Mercado Pago
               {fluxoMP.error === "sem_mp_token" ? " (falta configurar o MP_ACCESS_TOKEN na Vercel)" : fluxoMP.status ? ` (HTTP ${fluxoMP.status})` : ""}.
               O valor acima é <b>estimado dos seus pedidos do ML</b> (sem Pix). Assim que o MP responder, este bloco vira o número real.
             </div>
@@ -313,7 +295,7 @@ export default function FinanceiroTab() {
 
       {resumo.semData > 0 && (
         <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".78rem", color: "var(--muted)" }}>
-          ℹ{fmtBRL(resumo.semData)} em pedidos ainda sem data de repasse definida pelo Mercado Pago (aparecem como “sem data” na lista).
+          {fmtBRL(resumo.semData)} em pedidos ainda sem data de repasse definida pelo Mercado Pago (aparecem como “sem data” na lista).
         </div>
       )}
 
