@@ -116,16 +116,70 @@ function monthRange(mes: string): { from: string; to: string } {
   const ld = String(last).padStart(2, "0");
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${ld}` };
 }
+function isoUTC(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+// O período informado é um mês civil completo (dia 1 ao último dia)?
+function isFullMonth(from: string, to: string): boolean {
+  const a = new Date(from + "T00:00:00Z");
+  const b = new Date(to + "T00:00:00Z");
+  const last = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
+  return a.getUTCDate() === 1 && a.getUTCMonth() === b.getUTCMonth()
+    && a.getUTCFullYear() === b.getUTCFullYear() && b.getUTCDate() === last;
+}
+// Período imediatamente anterior, do mesmo tamanho. Mês cheio → mês anterior;
+// senão desloca a janela pra trás pelo mesmo número de dias.
+function prevPeriod(from: string, to: string): { from: string; to: string } {
+  const a = new Date(from + "T00:00:00Z");
+  const b = new Date(to + "T00:00:00Z");
+  if (isFullMonth(from, to)) {
+    const pm = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() - 1, 1));
+    const y = pm.getUTCFullYear();
+    const m = pm.getUTCMonth() + 1;
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const mm = String(m).padStart(2, "0");
+    return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, "0")}` };
+  }
+  const days = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+  const prevTo = new Date(a.getTime() - 86400000);
+  const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000);
+  return { from: isoUTC(prevFrom), to: isoUTC(prevTo) };
+}
+
+// ── Delta vs período anterior (seta ↑/↓ colorida) ──────────────
+function Delta({ current, previous, mode }: { current: number; previous: number | null | undefined; mode: "pct" | "points" }) {
+  if (previous == null) return null;
+  const diff = current - previous;
+  const flat = mode === "points"
+    ? Math.abs(diff) < 0.05
+    : Math.abs(diff) < 0.005 * Math.max(Math.abs(previous), 1);
+  const up = diff > 0;
+  const color = flat ? "var(--muted)" : up ? "var(--green)" : "var(--red)";
+  const arrow = flat ? "→" : up ? "↑" : "↓";
+  let text: string;
+  if (mode === "points") {
+    text = `${diff >= 0 ? "+" : "-"}${Math.abs(diff).toFixed(1)} p.p.`;
+  } else {
+    const pct = previous !== 0 ? (diff / Math.abs(previous)) * 100 : (current !== 0 ? 100 : 0);
+    text = `${pct >= 0 ? "+" : "-"}${Math.abs(pct).toFixed(1)}%`;
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, fontSize: ".72rem", fontWeight: 700, color }}>
+      <span>{arrow}</span><span>{text}</span>
+    </div>
+  );
+}
 
 // ── KPI ────────────────────────────────────────────────────────
 function Kpi({
-  label, value, tone, isPct, sub,
+  label, value, tone, isPct, sub, delta,
 }: {
   label: string;
   value: number;
   tone: "pos" | "neg" | "acc" | "warn";
   isPct?: boolean;
   sub?: string;
+  delta?: React.ReactNode;
 }) {
   const color =
     tone === "pos" ? "var(--green)" :
@@ -138,6 +192,7 @@ function Kpi({
         {isPct ? `${value.toFixed(1)}%` : fmtBRL(value)}
       </div>
       {sub && <div className="k-sub">{sub}</div>}
+      {delta}
     </div>
   );
 }
@@ -448,6 +503,7 @@ export default function Dashboard({ data }: Props) {
   const [mlRefreshing, setMlRefreshing] = useState(false);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlMetrics, setMlMetrics] = useState<MlMetrics | null>(null);
+  const [prevMetrics, setPrevMetrics] = useState<MlMetrics | null>(null);
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -473,6 +529,11 @@ export default function Dashboard({ data }: Props) {
     return "Personalizado";
   }, [range, isMesAtual]);
 
+  const prevLabel = useMemo(
+    () => (isFullMonth(range.from, range.to) ? "vs mês anterior" : "vs período anterior"),
+    [range],
+  );
+
   const fetchMetrics = useCallback(async (from: string, to: string, silent = false, fresh = false) => {
     if (!silent) setMlLoading(true);
     try {
@@ -495,6 +556,22 @@ export default function Dashboard({ data }: Props) {
   useEffect(() => {
     fetchMetrics(periodoRange.from, periodoRange.to);
   }, [periodoRange, fetchMetrics]);
+
+  // Métricas do período ANTERIOR (mesmo tamanho) para a comparação vs. anterior.
+  const prevRange = useMemo(() => prevPeriod(periodoRange.from, periodoRange.to), [periodoRange]);
+  useEffect(() => {
+    let alive = true;
+    setPrevMetrics(null);
+    (async () => {
+      try {
+        const res = await authedFetch(`/api/ml/metrics?from=${prevRange.from}&to=${prevRange.to}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (alive && mountedRef.current) setPrevMetrics(json);
+      } catch { /* comparação é opcional; silencioso */ }
+    })();
+    return () => { alive = false; };
+  }, [prevRange]);
 
   useEffect(() => {
     authedFetch("/api/ml/account", { cache: "no-store" })
@@ -684,14 +761,18 @@ export default function Dashboard({ data }: Props) {
           <section>
             <div className="panel-head">
               <span className="panel-title">Resultado do período</span>
-              {mlMetrics && <span className="panel-sub">{formatDateBR(mlMetrics.from)} a {formatDateBR(mlMetrics.to)} · {periodoLabel}</span>}
+              {mlMetrics && <span className="panel-sub">{formatDateBR(mlMetrics.from)} a {formatDateBR(mlMetrics.to)} · {periodoLabel}{prevMetrics ? ` · setas ${prevLabel}` : ""}</span>}
             </div>
             <div className="kpi-grid">
               <Kpi label="Faturamento bruto" value={fatBruto} tone="acc" sub="tudo, inclui cancelados/devolvidos" />
-              <Kpi label="Faturamento líquido" value={fatLiquido} tone="acc" sub="− canceladas − devoluções" />
-              <Kpi label="Retorno sobre vendas" value={retorno} tone="acc" />
-              <Kpi label="Lucro líquido" value={lucroLiquido} tone={lucroLiquido >= 0 ? "pos" : "neg"} sub="já com custos operacionais" />
-              <Kpi label="Margem líquida" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct />
+              <Kpi label="Faturamento líquido" value={fatLiquido} tone="acc" sub="− canceladas − devoluções"
+                delta={<Delta current={fatLiquido} previous={prevMetrics?.faturamentoLiquido} mode="pct" />} />
+              <Kpi label="Retorno sobre vendas" value={retorno} tone="acc"
+                delta={<Delta current={retorno} previous={prevMetrics?.totalRetorno} mode="pct" />} />
+              <Kpi label="Lucro líquido" value={lucroLiquido} tone={lucroLiquido >= 0 ? "pos" : "neg"} sub="já com custos operacionais"
+                delta={<Delta current={lucroLiquido} previous={prevMetrics?.lucroComCustos} mode="pct" />} />
+              <Kpi label="Margem líquida" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct
+                delta={<Delta current={mlMetrics?.margemComCustos ?? 0} previous={prevMetrics?.margemComCustos} mode="points" />} />
               <Kpi label="Gasto com ADS" value={mlMetrics?.totalAds ?? 0} tone="neg" />
               <Kpi label="Vendas canceladas" value={mlMetrics?.vendasCanceladas ?? 0} tone="neg" sub="não contam no lucro" />
               <Kpi label="Devoluções" value={mlMetrics?.vendasDevolvidas ?? 0} tone="neg" sub="0 a 0 (produto volta ao estoque)" />
