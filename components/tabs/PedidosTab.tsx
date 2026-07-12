@@ -99,8 +99,9 @@ export default function PedidosTab() {
         <div className="kpi k-acc"><div className="k-lbl">Pedidos</div><div className="k-val">{filtrados.length}</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Faturamento</div><div className="k-val">{fmtBRL(totalValor)}</div><div className="k-sub">bruto</div></div>
         <div className="kpi k-pos"><div className="k-lbl">Retorno</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(totalRetorno)}</div><div className="k-sub">líquido que volta</div></div>
-        <div className={`kpi ${totalLucro >= 0 ? "k-pos" : "k-neg"}`}><div className="k-lbl">Lucro líquido</div><div className="k-val" style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</div></div>
+        <div className={`kpi ${totalLucro >= 0 ? "k-pos" : "k-neg"}`}><div className="k-lbl">Lucro líquido</div><div className="k-val" style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</div><div className="k-sub">retorno − custos</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Margem média</div><div className="k-val" style={{ color: "var(--yellow)" }}>{margemMedia.toFixed(1)}%</div></div>
+        <div className="kpi k-acc"><div className="k-lbl">Ticket médio</div><div className="k-val">{fmtBRL(filtrados.length ? totalValor / filtrados.length : 0)}</div><div className="k-sub">por pedido</div></div>
       </div>
 
       {/* Busca + filtros */}
@@ -130,7 +131,7 @@ export default function PedidosTab() {
       {/* Tabela */}
       <div className="panel">
         <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 12 }}>
-          <b>Retorno</b> = Valor − Taxa ML − Frete (o que volta pra você) · <b>Lucro</b> = Retorno − CMV − Imposto
+          <b>Retorno</b> = Valor − Taxa ML − Frete · <b>Custos</b> = CMV + Frete + Taxa + Imposto (passe o mouse pra ver o detalhe) · <b>Lucro</b> = Valor − Custos
         </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando pedidos…</div>
@@ -143,32 +144,39 @@ export default function PedidosTab() {
                 <tr>
                   <th style={{ textAlign: "left" }}>Data</th>
                   <th style={{ textAlign: "left" }}>Produto</th>
-                  <th>Qtd</th><th>Valor</th><th>Retorno</th><th>CMV</th><th>Envio Full</th>
-                  <th>Taxa ML</th><th>Imposto</th><th>Lucro Líq.</th><th>Margem</th>
+                  <th>Qtd</th>
+                  <th style={{ textAlign: "right" }}>Valor</th>
+                  <th style={{ textAlign: "right" }}>Retorno</th>
+                  <th style={{ textAlign: "right" }}>Custos</th>
+                  <th style={{ textAlign: "right" }}>Lucro líq.</th>
+                  <th>Margem</th>
                 </tr>
               </thead>
               <tbody>
-                {filtrados.map((p) => (
-                  <tr key={p.order_id} style={p.lucro < 0 ? { background: "rgba(239,68,68,.06)" } : undefined}>
-                    <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap" }}>
-                      {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".7rem", display: "block" }}>{p.hora}</span>
-                    </td>
-                    <td style={{ textAlign: "left", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
-                      {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".62rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 5px", borderRadius: 5 }}>SEM CADASTRO</span>}
-                      <span style={{ display: "block", fontSize: ".68rem", color: "var(--muted)" }}>#{p.order_id}</span>
-                    </td>
-                    <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
-                    <td style={{ color: "var(--muted)" }}>{fmtBRL(p.valor)}</td>
-                    <td style={{ color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
-                    <td style={{ color: "var(--red)" }}>{fmtBRL(p.cmv)}</td>
-                    <td style={{ color: "var(--red)" }}>{fmtBRL(p.envio)}</td>
-                    <td style={{ color: "var(--red)" }}>{fmtBRL(p.taxaML)}</td>
-                    <td style={{ color: "var(--red)" }}>{fmtBRL(p.imposto)}</td>
-                    <td style={{ fontWeight: 700, color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</td>
-                    <td><span className={`tag ${margemTag(p.margem)}`}>{p.margem.toFixed(1)}%</span></td>
-                  </tr>
-                ))}
+                {filtrados.map((p) => {
+                  const custos = p.cmv + p.envio + p.taxaML + p.imposto;
+                  const prej = p.lucro < 0;
+                  return (
+                    <tr key={p.order_id} style={{ background: prej ? "rgba(239,68,68,.05)" : undefined, boxShadow: `inset 3px 0 0 ${prej ? "var(--red)" : "var(--green)"}` }}>
+                      <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap", fontSize: ".82rem" }}>
+                        {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".68rem", display: "block", opacity: .7 }}>{p.hora}</span>
+                      </td>
+                      <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
+                        {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                        <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
+                      </td>
+                      <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
+                      <td style={{ textAlign: "right", color: "var(--text)", whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</td>
+                      <td style={{ textAlign: "right", color: "var(--text)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
+                      <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap", cursor: "help" }} title={`CMV ${fmtBRL(p.cmv)}  ·  Frete ${fmtBRL(p.envio)}  ·  Taxa ML ${fmtBRL(p.taxaML)}  ·  Imposto ${fmtBRL(p.imposto)}`}>
+                        −{fmtBRL(custos)}
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap", color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</td>
+                      <td><span className={`tag ${margemTag(p.margem)}`}>{p.margem.toFixed(1)}%</span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
