@@ -234,9 +234,14 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
               <thead>
                 <tr>
                   <th style={{ textAlign: "left" }}>Produto</th>
-                  <th>Em casa</th><th>Full (ML)</th><th>Σ Total</th>
-                  <th>Custo médio</th><th>Preço venda</th><th>Imposto</th>
-                  <th>Movimentar</th><th>Ações</th>
+                  <th style={{ textAlign: "right" }}>Em casa</th>
+                  <th style={{ textAlign: "right" }}>Full (ML)</th>
+                  <th style={{ textAlign: "right" }}>Total</th>
+                  <th style={{ textAlign: "right" }}>Custo médio</th>
+                  <th style={{ textAlign: "right" }}>Preço venda</th>
+                  <th style={{ textAlign: "right" }}>Imposto</th>
+                  <th style={{ textAlign: "center" }}>Movimentar</th>
+                  <th style={{ textAlign: "right" }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -343,22 +348,22 @@ function ProductRow({
             </div>
           </div>
         </td>
-        <td style={{ fontWeight: 700, color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
-        <td style={{ fontWeight: 700, color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
+        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
+        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>reabastecer</span>}
           {proprio > 0 && <span title="Anúncio próprio (não é Full)" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} un próprio</span>}
         </td>
-        <td style={{ fontWeight: 700 }}>{totalUn} un</td>
-        <td style={{ color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
+        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
+        <td style={{ textAlign: "right", whiteSpace: "nowrap", color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
           {custoMedio > 0 ? fmtBRL(custoMedio) : "—"}
           {product.custoMedio == null && custoMedio > 0 && <span style={{ display: "block", fontSize: ".62rem", color: "var(--muted)" }}>manual</span>}
         </td>
-        <td style={{ color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
+        <td style={{ textAlign: "right", color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
           {precoMax > 0 ? (precoMin === precoMax ? fmtBRL(precoMax) : `${fmtBRL(precoMin)}–${fmtBRL(precoMax)}`) : "—"}
           {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>promoção</span>}
         </td>
-        <td style={{ color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
+        <td style={{ textAlign: "right", whiteSpace: "nowrap", color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
         <td>
           <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
             <button type="button" className="btn btn-success btn-xs" title="Entrada (compra)" onClick={() => onMov("entrada")}>＋ Entrada</button>
@@ -440,7 +445,6 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   const [saving, setSaving] = useState(false);
 
   const titulo = isEntrada ? "＋ Entrada (compra)" : isSaldo ? "Saldo inicial" : tipo === "saida_full" ? "Envio pro Full" : "Ajuste de estoque";
-  const icon = isEntrada ? "" : isSaldo ? "" : tipo === "saida_full" ? "" : "";
 
   const qNum = parseNum(qtd);
   const cNum = parseNum(custo);
@@ -478,7 +482,6 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
 
   return (
     <Modal open onClose={onClose}>
-      <div className="modal-icon">{icon}</div>
       <div className="modal-title">{titulo}</div>
       <div className="modal-sub">{product.name || "Produto"} · estoque atual: <b>{estoqueAtual} un</b>{avgAtual > 0 && <> · custo médio {fmtBRL(avgAtual)}</>}</div>
 
@@ -557,8 +560,12 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
             <thead>
               <tr>
                 <th style={{ textAlign: "left" }}>Produto</th>
-                <th>Preço ML</th><th>Estoque total</th><th>Vendas/dia</th>
-                <th>Cobertura</th><th>Repor (Full)</th><th>Venda potencial</th>
+                <th style={{ textAlign: "right" }}>Preço ML</th>
+                <th style={{ textAlign: "right" }}>Estoque total</th>
+                <th style={{ textAlign: "right" }}>Vendas/dia</th>
+                <th style={{ textAlign: "right" }}>Cobertura</th>
+                <th style={{ textAlign: "right" }}>Repor (Full)</th>
+                <th style={{ textAlign: "right" }}>Venda potencial</th>
               </tr>
             </thead>
             <tbody>
@@ -568,11 +575,11 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                 return (
                   <tr key={p.id}>
                     <td style={{ textAlign: "left", fontWeight: 600 }}>{p.name || "Sem nome"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{f.precoMax > 0 ? (f.precoMin === f.precoMax ? fmtBRL(f.precoMax) : `${fmtBRL(f.precoMin)}–${fmtBRL(f.precoMax)}`) : "—"}</td>
-                    <td style={{ fontWeight: 700 }}>{f.total} un</td>
-                    <td style={{ color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
-                    <td style={{ color: cob.cor, fontWeight: 700 }}>{cob.txt}</td>
-                    <td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{f.precoMax > 0 ? (f.precoMin === f.precoMax ? fmtBRL(f.precoMax) : `${fmtBRL(f.precoMin)}–${fmtBRL(f.precoMax)}`) : "—"}</td>
+                    <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{f.total} un</td>
+                    <td style={{ textAlign: "right", color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
+                    <td style={{ textAlign: "right", color: cob.cor, fontWeight: 700 }}>{cob.txt}</td>
+                    <td style={{ textAlign: "right" }}>
                       {f.reporQtd > 0 ? (
                         <span style={{ color: "var(--yellow)", fontWeight: 700 }}>
                           {f.reporQtd} un
@@ -584,7 +591,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                         </span>
                       ) : <span style={{ color: "var(--muted)" }}>ok</span>}
                     </td>
-                    <td style={{ color: "var(--green)", fontWeight: 700 }}>{fmtBRL(f.valorPotencial)}</td>
+                    <td style={{ textAlign: "right", color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(f.valorPotencial)}</td>
                   </tr>
                 );
               })}
@@ -638,7 +645,6 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
 
   return (
     <Modal open onClose={onClose}>
-      <div className="modal-icon"></div>
       <div className="modal-title">{isNew ? "Novo Produto" : "Editar Produto"}</div>
 
       <div className="config-field">

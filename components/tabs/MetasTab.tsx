@@ -57,7 +57,7 @@ export default function MetasTab({
       )}
 
       <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(167,139,250,.07)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 8, padding: "10px 14px" }}>
-        Defina as metas de faturamento () e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
+        Defina as metas de faturamento e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
       </div>
 
       <div className="panel">
@@ -101,10 +101,10 @@ function GoalEntryRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const chip = (emoji: string, valor: number | null, cor: string) =>
+  const chip = (label: string, valor: number | null, cor: string) =>
     valor ? (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `${cor}1f`, border: `1px solid ${cor}`, color: cor, borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
-        {emoji} {fmtBRL(valor)}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: `${cor}1f`, border: `1px solid ${cor}`, color: cor, borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
+        <span style={{ opacity: .7, fontWeight: 600 }}>{label}</span> {fmtBRL(valor)}
       </span>
     ) : null;
 
@@ -122,9 +122,9 @@ function GoalEntryRow({
           {entry.label && <span style={{ fontSize: ".78rem", color: "var(--muted)" }}>· {entry.label}</span>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          {chip("", entry.meta1, "#4f8ef7")}
-          {chip("", entry.meta2, "#f7c948")}
-          {chip("", entry.meta3, "#a855f7")}
+          {chip("Meta 1", entry.meta1, "#4f8ef7")}
+          {chip("Meta 2", entry.meta2, "#f7c948")}
+          {chip("Meta 3", entry.meta3, "#a855f7")}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(34,197,94,.12)", border: "1px solid var(--green)", color: "var(--green)", borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
             margem {entry.metaMargem ?? 10}%
           </span>
@@ -185,7 +185,6 @@ function GoalEntryModal({
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="modal-icon"></div>
       <div className="modal-title">
         {entry ? "Editar Meta" : "Nova Meta"}
       </div>

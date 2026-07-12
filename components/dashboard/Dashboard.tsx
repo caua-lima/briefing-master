@@ -5,6 +5,7 @@ import type { Goals } from "@/lib/domain/types";
 import {
   fmtBRL,
   formatMesBR,
+  formatDateBR,
   mesAtual,
   diaAtualNoMes,
   diasNoMes,
@@ -683,7 +684,7 @@ export default function Dashboard({ data }: Props) {
           <section>
             <div className="panel-head">
               <span className="panel-title">Resultado do período</span>
-              {mlMetrics && <span className="panel-sub">{mlMetrics.from} {mlMetrics.to} · {periodoLabel}</span>}
+              {mlMetrics && <span className="panel-sub">{formatDateBR(mlMetrics.from)} a {formatDateBR(mlMetrics.to)} · {periodoLabel}</span>}
             </div>
             <div className="kpi-grid">
               <Kpi label="Faturamento bruto" value={fatBruto} tone="acc" sub="tudo, inclui cancelados/devolvidos" />
