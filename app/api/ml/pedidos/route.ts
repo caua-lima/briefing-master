@@ -98,11 +98,9 @@ export async function GET(req: Request) {
         }
       }
 
-      // Retorno = o que REALMENTE volta. Prioriza o líquido do Mercado Pago
-      // (exato, já com descontos/atacado/taxas); senão estima (bruto − taxa − frete).
-      const netMp = Number(o.net_received ?? 0);
-      const retornoExato = netMp > 0;
-      const retorno = retornoExato ? netMp : bruto - taxaML - envio;
+      // Retorno = o que volta pra você = valor − taxa ML − frete (igual ao ML e ao Dashboard).
+      // Lucro = retorno − CMV − imposto. Mesma conta do Dashboard.
+      const retorno = bruto - taxaML - envio;
       const lucro = retorno - cmv - imposto;
       const margem = bruto > 0 ? (lucro / bruto) * 100 : 0;
 
@@ -114,7 +112,7 @@ export async function GET(req: Request) {
         produto: nomes.join(", "),
         qtd: totalUnits,
         valor: Number(o.total_amount ?? 0),
-        bruto, retorno, retornoExato, cmv, envio, taxaML, imposto,
+        bruto, retorno, cmv, envio, taxaML, imposto,
         lucro, margem, vinculado,
       };
     });

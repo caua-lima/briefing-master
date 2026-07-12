@@ -14,8 +14,7 @@ type Pedido = {
   qtd: number;
   valor: number;
   bruto: number;
-  retorno: number;      // líquido que volta (MP quando exato)
-  retornoExato: boolean;
+  retorno: number;      // valor − taxa − frete (o que volta)
   cmv: number;
   envio: number;
   taxaML: number;
@@ -131,7 +130,7 @@ export default function PedidosTab() {
       {/* Tabela */}
       <div className="panel">
         <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 12 }}>
-          <b>Retorno</b> = o que volta pra você (líquido do Mercado Pago, já com taxas/frete/descontos) · <b>Lucro</b> = Retorno − CMV − Imposto · <b>~</b> = ainda estimado (sincronize pra virar exato)
+          <b>Retorno</b> = Valor − Taxa ML − Frete (o que volta pra você) · <b>Lucro</b> = Retorno − CMV − Imposto
         </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando pedidos…</div>
@@ -161,10 +160,7 @@ export default function PedidosTab() {
                     </td>
                     <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
                     <td style={{ color: "var(--muted)" }}>{fmtBRL(p.valor)}</td>
-                    <td style={{ color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>
-                      {fmtBRL(p.retorno)}
-                      {!p.retornoExato && <span title="Estimado — sincronize pra virar exato" style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 3, fontSize: ".72rem" }}>~</span>}
-                    </td>
+                    <td style={{ color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
                     <td style={{ color: "var(--red)" }}>{fmtBRL(p.cmv)}</td>
                     <td style={{ color: "var(--red)" }}>{fmtBRL(p.envio)}</td>
                     <td style={{ color: "var(--red)" }}>{fmtBRL(p.taxaML)}</td>

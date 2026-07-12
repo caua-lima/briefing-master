@@ -108,7 +108,7 @@ export type AdItemFull = {
   indirectSales: number;
 };
 
-const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,units_quantity,total_amount,direct_amount,indirect_amount,direct_units_quantity";
+const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amount,indirect_amount,direct_items_quantity,advertising_items_quantity";
 
 /** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
 export async function getAdsFullByItem(from: string, to: string): Promise<AdItemFull[]> {
@@ -142,9 +142,9 @@ export async function getAdsFullByItem(from: string, to: string): Promise<AdItem
         acos: n("acos"),
         cvr: n("cvr"),
         sales: n("total_amount"),
-        units: n("units_quantity"),
+        units: n("advertising_items_quantity"),
         directSales: n("direct_amount"),
-        directUnits: n("direct_units_quantity"),
+        directUnits: n("direct_items_quantity"),
         indirectSales: n("indirect_amount"),
       });
     }
