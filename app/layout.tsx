@@ -3,8 +3,8 @@ import { AuthProvider } from "@/lib/firebase/auth-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Controle de Lucro Diário — Mercado Livre",
-  description: "Hub de controle financeiro diário para vendedor do Mercado Livre",
+  title: "Dashboard Mercado Livre",
+  description: "Dashboard de controle financeiro e de vendas para vendedor do Mercado Livre",
 };
 
 export default function RootLayout({

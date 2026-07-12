@@ -18,16 +18,36 @@ import { MlAccountStatus } from "@/components/MlAccountStatus";
 type Tab = "dashboard" | "pedidos" | "financeiro" | "ads" | "metas" | "custos" | "estoque" | "acesso";
 
 // Todos veem tudo. Só o owner edita (as regras do Firestore garantem isso).
-const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "" },
-  { id: "pedidos", label: "Pedidos", icon: "" },
-  { id: "financeiro", label: "Financeiro", icon: "" },
-  { id: "ads", label: "Ads", icon: "" },
-  { id: "metas", label: "Metas", icon: "" },
-  { id: "custos", label: "Custos", icon: "" },
-  { id: "estoque", label: "Estoque", icon: "" },
-  { id: "acesso", label: "Acesso", icon: "" },
+const NAV_ITEMS: { id: Tab; label: string }[] = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "pedidos", label: "Pedidos" },
+  { id: "financeiro", label: "Financeiro" },
+  { id: "ads", label: "Ads" },
+  { id: "metas", label: "Metas" },
+  { id: "custos", label: "Custos" },
+  { id: "estoque", label: "Estoque" },
+  { id: "acesso", label: "Acesso" },
 ];
+
+// Ícones em linha (herdam a cor via currentColor) — visual limpo e profissional.
+const ICON_PATHS: Record<Tab, React.ReactNode> = {
+  dashboard: (<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>),
+  pedidos: (<><path d="M6 8h12l-1 12H7L6 8z" /><path d="M9 8V6.5a3 3 0 0 1 6 0V8" /></>),
+  financeiro: (<><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10.5h18" /><circle cx="16.5" cy="14.5" r="1.2" /></>),
+  ads: (<><path d="M4 10v4a1 1 0 0 0 1 1h2l5 3.5V6.5L7 10H5a1 1 0 0 0-1 1z" /><path d="M16 9a4.5 4.5 0 0 1 0 6" /></>),
+  metas: (<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>),
+  custos: (<><path d="M6 3h12v18l-2-1.3L14 21l-2-1.3L10 21l-2-1.3L6 21z" /><path d="M9 8.5h6M9 12h6" /></>),
+  estoque: (<><path d="M3 8l9-4 9 4-9 4-9-4z" /><path d="M3 8v8l9 4 9-4V8" /><path d="M12 12v8" /></>),
+  acesso: (<><circle cx="12" cy="8" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>),
+};
+
+function NavIcon({ id }: { id: Tab }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden>
+      {ICON_PATHS[id]}
+    </svg>
+  );
+}
 
 export default function Page() {
   const { user, loading } = useAuth();
@@ -148,67 +168,83 @@ function AppShell() {
               borderBottom: "1px solid var(--border)",
             }}
           >
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: "1rem",
-                background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-              }}
-            >
-              Controle ML
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <span
+                style={{
+                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
+                  color: "#fff", fontWeight: 800, fontSize: ".9rem", letterSpacing: "-.02em",
+                }}
+              >
+                ML
+              </span>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: ".98rem",
+                  lineHeight: 1.15,
+                  background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}
+              >
+                Dashboard<br />Mercado Livre
+              </div>
             </div>
-            <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 2 }}>
+            <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 8, textTransform: "capitalize" }}>
               {dateLabel}
             </div>
           </div>
 
           {/* Nav items */}
-          <nav style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setTab(item.id);
-                  setSidebarOpen(false);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  width: "100%",
-                  padding: "9px 14px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: activeTab === item.id ? "var(--accent)" : "transparent",
-                  color: activeTab === item.id ? "#fff" : "var(--muted)",
-                  fontSize: ".88rem",
-                  fontWeight: activeTab === item.id ? 700 : 500,
-                  cursor: "pointer",
-                  marginBottom: 2,
-                  transition: "background .15s, color .15s",
-                  textAlign: "left",
-                }}
-                onMouseEnter={(e) => {
-                  if (activeTab !== item.id) {
-                    (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--text)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeTab !== item.id) {
-                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--muted)";
-                  }
-                }}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
+          <nav style={{ flex: 1, padding: "10px 10px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+            {navItems.map((item) => {
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setTab(item.id);
+                    setSidebarOpen(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 11,
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 9,
+                    border: "none",
+                    background: active ? "rgba(79,142,247,.13)" : "transparent",
+                    color: active ? "var(--accent)" : "var(--muted)",
+                    boxShadow: active ? "inset 3px 0 0 var(--accent)" : "none",
+                    fontSize: ".9rem",
+                    fontWeight: active ? 700 : 500,
+                    cursor: "pointer",
+                    transition: "background .15s, color .15s",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--text)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--muted)";
+                    }
+                  }}
+                >
+                  <NavIcon id={item.id} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
 
           {/* User / signout */}
@@ -301,11 +337,13 @@ function AppShell() {
               onClick={() => setSidebarOpen(true)}
               aria-label="Abrir menu"
             >
-              
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
             </button>
 
-            <div style={{ fontWeight: 600, fontSize: ".95rem" }}>
-              {NAV_ITEMS.find((n) => n.id === activeTab)?.icon}{" "}
+            <div style={{ display: "flex", alignItems: "center", gap: 9, fontWeight: 700, fontSize: ".95rem" }}>
+              <span style={{ color: "var(--accent)", display: "inline-flex" }}><NavIcon id={activeTab} /></span>
               {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
             </div>
 
