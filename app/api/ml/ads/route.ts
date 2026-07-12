@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, probeAds } from "@/lib/ml/ads";
+import { getValidMlAccessToken } from "@/lib/ml/getToken";
+import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 
 export const maxDuration = 30;
 
@@ -14,27 +16,27 @@ function todayISO(offsetDays = 0): string {
 }
 const normSku = (s: string) => s.trim().toLowerCase();
 const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
+const isNaoVenda = (s: unknown) => {
+  const v = String(s ?? "").toLowerCase();
+  return v === "cancelled" || v === "invalid";
+};
 
 type VendaItem = { receita: number; unidades: number; cmv: number; imposto: number; taxaML: number; envio: number };
 
-/** Vendas + lucro (antes de ads) por item MLB, lidos do Firestore (todos os canais). */
-async function vendasPorItem(
-  db: FirebaseFirestore.Firestore, from: string, to: string,
+/**
+ * Vendas + lucro (antes de ads) por item MLB, a partir dos MESMOS pedidos que o
+ * dashboard usa (ao vivo do ML). Exclui cancelados e devolvidos, igual ao lucro
+ * do dashboard — assim "vendas totais" e "lucro" batem com a tela principal.
+ */
+function vendasPorItem(
+  orders: FirebaseFirestore.DocumentData[],
   porMlb: Map<string, ProdutoData>, porSku: Map<string, ProdutoData>,
-): Promise<Map<string, VendaItem>> {
-  const start = `${from}T00:00:00.000Z`, end = `${to}T23:59:59.999Z`;
-  const startBR = `${from}T00:00:00.000-03:00`, endBR = `${to}T23:59:59.999-03:00`;
-  const [a, b] = await Promise.all([
-    db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-    db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
-  ]);
-  const orders = new Map<string, FirebaseFirestore.DocumentData>();
-  for (const snap of [a, b]) for (const d of snap.docs) orders.set(d.get("order_id") ?? d.id, d.data());
-
+  cancelIds: Set<string>, devolIds: Set<string>,
+): Map<string, VendaItem> {
   const map = new Map<string, VendaItem>();
-  for (const o of orders.values()) {
-    const st = String(o.status ?? "").toLowerCase();
-    if (st === "cancelled" || st === "invalid") continue;
+  for (const o of orders) {
+    const oid = String(o.order_id ?? "");
+    if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
     const items = (o.items as OrderItem[]) ?? [];
     const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
     const envioPerUnit = totalUnits > 0 ? Number(o.shipping_cost ?? 0) / totalUnits : 0;
@@ -75,6 +77,8 @@ export async function GET(req: Request) {
     }
 
     const db = getAdminDb();
+
+    // ── Produtos (custo médio + imposto) indexados por MLB e SKU ──
     const prodSnap = await db.collection("estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
@@ -86,12 +90,39 @@ export async function GET(req: Request) {
       const sku = String(d.sku ?? "").trim();
       if (sku) porSku.set(normSku(sku), entry);
     }
-    const vendas = await vendasPorItem(db, from, to, porMlb, porSku).catch(() => new Map<string, VendaItem>());
+
+    // ── Pedidos AO VIVO (mesma fonte do dashboard) com fallback ao Firestore ──
+    const fromISO = `${from}T00:00:00.000-03:00`;
+    const toISO = `${to}T23:59:59.999-03:00`;
+    const start = `${from}T00:00:00.000Z`, end = `${to}T23:59:59.999Z`;
+    const token = await getValidMlAccessToken().catch(() => "");
+    let orders = token ? await fetchOrdersLive(token, fromISO, toISO) : null;
+    if (!orders) orders = await loadOrders(db, start, end, fromISO, toISO);
+
+    // enriquece frete do cache do Firestore
+    const ids = orders.map((o) => String(o.order_id ?? "")).filter(Boolean);
+    const shipMap = await readShippingCosts(db, ids);
+    for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
+
+    // ── Devoluções + cancelamentos (excluídos do lucro, igual ao dashboard) ──
+    const [retUTC, retBR] = await Promise.all([
+      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      db.collection("ml_returns").where("date_created", ">=", fromISO).where("date_created", "<=", toISO).get(),
+    ]);
+    const cancelIds = new Set<string>();
+    const devolIds = new Set<string>();
+    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) {
+      const r = doc.data();
+      if (String(r.tipo ?? "") === "devolucao") devolIds.add(doc.id);
+      else cancelIds.add(doc.id);
+    }
+
+    const vendas = vendasPorItem(orders, porMlb, porSku, cancelIds, devolIds);
 
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
       const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
-      const lucroLiquido = lucroAntesAds - a.cost; // ⭐ já descontando o ads
+      const lucroLiquido = lucroAntesAds - a.cost; // já descontando o ads
       return {
         itemId: a.itemId, title: a.title,
         clicks: a.clicks, prints: a.prints, cost: a.cost,

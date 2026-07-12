@@ -66,7 +66,7 @@ export default function AdsTab() {
     { lbl: "ACOS direto", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas diretas", cor: corAcos(acos, t.direct > 0) },
     { lbl: "Impressões", val: num(t.prints), tone: "acc", sub: `CTR ${num(t.prints > 0 ? (t.clicks / t.prints) * 100 : 0, 2)}%` },
     { lbl: "Cliques", val: num(t.clicks), tone: "acc", sub: `CPC ${fmtBRL(t.clicks > 0 ? t.cost / t.clicks : 0)}` },
-    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads " : "ads não se paga ", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads" : "ads não se paga", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ] : [
     { lbl: "Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
     { lbl: "Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
@@ -74,7 +74,7 @@ export default function AdsTab() {
     { lbl: "TACOS", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas totais", cor: corAcos(acos, t.total > 0) },
     { lbl: "Vendas via ads", val: `${num(pctViaAds, 0)}%`, tone: "acc", sub: `${fmtBRL(t.adSales)} vieram do ad` },
     { lbl: "Orgânico", val: `${num(100 - pctViaAds, 0)}%`, tone: "pos", sub: "vendas sem tráfego pago" },
-    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads " : "ads não se paga ", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads" : "ads não se paga", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
   return (
@@ -131,9 +131,30 @@ export default function AdsTab() {
                 <table className="tbl-modern">
                   <thead>
                     {pub ? (
-                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>Investido</th><th>Vendas diretas</th><th>Un</th><th>ACOS</th><th>ROAS</th><th>Lucro</th></tr>
+                      <tr>
+                        <th style={{ textAlign: "left" }}>Anúncio</th>
+                        <th style={{ textAlign: "right" }}>Impr.</th>
+                        <th style={{ textAlign: "right" }}>Cliques</th>
+                        <th style={{ textAlign: "right" }}>CTR</th>
+                        <th style={{ textAlign: "right" }}>CPC</th>
+                        <th style={{ textAlign: "right" }}>Investido</th>
+                        <th style={{ textAlign: "right" }}>Vendas diretas</th>
+                        <th style={{ textAlign: "right" }}>Un</th>
+                        <th style={{ textAlign: "right" }}>ACOS</th>
+                        <th style={{ textAlign: "right" }}>ROAS</th>
+                        <th style={{ textAlign: "right" }}>Lucro</th>
+                      </tr>
                     ) : (
-                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Investido</th><th>Vendas totais</th><th>Un</th><th>% via ads</th><th>TACOS</th><th>ROAS</th><th>Lucro</th></tr>
+                      <tr>
+                        <th style={{ textAlign: "left" }}>Anúncio</th>
+                        <th style={{ textAlign: "right" }}>Investido</th>
+                        <th style={{ textAlign: "right" }}>Vendas totais</th>
+                        <th style={{ textAlign: "right" }}>Un</th>
+                        <th style={{ textAlign: "right" }}>% via ads</th>
+                        <th style={{ textAlign: "right" }}>TACOS</th>
+                        <th style={{ textAlign: "right" }}>ROAS</th>
+                        <th style={{ textAlign: "right" }}>Lucro</th>
+                      </tr>
                     )}
                   </thead>
                   <tbody>
@@ -152,18 +173,18 @@ export default function AdsTab() {
                             <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{i.itemId}</span>
                           </td>
                           {pub && <>
-                            <td style={{ color: "var(--muted)" }}>{num(i.prints)}</td>
-                            <td style={{ color: "var(--muted)" }}>{num(i.clicks)}</td>
-                            <td>{num(ctr, 2)}%</td>
-                            <td style={{ color: "var(--muted)" }}>{fmtBRL(cpc)}</td>
+                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.prints)}</td>
+                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.clicks)}</td>
+                            <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{num(ctr, 2)}%</td>
+                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtBRL(cpc)}</td>
                           </>}
-                          <td style={{ color: "var(--red)", fontWeight: 600 }}>{fmtBRL(i.cost)}</td>
-                          <td style={{ color: "var(--green)" }}>{fmtBRL(v)}</td>
-                          <td style={{ color: "var(--muted)" }}>{num(un)}</td>
-                          {!pub && <td style={{ color: "var(--muted)" }}>{num(pctAds, 0)}%</td>}
-                          <td style={{ color: corAcos(a, v > 0), fontWeight: 700 }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
-                          <td style={{ color: corRoas(r), fontWeight: 700 }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
-                          <td style={{ color: i.lucroLiquido >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(i.lucroLiquido)}</td>
+                          <td style={{ textAlign: "right", color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(i.cost)}</td>
+                          <td style={{ textAlign: "right", color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(v)}</td>
+                          <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(un)}</td>
+                          {!pub && <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(pctAds, 0)}%</td>}
+                          <td style={{ textAlign: "right", color: corAcos(a, v > 0), fontWeight: 700, whiteSpace: "nowrap" }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
+                          <td style={{ textAlign: "right", color: corRoas(r), fontWeight: 700, whiteSpace: "nowrap" }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
+                          <td style={{ textAlign: "right", color: i.lucroLiquido >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(i.lucroLiquido)}</td>
                         </tr>
                       );
                     })}
