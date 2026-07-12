@@ -76,7 +76,7 @@ export default function MetasGauge({
         <Card
           label="Projeção de faturamento"
           value={fmtBRL(projecao)}
-          sub={noRitmo ? "✅ no ritmo da meta" : "⚠️ abaixo da meta"}
+          sub={noRitmo ? "no ritmo da meta" : "abaixo da meta"}
           subColor={noRitmo ? "var(--green)" : "var(--red)"}
         />
         <Card

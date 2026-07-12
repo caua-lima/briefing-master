@@ -161,7 +161,7 @@ export default function AccessControlTab({
   return (
     <div className="dash">
       <div className="dash-top">
-        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🔐 Controle de Acesso</h2></div>
+        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Controle de Acesso</h2></div>
       </div>
 
       <div className="kpi-grid">
@@ -173,7 +173,7 @@ export default function AccessControlTab({
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr)" }}>
         <div className="panel">
           <div className="panel-head" style={{ marginBottom: 4 }}>
-            <span className="panel-title">{editingEmail ? "✏️ Editar acesso" : "＋ Nova entrada"}</span>
+            <span className="panel-title">{editingEmail ? "Editar acesso" : "＋ Nova entrada"}</span>
             {editingEmail ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={resetForm}>Cancelar edição</button>
             ) : null}
@@ -248,20 +248,20 @@ export default function AccessControlTab({
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" className="btn btn-success" onClick={saveEntry} disabled={!canEdit} style={{ opacity: canEdit ? 1 : 0.5 }}>
-                {editingEmail ? "💾 Salvar alterações" : "＋ Adicionar e-mail"}
+                {editingEmail ? "Salvar alterações" : "＋ Adicionar e-mail"}
               </button>
               <button type="button" className="btn btn-ghost" onClick={resetForm}>Limpar</button>
-              {!canEdit && <span style={{ fontSize: ".78rem", color: "var(--muted)", alignSelf: "center" }}>👁️ somente leitura</span>}
+              {!canEdit && <span style={{ fontSize: ".78rem", color: "var(--muted)", alignSelf: "center" }}>somente leitura</span>}
             </div>
           </div>
         </div>
 
         <div className="panel">
           <div className="panel-head">
-            <span className="panel-title">👥 E-mails autorizados <span className="panel-sub">· {loading ? "…" : `${filteredEntries.length} registro(s)`}</span></span>
+            <span className="panel-title">E-mails autorizados <span className="panel-sub">· {loading ? "…" : `${filteredEntries.length} registro(s)`}</span></span>
             <input
               type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="🔍 Filtrar por e-mail ou nome"
+              placeholder="Filtrar por e-mail ou nome"
               style={{ maxWidth: 260, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", color: "var(--text)", fontSize: ".85rem", outline: "none" }}
             />
           </div>
@@ -284,8 +284,8 @@ export default function AccessControlTab({
                   </div>
                   {canEdit && (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>✏️ Editar</button>
-                      <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>🗑 Remover</button>
+                      <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>Editar</button>
+                      <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>Remover</button>
                     </div>
                   )}
                 </div>

@@ -176,7 +176,7 @@ function CurvaABC({ anuncios }: { anuncios: AnuncioResult[] }) {
 
   return (
     <div className="panel">
-      <div className="panel-title" style={{ marginBottom: 6 }}>📊 Curva ABC — quem puxa o lucro</div>
+      <div className="panel-title" style={{ marginBottom: 6 }}>Curva ABC — quem puxa o lucro</div>
       <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 12 }}>
         A = topo (até 80% do lucro) · B = 80–95% · C = restante / prejuízo
       </div>
@@ -213,7 +213,7 @@ function DevolucoesPanel({ total, detalhe }: { total: number; detalhe: Devolucao
   return (
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 10 }}>
-        <span className="panel-title">↩️ Devoluções</span>
+        <span className="panel-title">Devoluções</span>
         <span className="panel-sub">Total: <b style={{ color: "var(--red)" }}>{fmtBRL(total)}</b> · {detalhe.length} caso(s)</span>
       </div>
       {detalhe.length ? (
@@ -234,7 +234,7 @@ function DevolucoesPanel({ total, detalhe }: { total: number; detalhe: Devolucao
           </table>
         </div>
       ) : (
-        <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>Sem devoluções no período. 🎉</div>
+        <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>Sem devoluções no período. </div>
       )}
     </div>
   );
@@ -250,16 +250,16 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   const margem = h.faturamentoBruto > 0 ? (h.lucroLiquido / h.faturamentoBruto) * 100 : 0;
 
   const stats: { label: string; icon: string; value: number; color: string }[] = [
-    { label: "Faturamento bruto", icon: "💵", value: h.faturamentoBruto, color: "var(--green)" },
-    { label: "CMV (produto)",     icon: "📦", value: h.totalCMV,         color: "var(--red)" },
-    { label: "Gasto com ADS",     icon: "📢", value: h.totalAds,         color: "var(--red)" },
-    { label: "Lucro líquido",     icon: "✅", value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
+    { label: "Faturamento bruto", icon: "", value: h.faturamentoBruto, color: "var(--green)" },
+    { label: "CMV (produto)",     icon: "", value: h.totalCMV,         color: "var(--red)" },
+    { label: "Gasto com ADS",     icon: "", value: h.totalAds,         color: "var(--red)" },
+    { label: "Lucro líquido",     icon: "", value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
   return (
     <section className="hero">
       <div className="hero-head">
-        <span className="hero-title">⚡ Vendas do Dia</span>
+        <span className="hero-title">Vendas do Dia</span>
         <span className="hero-badge">
           {h.pedidos} pedido(s) · margem <b style={{ color: margem >= 0 ? "var(--green)" : "var(--red)" }}>{margem.toFixed(1)}%</b>
         </span>
@@ -293,7 +293,7 @@ function MetaDiariaCard({
     <div className="panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
       {metaDiaria ? (
         <Gauge
-          caption="📅 Meta Diária de Hoje"
+          caption="Meta Diária de Hoje"
           pct={pct}
           centerText={`${pct.toFixed(0)}%`}
           leftLabel="R$ 0"
@@ -302,14 +302,14 @@ function MetaDiariaCard({
             <>
               <b style={{ color: "var(--text)" }}>{fmtBRL(faturamentoHoje)}</b> · {pedidosHoje} pedido(s) ·{" "}
               <span style={{ color: batida ? "var(--green)" : "var(--muted)" }}>
-                {batida ? "✅ batida!" : `faltam ${fmtBRL(falta)}`}
+                {batida ? "batida!" : `faltam ${fmtBRL(falta)}`}
               </span>
             </>
           }
         />
       ) : (
         <>
-          <div className="panel-title" style={{ marginBottom: 8 }}>📅 Meta Diária de Hoje</div>
+          <div className="panel-title" style={{ marginBottom: 8 }}>Meta Diária de Hoje</div>
           <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Configure uma meta (Meta 1) na aba Metas.</div>
         </>
       )}
@@ -418,7 +418,7 @@ function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; fro
   return (
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 8 }}>
-        <span className="panel-title">📊 Média de vendas por dia</span>
+        <span className="panel-title">Média de vendas por dia</span>
         <span className="panel-sub">{dias} dia(s) no período · {totalQty} un vendidas · média {(totalQty / dias).toFixed(1)}/dia</span>
       </div>
       <div className="table-wrapper" style={{ border: "none" }}>
@@ -603,10 +603,10 @@ export default function Dashboard({ data }: Props) {
             <span className="acct-dot" /> Conta ML <b>{mlAccount?.user?.nickname ?? "—"}</b>
           </span>
           <button type="button" className="btn btn-sm btn-ghost" onClick={handleRefreshML} disabled={mlRefreshing} style={{ opacity: mlRefreshing ? 0.6 : 1 }}>
-            {mlRefreshing ? "⏳ Sincronizando..." : "⟳ Atualizar ML"}
+            {mlRefreshing ? "Sincronizando..." : "⟳ Atualizar ML"}
           </button>
           {(mlMetrics && mlMetrics.totalAds === 0) && (
-            <button type="button" className="btn btn-xs btn-ghost" onClick={runDiagAds} title="Diagnóstico do ADS">🐞 ADS</button>
+            <button type="button" className="btn btn-xs btn-ghost" onClick={runDiagAds} title="Diagnóstico do ADS">ADS</button>
           )}
           <LastUpdated at={lastUpdated} />
         </div>
@@ -626,7 +626,7 @@ export default function Dashboard({ data }: Props) {
           borderRadius: 8, padding: "12px 14px", fontSize: ".72rem", maxHeight: 300, overflow: "auto",
           whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--text)",
         }}>
-          <button type="button" className="btn btn-xs btn-ghost" onClick={() => setDiag(null)} style={{ position: "absolute", right: 8, top: 8 }}>✕</button>
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => setDiag(null)} style={{ position: "absolute", right: 8, top: 8 }}>Fechar</button>
           {diag}
         </pre>
       )}
@@ -637,7 +637,7 @@ export default function Dashboard({ data }: Props) {
         if (!blocked) return null;
         return (
           <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
-            ⚠️ <b>ADS não autorizado (HTTP {d?.advertisersStatus ?? "—"}).</b> O token do Mercado Livre não tem permissão de Publicidade.{" "}
+            <b>ADS não autorizado (HTTP {d?.advertisersStatus ?? "—"}).</b> O token do Mercado Livre não tem permissão de Publicidade.{" "}
             Reconecte o ML em <b>Trocar conta ML</b> concedendo acesso a <b>Publicidade / Mercado Ads</b> para o gasto com Ads voltar a aparecer.
           </div>
         );
@@ -645,14 +645,14 @@ export default function Dashboard({ data }: Props) {
 
       {/* ── Conteúdo ── */}
       {mlLoading ? (
-        <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando dados…</div>
+        <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>Carregando dados…</div>
       ) : (
         <>
           {/* Acompanhamento das metas (topo, modo mês) */}
           {isMesAtual && (
             <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div className="panel-head" style={{ marginBottom: 0 }}>
-                <span className="panel-title">🎯 Acompanhamento das Metas — {formatMesBR(mes)}</span>
+                <span className="panel-title">Acompanhamento das Metas — {formatMesBR(mes)}</span>
                 <span className="panel-sub">Projeção de fechamento: {fmtBRL(projecao)}</span>
               </div>
               {goals?.meta1 ? (
@@ -682,8 +682,8 @@ export default function Dashboard({ data }: Props) {
           {/* Resultado do período */}
           <section>
             <div className="panel-head">
-              <span className="panel-title">💰 Resultado do período</span>
-              {mlMetrics && <span className="panel-sub">{mlMetrics.from} → {mlMetrics.to} · {periodoLabel}</span>}
+              <span className="panel-title">Resultado do período</span>
+              {mlMetrics && <span className="panel-sub">{mlMetrics.from} {mlMetrics.to} · {periodoLabel}</span>}
             </div>
             <div className="kpi-grid">
               <Kpi label="Faturamento bruto" value={fatBruto} tone="acc" sub="tudo, inclui cancelados/devolvidos" />
@@ -706,14 +706,14 @@ export default function Dashboard({ data }: Props) {
 
           {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
             <div style={{ padding: "8px 12px", background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)", borderRadius: 8, fontSize: ".78rem", color: "#f7c948" }}>
-              ⚠️ {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — cadastre o SKU/MLB no Estoque para o lucro ficar completo.
+              {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — cadastre o SKU/MLB no Estoque para o lucro ficar completo.
             </div>
           )}
 
           {/* Composição de custos + Doughnut */}
           <div className="dash-2col">
             <div className="panel">
-              <div className="panel-title" style={{ marginBottom: 14 }}>📊 Composição de Custos</div>
+              <div className="panel-title" style={{ marginBottom: 14 }}>Composição de Custos</div>
               {custoRows.map((r) => (
                 <div key={r.label} className="cost-row">
                   <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
@@ -726,7 +726,7 @@ export default function Dashboard({ data }: Props) {
               </div>
             </div>
             <div className="panel">
-              <div className="panel-title" style={{ marginBottom: 14 }}>🥧 Distribuição dos Gastos</div>
+              <div className="panel-title" style={{ marginBottom: 14 }}>Distribuição dos Gastos</div>
               <ExpensesDoughnut
                 produto={mlMetrics?.totalCMV ?? 0}
                 envio={mlMetrics?.totalEnvio ?? 0}
@@ -741,7 +741,7 @@ export default function Dashboard({ data }: Props) {
           {/* Lucro por anúncio */}
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: 8 }}>
-              <span className="panel-title">📢 Lucro por Anúncio</span>
+              <span className="panel-title">Lucro por Anúncio</span>
             </div>
             <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 14 }}>
               Lucro líq. = Retorno − CMV − Envio Full − Taxa ML − Imposto − ADS · valores puxados do Mercado Livre

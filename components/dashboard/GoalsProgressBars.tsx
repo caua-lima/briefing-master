@@ -35,7 +35,7 @@ function ProgressBar({
         }}
       >
         <span style={{ color: done ? "var(--green)" : "var(--text)", fontWeight: 600 }}>
-          {label} {done ? "✓" : ""}
+          {label} {done ? "" : ""}
         </span>
         <span style={{ color: "var(--muted)" }}>
           {fmtBRL(current)} / {fmtBRL(target)}

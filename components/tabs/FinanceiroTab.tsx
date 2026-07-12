@@ -150,9 +150,9 @@ export default function FinanceiroTab() {
     <div className="dash">
       <div className="dash-top">
         <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>💰 Financeiro</h2>
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Financeiro</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={atualizar} disabled={loading}>
-            {loading ? "⏳ Atualizando..." : "⟳ Atualizar"}
+            {loading ? "Atualizando..." : "⟳ Atualizar"}
           </button>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -177,28 +177,28 @@ export default function FinanceiroTab() {
       {/* Cofrinho automático + saldo da conta */}
       <div className="panel">
         <div className="panel-head" style={{ marginBottom: 12 }}>
-          <span className="panel-title">🐷 Cofrinho & Saldo</span>
+          <span className="panel-title">Cofrinho & Saldo</span>
           {!editBase ? (
             <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setBaseIn({ cofrinho: manual.cofrinhoBase ? String(manual.cofrinhoBase) : "", cdi: manual.cdiAnual ? String(manual.cdiAnual) : "", saldo: manual.saldoConta ? String(manual.saldoConta) : "" }); setEditBase(true); }}>
-              {semBase ? "＋ Definir base" : "🔄 Re-sincronizar base"}
+              {semBase ? "＋ Definir base" : "Re-sincronizar base"}
             </button>
           ) : (
             <span style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="btn btn-success btn-xs" onClick={salvarBase}>💾 Salvar base</button>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditBase(false)}>✕</button>
+              <button type="button" className="btn btn-success btn-xs" onClick={salvarBase}>Salvar base</button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditBase(false)}>Cancelar</button>
             </span>
           )}
         </div>
 
         {editBase ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 4 }}>
-            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>🐷 Cofrinho hoje (R$)
+            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>Cofrinho hoje (R$)
               <input type="number" step="0.01" placeholder="Ex: 1298,07" value={baseIn.cofrinho} onChange={(e) => setBaseIn({ ...baseIn, cofrinho: e.target.value })} style={inpBase} />
             </label>
-            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>📈 CDI anual (%)
+            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>CDI anual (%)
               <input type="number" step="0.01" placeholder="Ex: 15" value={baseIn.cdi} onChange={(e) => setBaseIn({ ...baseIn, cdi: e.target.value })} style={inpBase} />
             </label>
-            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>🏦 Saldo na conta (R$)
+            <label style={{ fontSize: ".75rem", color: "var(--muted)" }}>Saldo na conta (R$)
               <input type="number" step="0.01" placeholder="Ex: 0" value={baseIn.saldo} onChange={(e) => setBaseIn({ ...baseIn, saldo: e.target.value })} style={inpBase} />
             </label>
             <div style={{ gridColumn: "1/-1", fontSize: ".72rem", color: "var(--muted)" }}>
@@ -208,12 +208,12 @@ export default function FinanceiroTab() {
         ) : (
           <div className="kpi-grid">
             <div className="kpi k-acc">
-              <div className="k-lbl">🐷 Cofrinho (estimado)</div>
+              <div className="k-lbl">Cofrinho (estimado)</div>
               <div className="k-val" style={{ color: "var(--purple)" }}>{fmtBRL(cofrinhoAtual)}</div>
               <div className="k-sub">{semBase ? "defina a base pra começar" : `base ${br(isoOf(new Date(manual.baseTs)))} · 120% CDI`}</div>
             </div>
             <div className="kpi k-pos">
-              <div className="k-lbl">🏦 Saldo na conta</div>
+              <div className="k-lbl">Saldo na conta</div>
               <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(manual.saldoConta)}</div>
               <div className="k-sub">disponível · manual</div>
             </div>
@@ -232,7 +232,7 @@ export default function FinanceiroTab() {
         {/* Saídas (saques/transferências) */}
         {!semBase && (
           <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-            <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>➖ Saídas (saques / transferências)</div>
+            <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>Saídas (saques / transferências)</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
               <input type="date" value={novaSaida.data} onChange={(e) => setNovaSaida({ ...novaSaida, data: e.target.value })} className="date-input" />
               <input type="number" step="0.01" placeholder="Valor" value={novaSaida.valor} onChange={(e) => setNovaSaida({ ...novaSaida, valor: e.target.value })} style={{ ...inpBase, width: 110, marginTop: 0 }} />
@@ -249,7 +249,7 @@ export default function FinanceiroTab() {
                         <td style={{ color: "var(--muted)" }}>{br(s.data)}</td>
                         <td style={{ textAlign: "left" }}>{s.desc || "—"}</td>
                         <td style={{ color: "var(--red)", fontWeight: 700 }}>− {fmtBRL(s.valor)}</td>
-                        <td><button type="button" className="btn btn-danger btn-xs" onClick={() => removeSaida(s.id)}>🗑</button></td>
+                        <td><button type="button" className="btn btn-danger btn-xs" onClick={() => removeSaida(s.id)}>Excluir</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -264,34 +264,34 @@ export default function FinanceiroTab() {
       {fluxoMP?.ok && (
         <div>
           <div className="panel-head" style={{ marginBottom: 8 }}>
-            <span className="panel-title">💳 Mercado Pago</span>
+            <span className="panel-title">Mercado Pago</span>
             <span className="panel-sub">direto do MP · inclui Pix e vendas</span>
           </div>
           <div className="kpi-grid">
-            <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (≈)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(fluxoMP.aReceber ?? 0)}</div><div className="k-sub">{fluxoMP.pendentes ?? 0} futuros · ±3% do MP</div></div>
-            <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado (90d)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(fluxoMP.liberado ?? 0)}</div><div className="k-sub">líquido que já caiu (últimos 90 dias)</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">A receber (≈)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(fluxoMP.aReceber ?? 0)}</div><div className="k-sub">{fluxoMP.pendentes ?? 0} futuros · ±3% do MP</div></div>
+            <div className="kpi k-pos"><div className="k-lbl">Já liberado (90d)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(fluxoMP.liberado ?? 0)}</div><div className="k-sub">líquido que já caiu (últimos 90 dias)</div></div>
           </div>
           {(fluxoMP.count ?? 0) === 0 && (
             <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
-              🔎 O MP respondeu, mas trouxe <b>0 pagamentos</b> (total reportado: {fluxoMP.totalMp ?? 0}). Provável que o <b>MP_ACCESS_TOKEN seja de outra aplicação/conta</b> que não é a que recebe as vendas. Precisa ser o token de <b>produção da conta VaZXPress</b> (a mesma que recebe no Mercado Pago).
+              O MP respondeu, mas trouxe <b>0 pagamentos</b> (total reportado: {fluxoMP.totalMp ?? 0}). Provável que o <b>MP_ACCESS_TOKEN seja de outra aplicação/conta</b> que não é a que recebe as vendas. Precisa ser o token de <b>produção da conta VaZXPress</b> (a mesma que recebe no Mercado Pago).
             </div>
           )}
         </div>
       )}
 
-      {/* Sem acesso ao MP → mostra o total a receber estimado dos pedidos do ML */}
+      {/* Sem acesso ao MP mostra o total a receber estimado dos pedidos do ML */}
       {(!fluxoMP || !fluxoMP.ok) && (
         <div>
           <div className="panel-head" style={{ marginBottom: 8 }}>
-            <span className="panel-title">💰 A receber (total)</span>
+            <span className="panel-title">A receber (total)</span>
             <span className="panel-sub">todos os repasses futuros dos pedidos do ML</span>
           </div>
           <div className="kpi-grid">
-            <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (total)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(globalCF.aReceber)}</div><div className="k-sub">{globalCF.pedidos} pedido(s) a liberar</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">A receber (total)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(globalCF.aReceber)}</div><div className="k-sub">{globalCF.pedidos} pedido(s) a liberar</div></div>
           </div>
           {fluxoMP && !fluxoMP.ok && (
             <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
-              ℹ️ Ainda não li o fluxo direto do Mercado Pago
+              ℹAinda não li o fluxo direto do Mercado Pago
               {fluxoMP.error === "sem_mp_token" ? " (falta configurar o MP_ACCESS_TOKEN na Vercel)" : fluxoMP.status ? ` (HTTP ${fluxoMP.status})` : ""}.
               O valor acima é <b>estimado dos seus pedidos do ML</b> (sem Pix). Assim que o MP responder, este bloco vira o número real.
             </div>
@@ -301,26 +301,26 @@ export default function FinanceiroTab() {
 
       {/* Reconstruído pelos pedidos do ML — detalhe do período selecionado */}
       <div className="panel-head" style={{ marginBottom: -4 }}>
-        <span className="panel-title">🧾 Pelos pedidos do ML — período</span>
+        <span className="panel-title">Pelos pedidos do ML — período</span>
         <span className="panel-sub">detalhe estimado por pedido (pode diferir do saldo do MP)</span>
       </div>
       <div className="kpi-grid">
-        <div className="kpi k-warn"><div className="k-lbl">⏳ A receber (período)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(resumo.aReceber)}</div><div className="k-sub">líquido, ainda não liberado</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">✅ Já liberado (período)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(resumo.liberado)}</div><div className="k-sub">repasse já na data</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">A receber (período)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(resumo.aReceber)}</div><div className="k-sub">líquido, ainda não liberado</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Já liberado (período)</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(resumo.liberado)}</div><div className="k-sub">repasse já na data</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Σ Líquido do período</div><div className="k-val">{fmtBRL(resumo.liquido)}</div><div className="k-sub">{resumo.count} pedido(s)</div></div>
         <div className="kpi k-neg"><div className="k-lbl">Bruto do período</div><div className="k-val">{fmtBRL(resumo.bruto)}</div><div className="k-sub">antes de taxas/frete</div></div>
       </div>
 
       {resumo.semData > 0 && (
         <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".78rem", color: "var(--muted)" }}>
-          ℹ️ {fmtBRL(resumo.semData)} em pedidos ainda sem data de repasse definida pelo Mercado Pago (aparecem como “sem data” na lista).
+          ℹ{fmtBRL(resumo.semData)} em pedidos ainda sem data de repasse definida pelo Mercado Pago (aparecem como “sem data” na lista).
         </div>
       )}
 
       {/* Próximos repasses (agenda) */}
       <div className="panel">
         <div className="panel-head" style={{ marginBottom: 12 }}>
-          <span className="panel-title">📅 Próximos repasses</span>
+          <span className="panel-title">Próximos repasses</span>
           <span className="panel-sub">quando e quanto cai no Mercado Pago{fluxoMP?.ok ? " · líquido real, inclui Pix" : " · líquido estimado"}</span>
         </div>
         {proximos.length === 0 ? (
@@ -354,9 +354,9 @@ export default function FinanceiroTab() {
 
       {/* Detalhe por pedido */}
       <div className="panel">
-        <div className="panel-title" style={{ marginBottom: 10 }}>🧾 Repasses por pedido</div>
+        <div className="panel-title" style={{ marginBottom: 10 }}>Repasses por pedido</div>
         {loading ? (
-          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando…</div>
+          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando…</div>
         ) : repasses.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Nenhum pedido no período. Clique em Atualizar.</div>
         ) : (
@@ -367,7 +367,7 @@ export default function FinanceiroTab() {
                   <th style={{ textAlign: "left" }}>Pedido</th>
                   <th style={{ textAlign: "left" }}>Produto</th>
                   <th>Bruto</th><th>Taxa+Frete</th><th>Líquido</th>
-                  <th style={{ textAlign: "left" }}>💰 Repasse em</th>
+                  <th style={{ textAlign: "left" }}>Repasse em</th>
                   <th style={{ textAlign: "left" }}>Status</th>
                 </tr>
               </thead>

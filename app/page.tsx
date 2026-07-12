@@ -19,14 +19,14 @@ type Tab = "dashboard" | "pedidos" | "financeiro" | "ads" | "metas" | "custos" |
 
 // Todos veem tudo. Só o owner edita (as regras do Firestore garantem isso).
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "pedidos", label: "Pedidos", icon: "🧾" },
-  { id: "financeiro", label: "Financeiro", icon: "💰" },
-  { id: "ads", label: "Ads", icon: "📢" },
-  { id: "metas", label: "Metas", icon: "🎯" },
-  { id: "custos", label: "Custos", icon: "💸" },
-  { id: "estoque", label: "Estoque", icon: "📦" },
-  { id: "acesso", label: "Acesso", icon: "🔐" },
+  { id: "dashboard", label: "Dashboard", icon: "" },
+  { id: "pedidos", label: "Pedidos", icon: "" },
+  { id: "financeiro", label: "Financeiro", icon: "" },
+  { id: "ads", label: "Ads", icon: "" },
+  { id: "metas", label: "Metas", icon: "" },
+  { id: "custos", label: "Custos", icon: "" },
+  { id: "estoque", label: "Estoque", icon: "" },
+  { id: "acesso", label: "Acesso", icon: "" },
 ];
 
 export default function Page() {
@@ -44,7 +44,7 @@ export default function Page() {
           fontSize: ".9rem",
         }}
       >
-        ⏳ Carregando…
+        Carregando…
       </div>
     );
   }
@@ -158,7 +158,7 @@ function AppShell() {
                 backgroundClip: "text",
               }}
             >
-              📊 Controle ML
+              Controle ML
             </div>
             <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 2 }}>
               {dateLabel}
@@ -254,7 +254,7 @@ function AppShell() {
               disabled={swappingAccount}
               style={{ width: "100%", justifyContent: "center", marginBottom: 6, opacity: swappingAccount ? 0.6 : 1, cursor: swappingAccount ? 'not-allowed' : 'pointer' }}
             >
-              {swappingAccount ? '⏳ Trocando...' : '🔄 Trocar conta'}
+              {swappingAccount ? 'Trocando...' : 'Trocar conta'}
             </button>
             <button
               type="button"
@@ -301,7 +301,7 @@ function AppShell() {
               onClick={() => setSidebarOpen(true)}
               aria-label="Abrir menu"
             >
-              ☰
+              
             </button>
 
             <div style={{ fontWeight: 600, fontSize: ".95rem" }}>
@@ -325,13 +325,13 @@ function AppShell() {
                   fontSize: ".9rem",
                 }}
               >
-                ⏳ Carregando dados…
+                Carregando dados…
               </div>
             ) : (
               <>
                 {!isOwner && (
                   <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
-                    👁️ Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
+                    Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
                   </div>
                 )}
                 {activeTab === "dashboard" && <Dashboard data={data} />}

@@ -139,12 +139,12 @@ export default function DateRangePicker({ from, to, onApply }: Props) {
   }, [open]);
 
   function pickDay(day: string) {
-    // sem início, ou intervalo já completo → começa de novo
+    // sem início, ou intervalo já completo começa de novo
     if (!draftFrom || (draftFrom && draftTo)) {
       setDraftFrom(day);
       setDraftTo("");
     } else if (day < draftFrom) {
-      setDraftFrom(day);          // clicou antes do início → vira o novo início
+      setDraftFrom(day);          // clicou antes do início vira o novo início
     } else {
       setDraftTo(day);
     }

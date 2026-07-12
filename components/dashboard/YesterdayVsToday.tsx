@@ -86,7 +86,7 @@ export default function YesterdayVsToday({ days, todayLiquido }: Props) {
               color: ontemVsAvgPct >= 0 ? "var(--green)" : "var(--red)",
             }}
           >
-            {ontemVsAvgPct >= 0 ? "↑" : "↓"}{Math.abs(ontemVsAvgPct).toFixed(1)}% vs media 7d
+            {ontemVsAvgPct >= 0 ? "" : ""}{Math.abs(ontemVsAvgPct).toFixed(1)}% vs media 7d
           </div>
         )}
       </div>
@@ -128,7 +128,7 @@ export default function YesterdayVsToday({ days, todayLiquido }: Props) {
               color: vsAvgPct >= 0 ? "var(--green)" : "var(--red)",
             }}
           >
-            {vsAvgPct >= 0 ? "↑" : "↓"}{Math.abs(vsAvgPct).toFixed(1)}% vs media 7d
+            {vsAvgPct >= 0 ? "" : ""}{Math.abs(vsAvgPct).toFixed(1)}% vs media 7d
           </div>
         )}
       </div>

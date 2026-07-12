@@ -23,7 +23,7 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
   return (
     <div className="dash">
       <div className="dash-top">
-        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>💸 Custos Operacionais</h2></div>
+        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Custos Operacionais</h2></div>
         {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Adicionar Custo</button>}
       </div>
 
@@ -34,7 +34,7 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
       </div>
 
       <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(79,142,247,.06)", border: "1px solid rgba(79,142,247,.18)", borderRadius: 8, padding: "10px 14px" }}>
-        💡 <strong>Diário</strong> = desconta todo dia · <strong>Mensal</strong> = só no lucro do mês · <strong>Avulso</strong> = apenas na data informada
+        <strong>Diário</strong> = desconta todo dia · <strong>Mensal</strong> = só no lucro do mês · <strong>Avulso</strong> = apenas na data informada
       </div>
 
       <div className="panel">
@@ -91,14 +91,14 @@ function CustoRow({ uid, cost }: { uid: string; cost: Cost }) {
         <input type="number" min="0" step="0.01" placeholder="0,00" value={valor} onChange={(e) => setValor(e.target.value)} style={{ ...inputStyle, paddingLeft: 30, fontWeight: 700, color: "var(--red)" }} />
       </div>
       <select value={freq} onChange={(e) => setFreq(e.target.value as Cost["freq"])} style={{ ...inputStyle, flex: "1 1 120px", color: meta.cor, fontWeight: 600 }}>
-        <option value="diario">📅 Diário</option>
-        <option value="mensal">🗓 Mensal</option>
-        <option value="avulso">⚡ Avulso</option>
+        <option value="diario">Diário</option>
+        <option value="mensal">Mensal</option>
+        <option value="avulso">Avulso</option>
       </select>
       {freq === "avulso" && (
         <input type="date" value={dataAvulso} onChange={(e) => setDataAvulso(e.target.value)} style={{ ...inputStyle, flex: "1 1 140px" }} />
       )}
-      <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteCost(uid, cost.id).catch(() => {})} style={{ flexShrink: 0 }}>🗑</button>
+      <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteCost(uid, cost.id).catch(() => {})} style={{ flexShrink: 0 }}>Excluir</button>
     </div>
   );
 }

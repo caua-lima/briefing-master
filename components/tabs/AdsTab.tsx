@@ -60,30 +60,30 @@ export default function AdsTab() {
   const pctViaAds = t.total > 0 ? (t.adSales / t.total) * 100 : 0;
 
   const kpis = pub ? [
-    { lbl: "💸 Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
-    { lbl: "💰 Vendas diretas", val: fmtBRL(t.direct), tone: "pos", sub: `${num(t.directUn)} un via clique no ad` },
-    { lbl: "📈 ROAS direto", val: `${num(roas, 2)}x`, tone: "acc", sub: "vendas diretas ÷ investido", cor: corRoas(roas) },
-    { lbl: "🎯 ACOS direto", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas diretas", cor: corAcos(acos, t.direct > 0) },
-    { lbl: "👁️ Impressões", val: num(t.prints), tone: "acc", sub: `CTR ${num(t.prints > 0 ? (t.clicks / t.prints) * 100 : 0, 2)}%` },
-    { lbl: "🖱️ Cliques", val: num(t.clicks), tone: "acc", sub: `CPC ${fmtBRL(t.clicks > 0 ? t.cost / t.clicks : 0)}` },
-    { lbl: "💵 Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads ✅" : "ads não se paga ⚠️", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
+    { lbl: "Vendas diretas", val: fmtBRL(t.direct), tone: "pos", sub: `${num(t.directUn)} un via clique no ad` },
+    { lbl: "ROAS direto", val: `${num(roas, 2)}x`, tone: "acc", sub: "vendas diretas ÷ investido", cor: corRoas(roas) },
+    { lbl: "ACOS direto", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas diretas", cor: corAcos(acos, t.direct > 0) },
+    { lbl: "Impressões", val: num(t.prints), tone: "acc", sub: `CTR ${num(t.prints > 0 ? (t.clicks / t.prints) * 100 : 0, 2)}%` },
+    { lbl: "Cliques", val: num(t.clicks), tone: "acc", sub: `CPC ${fmtBRL(t.clicks > 0 ? t.cost / t.clicks : 0)}` },
+    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads " : "ads não se paga ", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ] : [
-    { lbl: "💸 Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
-    { lbl: "💰 Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
-    { lbl: "📈 ROAS geral", val: `${num(roas, 2)}x`, tone: "acc", sub: "vendas totais ÷ investido", cor: corRoas(roas) },
-    { lbl: "🎯 TACOS", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas totais", cor: corAcos(acos, t.total > 0) },
-    { lbl: "🧲 Vendas via ads", val: `${num(pctViaAds, 0)}%`, tone: "acc", sub: `${fmtBRL(t.adSales)} vieram do ad` },
-    { lbl: "🌱 Orgânico", val: `${num(100 - pctViaAds, 0)}%`, tone: "pos", sub: "vendas sem tráfego pago" },
-    { lbl: "💵 Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads ✅" : "ads não se paga ⚠️", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
+    { lbl: "Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
+    { lbl: "ROAS geral", val: `${num(roas, 2)}x`, tone: "acc", sub: "vendas totais ÷ investido", cor: corRoas(roas) },
+    { lbl: "TACOS", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas totais", cor: corAcos(acos, t.total > 0) },
+    { lbl: "Vendas via ads", val: `${num(pctViaAds, 0)}%`, tone: "acc", sub: `${fmtBRL(t.adSales)} vieram do ad` },
+    { lbl: "Orgânico", val: `${num(100 - pctViaAds, 0)}%`, tone: "pos", sub: "vendas sem tráfego pago" },
+    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads " : "ads não se paga ", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
   return (
     <div className="dash">
       <div className="dash-top">
         <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>📢 Ads</h2>
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Ads</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={load} disabled={loading}>
-            {loading ? "⏳..." : "⟳ Atualizar"}
+            {loading ? "..." : "⟳ Atualizar"}
           </button>
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
@@ -91,8 +91,8 @@ export default function AdsTab() {
 
       {/* Toggle de análise */}
       <div className="seg" style={{ alignSelf: "flex-start" }}>
-        <button type="button" className={`seg-btn ${pub ? "active" : ""}`} onClick={() => setModo("pub")}>📢 Publicidade (ads direto)</button>
-        <button type="button" className={`seg-btn ${!pub ? "active" : ""}`} onClick={() => setModo("geral")}>🌐 Geral (todas as vendas)</button>
+        <button type="button" className={`seg-btn ${pub ? "active" : ""}`} onClick={() => setModo("pub")}>Publicidade (ads direto)</button>
+        <button type="button" className={`seg-btn ${!pub ? "active" : ""}`} onClick={() => setModo("geral")}>Geral (todas as vendas)</button>
       </div>
       <div style={{ fontSize: ".78rem", color: "var(--muted)", marginTop: -6 }}>
         {pub
@@ -102,7 +102,7 @@ export default function AdsTab() {
 
       {erro ? (
         <div style={{ padding: "12px 14px", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.3)", borderRadius: 8, fontSize: ".8rem", color: "var(--red)" }}>
-          ⚠️ Não consegui puxar os Ads (provável falta de permissão de <b>Mercado Ads</b> no token do ML — reconecte concedendo o acesso).
+          Não consegui puxar os Ads (provável falta de permissão de <b>Mercado Ads</b> no token do ML — reconecte concedendo o acesso).
           <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 180, overflow: "auto" }}>{erro}</pre>
         </div>
       ) : (
@@ -119,11 +119,11 @@ export default function AdsTab() {
 
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: 8 }}>
-              <span className="panel-title">📢 Por anúncio — {pub ? "publicidade" : "geral"}</span>
+              <span className="panel-title">Por anúncio — {pub ? "publicidade" : "geral"}</span>
               <span className="panel-sub">ordenado por investimento</span>
             </div>
             {loading ? (
-              <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando…</div>
+              <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando…</div>
             ) : items.length === 0 ? (
               <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Sem dados de Ads no período.</div>
             ) : (
@@ -131,9 +131,9 @@ export default function AdsTab() {
                 <table className="tbl-modern">
                   <thead>
                     {pub ? (
-                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>Investido</th><th>Vendas diretas</th><th>Un</th><th>ACOS</th><th>ROAS</th><th>💵 Lucro</th></tr>
+                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>Investido</th><th>Vendas diretas</th><th>Un</th><th>ACOS</th><th>ROAS</th><th>Lucro</th></tr>
                     ) : (
-                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Investido</th><th>Vendas totais</th><th>Un</th><th>% via ads</th><th>TACOS</th><th>ROAS</th><th>💵 Lucro</th></tr>
+                      <tr><th style={{ textAlign: "left" }}>Anúncio</th><th>Investido</th><th>Vendas totais</th><th>Un</th><th>% via ads</th><th>TACOS</th><th>ROAS</th><th>Lucro</th></tr>
                     )}
                   </thead>
                   <tbody>

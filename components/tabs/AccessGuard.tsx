@@ -220,7 +220,7 @@ function LoadingScreen() {
       }}
     >
       <div style={{ fontSize: "2rem", animation: "spin 1s linear infinite" }}>
-        ⏳
+        
       </div>
       <p style={{ fontSize: ".9rem" }}>Verificando acesso…</p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -256,7 +256,7 @@ function DeniedScreen({
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: "3rem", marginBottom: 16 }}>🚫</div>
+        <div style={{ fontSize: "3rem", marginBottom: 16 }}></div>
         <h2
           style={{
             fontSize: "1.2rem",
@@ -293,7 +293,7 @@ function DeniedScreen({
           onClick={onLogout}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          🔄 Trocar conta / Sair
+          Trocar conta / Sair
         </button>
       </div>
     </div>

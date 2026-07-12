@@ -68,7 +68,7 @@ function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: numbe
   return { qtd, proprio, ehFull, temDado };
 }
 
-// Full considerado "baixo" → sugere reabastecer com o estoque de casa.
+// Full considerado "baixo" sugere reabastecer com o estoque de casa.
 const FULL_BAIXO = 5;
 
 // Faixa de preços dos anúncios (por anúncio, sem média). Retorna min/max/único.
@@ -191,9 +191,9 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       {/* Header */}
       <div className="dash-top">
         <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>📦 Estoque de Produtos</h2>
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Estoque de Produtos</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={carregarEstoque} disabled={loadingML}>
-            {loadingML ? "⏳ Atualizando..." : "⟳ Atualizar Full (ML)"}
+            {loadingML ? "Atualizando..." : "⟳ Atualizar Full (ML)"}
           </button>
         </div>
         {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>}
@@ -203,21 +203,21 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Produtos</div><div className="k-val">{total}</div><div className="k-sub">{ativos} ativos</div></div>
         <div className="kpi k-pos"><div className="k-lbl">Valor em estoque</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div><div className="k-sub">(casa + Full) × custo médio</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">🏠 Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">🏬 No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
-        <div className="kpi k-acc"><div className="k-lbl">💵 Venda potencial</div><div className="k-val">{fmtBRL(valorPotencialVenda)}</div><div className="k-sub">estoque × preço ML atual</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
+        <div className="kpi k-acc"><div className="k-lbl">Venda potencial</div><div className="k-val">{fmtBRL(valorPotencialVenda)}</div><div className="k-sub">estoque × preço ML atual</div></div>
       </div>
 
       {/* Busca */}
       <input
-        type="text" placeholder="🔍 Buscar por nome, SKU ou código MLB…" value={search}
+        type="text" placeholder="Buscar por nome, SKU ou código MLB…" value={search}
         onChange={(e) => setSearch(e.target.value)}
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
       />
 
       {reabastecer.length > 0 && (
         <div style={{ padding: "9px 13px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".8rem", color: "#f7c948" }}>
-          🔄 <b>Full baixo</b> em {reabastecer.length} produto(s) — você tem unidades em casa pra enviar:{" "}
+          <b>Full baixo</b> em {reabastecer.length} produto(s) — você tem unidades em casa pra enviar:{" "}
           {reabastecer.slice(0, 6).map((p) => p.name || "sem nome").join(", ")}{reabastecer.length > 6 ? "…" : ""}
         </div>
       )}
@@ -234,7 +234,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
               <thead>
                 <tr>
                   <th style={{ textAlign: "left" }}>Produto</th>
-                  <th>🏠 Em casa</th><th>🏬 Full (ML)</th><th>Σ Total</th>
+                  <th>Em casa</th><th>Full (ML)</th><th>Σ Total</th>
                   <th>Custo médio</th><th>Preço venda</th><th>Imposto</th>
                   <th>Movimentar</th><th>Ações</th>
                 </tr>
@@ -330,12 +330,12 @@ function ProductRow({
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
                 {product.sku
                   ? <span style={{ background: "rgba(79,142,247,.12)", color: "#4f8ef7", padding: "1px 7px", borderRadius: 6, fontWeight: 700, fontSize: ".7rem" }}>SKU {product.sku}</span>
-                  : <span style={{ color: "var(--red)", fontSize: ".7rem" }}>⚠️ sem SKU</span>}
+                  : <span style={{ color: "var(--red)", fontSize: ".7rem" }}>sem SKU</span>}
                 {anuncios.map(({ mlb, item }) => (
                   <span key={mlb} style={{ fontSize: ".7rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, color: "var(--muted)" }}>
                     {mlb}
                     {item && item.price > 0 && <b style={{ color: "var(--green)", marginLeft: 4 }}>{fmtBRL(item.price)}</b>}
-                    {item && item.hasPromo && <span style={{ marginLeft: 3 }}>🔖</span>}
+                    {item && item.hasPromo && <span style={{ marginLeft: 4, fontSize: ".62rem", color: "#f7c948", fontWeight: 700 }}>promo</span>}
                     {item && <span style={{ marginLeft: 4, color: ehFullLogistic(item.logistic) ? "#4f8ef7" : "var(--muted)" }}>{ehFullLogistic(item.logistic) ? "Full" : "próprio"}</span>}
                   </span>
                 ))}
@@ -346,7 +346,7 @@ function ProductRow({
         <td style={{ fontWeight: 700, color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
         <td style={{ fontWeight: 700, color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
-          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>🔄 reabastecer</span>}
+          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>reabastecer</span>}
           {proprio > 0 && <span title="Anúncio próprio (não é Full)" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} un próprio</span>}
         </td>
         <td style={{ fontWeight: 700 }}>{totalUn} un</td>
@@ -356,19 +356,19 @@ function ProductRow({
         </td>
         <td style={{ color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
           {precoMax > 0 ? (precoMin === precoMax ? fmtBRL(precoMax) : `${fmtBRL(precoMin)}–${fmtBRL(precoMax)}`) : "—"}
-          {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>🔖 promoção</span>}
+          {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>promoção</span>}
         </td>
         <td style={{ color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
         <td>
           <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
             <button type="button" className="btn btn-success btn-xs" title="Entrada (compra)" onClick={() => onMov("entrada")}>＋ Entrada</button>
-            <button type="button" className="btn btn-ghost btn-xs" title="Enviar pro Full (baixa, não é venda)" onClick={() => onMov("saida_full")}>➖ Full</button>
+            <button type="button" className="btn btn-ghost btn-xs" title="Enviar pro Full (baixa, não é venda)" onClick={() => onMov("saida_full")}>Full</button>
           </div>
         </td>
         <td>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-            <button type="button" className="btn btn-warning btn-xs" title="Editar produto" onClick={onEdit}>✏️</button>
-            <button type="button" className="btn btn-danger btn-xs" title="Remover produto" onClick={() => { if (!confirm(`Remover "${product.name}"?`)) return; deleteProduct("", product.id).catch(() => {}); }}>🗑</button>
+            <button type="button" className="btn btn-warning btn-xs" title="Editar produto" onClick={onEdit}>Editar</button>
+            <button type="button" className="btn btn-danger btn-xs" title="Remover produto" onClick={() => { if (!confirm(`Remover "${product.name}"?`)) return; deleteProduct("", product.id).catch(() => {}); }}>Excluir</button>
           </div>
         </td>
       </tr>
@@ -390,8 +390,8 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>Movimentações</span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>📦 Saldo inicial</button>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>⚖️ Ajuste / perda</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>Saldo inicial</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>Ajuste / perda</button>
         </div>
       </div>
       {ordenados.length === 0 ? (
@@ -415,7 +415,7 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
                     <td>{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
                     <td style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
                     <td>
-                      <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => { if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return; deleteMovimento(m.id, product.id).catch(() => {}); }}>🗑</button>
+                      <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => { if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return; deleteMovimento(m.id, product.id).catch(() => {}); }}>Excluir</button>
                     </td>
                   </tr>
                 );
@@ -439,8 +439,8 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   const [obs, setObs] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const titulo = isEntrada ? "＋ Entrada (compra)" : isSaldo ? "📦 Saldo inicial" : tipo === "saida_full" ? "➖ Envio pro Full" : "⚖️ Ajuste de estoque";
-  const icon = isEntrada ? "📥" : isSaldo ? "📦" : tipo === "saida_full" ? "🚚" : "⚖️";
+  const titulo = isEntrada ? "＋ Entrada (compra)" : isSaldo ? "Saldo inicial" : tipo === "saida_full" ? "Envio pro Full" : "Ajuste de estoque";
+  const icon = isEntrada ? "" : isSaldo ? "" : tipo === "saida_full" ? "" : "";
 
   const qNum = parseNum(qtd);
   const cNum = parseNum(custo);
@@ -483,13 +483,13 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
       <div className="modal-sub">{product.name || "Produto"} · estoque atual: <b>{estoqueAtual} un</b>{avgAtual > 0 && <> · custo médio {fmtBRL(avgAtual)}</>}</div>
 
       <div className="config-field">
-        <label>{isAjuste ? "🔢 Quantidade (use − para baixa)" : "🔢 Quantidade (unidades)"}</label>
+        <label>{isAjuste ? "Quantidade (use − para baixa)" : "Quantidade (unidades)"}</label>
         <input type="number" step="1" placeholder={isAjuste ? "Ex: -3" : "Ex: 40"} value={qtd} onChange={(e) => setQtd(e.target.value)} />
       </div>
 
       {precisaCusto && (
         <div className="config-field">
-          <label>💰 Custo unitário {isSaldo ? "do estoque que já existe" : "desta compra"} (R$)</label>
+          <label>Custo unitário {isSaldo ? "do estoque que já existe" : "desta compra"} (R$)</label>
           <input type="number" min="0" step="0.01" placeholder="Ex: 11.50" value={custo} onChange={(e) => setCusto(e.target.value)} />
           {isEntrada && qNum > 0 && cNum > 0 && (
             <div className="hint">
@@ -502,29 +502,29 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
 
       {isSaldo && (
         <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(79,142,247,.08)", border: "1px solid rgba(79,142,247,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
-          📦 <b>Saldo inicial</b> = estoque que você já tinha antes de começar a lançar (ex.: o que já está no Full). Entra na <b>média do custo</b> com a quantidade e o custo reais, mas <b>não soma no “em casa”</b> (essas unidades já estão fora).
+          <b>Saldo inicial</b> = estoque que você já tinha antes de começar a lançar (ex.: o que já está no Full). Entra na <b>média do custo</b> com a quantidade e o custo reais, mas <b>não soma no “em casa”</b> (essas unidades já estão fora).
         </div>
       )}
 
       {tipo === "saida_full" && (
         <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.25)", fontSize: ".78rem", color: "var(--muted)" }}>
-          🚚 Baixa por <b>envio ao Full</b> — sai de casa e vai pro Full, mas <b>não é venda</b>. Não afeta o lucro; o custo só entra quando o produto vende.
+          Baixa por <b>envio ao Full</b> — sai de casa e vai pro Full, mas <b>não é venda</b>. Não afeta o lucro; o custo só entra quando o produto vende.
         </div>
       )}
 
       <div className="config-field">
-        <label>📅 Data</label>
+        <label>Data</label>
         <input type="date" value={data} onChange={(e) => setData(e.target.value)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: ".9rem", outline: "none" }} />
       </div>
 
       <div className="config-field">
-        <label>📝 Observação (opcional)</label>
+        <label>Observação (opcional)</label>
         <input type="text" placeholder="Ex: fornecedor João, NF 123" value={obs} onChange={(e) => setObs(e.target.value)} />
       </div>
 
       <div className="modal-btns">
-        <button type="button" className="btn btn-success" onClick={handleSave} disabled={saving}>{saving ? "Salvando…" : "💾 Lançar"}</button>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>✕ Cancelar</button>
+        <button type="button" className="btn btn-success" onClick={handleSave} disabled={saving}>{saving ? "Salvando…" : "Lançar"}</button>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
       </div>
     </Modal>
   );
@@ -546,7 +546,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
   return (
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 6 }}>
-        <span className="panel-title">📈 Previsão de vendas e reposição</span>
+        <span className="panel-title">Previsão de vendas e reposição</span>
         <span className="panel-sub">preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias</span>
       </div>
       {linhas.length === 0 ? (
@@ -638,27 +638,27 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
 
   return (
     <Modal open onClose={onClose}>
-      <div className="modal-icon">📦</div>
+      <div className="modal-icon"></div>
       <div className="modal-title">{isNew ? "Novo Produto" : "Editar Produto"}</div>
 
       <div className="config-field">
-        <label>📦 Nome do produto</label>
+        <label>Nome do produto</label>
         <input type="text" placeholder="Ex: Kit Erva Mate Trot's 1,25kg" value={p.name} onChange={(e) => set({ name: e.target.value })} />
       </div>
 
       <div className="config-field">
-        <label>🔑 SKU (código interno)</label>
+        <label>SKU (código interno)</label>
         <input type="text" placeholder="Ex: 250" value={p.sku ?? ""} onChange={(e) => set({ sku: e.target.value })} />
-        <div className="hint">⚠️ Deve ser <strong>idêntico</strong> ao <code>sku</code> que aparece nos pedidos do ML.</div>
+        <div className="hint">Deve ser <strong>idêntico</strong> ao <code>sku</code> que aparece nos pedidos do ML.</div>
       </div>
 
       <div className="config-field">
-        <label>🏷️ Anúncios / Códigos MLB</label>
+        <label>Anúncios / Códigos MLB</label>
         {mlbs.map((m, i) => (
           <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <input type="text" placeholder="Ex: MLB1234567890" value={m} onChange={(e) => setMlb(i, e.target.value)} style={{ flex: 1 }} />
             {mlbs.length > 1 && (
-              <button type="button" className="btn btn-danger btn-xs" onClick={() => removeMlb(i)} style={{ flexShrink: 0 }}>🗑</button>
+              <button type="button" className="btn btn-danger btn-xs" onClick={() => removeMlb(i)} style={{ flexShrink: 0 }}>Remover</button>
             )}
           </div>
         ))}
@@ -667,19 +667,19 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
       </div>
 
       <div className="config-field">
-        <label>💰 Custo do estoque atual — R$/unidade (inclui o que já está no Full)</label>
+        <label>Custo do estoque atual — R$/unidade (inclui o que já está no Full)</label>
         <input type="number" min="0" step="0.01" placeholder="Ex: 13.80" value={custoStr} onChange={(e) => setCustoStr(e.target.value)} />
         <div className="hint">Informe o custo das unidades que você <strong>já tem hoje</strong> (galpão + Full). A cada <strong>＋ Entrada</strong>, esse custo é ajustado sozinho pela média — vai ficando certinho.</div>
       </div>
 
       <div className="config-field">
-        <label>🧾 Imposto sobre a venda (%)</label>
+        <label>Imposto sobre a venda (%)</label>
         <input type="number" min="0" step="0.01" placeholder="Ex: 8" value={p.imposto ?? ""} onChange={(e) => set({ imposto: e.target.value })} />
         <div className="hint">Percentual de imposto pago sobre o valor da venda.</div>
       </div>
 
       <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(79,142,247,.08)", border: "1px solid rgba(79,142,247,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
-        🏷️ <strong>Preço de venda</strong> e 📥 <strong>retorno</strong>, além de 📢 ADS e 🚚 Envio Full, são puxados automaticamente do Mercado Livre — não precisa cadastrar.
+        <strong>Preço de venda</strong> e <strong>retorno</strong>, além de ADS e Envio Full, são puxados automaticamente do Mercado Livre — não precisa cadastrar.
       </div>
 
       <div className="config-field">
@@ -689,14 +689,14 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
           onChange={(e) => set({ ativo: e.target.value === "ativo" })}
           style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: ".9rem", outline: "none" }}
         >
-          <option value="ativo">✅ Ativo (em estoque)</option>
-          <option value="inativo">🔴 Inativo (fora de estoque)</option>
+          <option value="ativo">Ativo (em estoque)</option>
+          <option value="inativo">Inativo (fora de estoque)</option>
         </select>
       </div>
 
       <div className="modal-btns">
-        <button type="button" className="btn btn-success" onClick={handleSave} disabled={saving}>{saving ? "Salvando…" : "💾 Salvar Produto"}</button>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>✕ Cancelar</button>
+        <button type="button" className="btn btn-success" onClick={handleSave} disabled={saving}>{saving ? "Salvando…" : "Salvar Produto"}</button>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
       </div>
     </Modal>
   );

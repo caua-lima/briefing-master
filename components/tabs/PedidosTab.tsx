@@ -86,9 +86,9 @@ export default function PedidosTab() {
       {/* Topo */}
       <div className="dash-top">
         <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🧾 Pedidos</h2>
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Pedidos</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={atualizar} disabled={loading}>
-            {loading ? "⏳ Atualizando..." : "⟳ Atualizar"}
+            {loading ? "Atualizando..." : "⟳ Atualizar"}
           </button>
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
@@ -98,23 +98,23 @@ export default function PedidosTab() {
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Pedidos</div><div className="k-val">{filtrados.length}</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Faturamento</div><div className="k-val">{fmtBRL(totalValor)}</div><div className="k-sub">bruto</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">↩️ Retorno</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(totalRetorno)}</div><div className="k-sub">líquido que volta</div></div>
+        <div className="kpi k-pos"><div className="k-lbl">Retorno</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(totalRetorno)}</div><div className="k-sub">líquido que volta</div></div>
         <div className={`kpi ${totalLucro >= 0 ? "k-pos" : "k-neg"}`}><div className="k-lbl">Lucro líquido</div><div className="k-val" style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Margem média</div><div className="k-val" style={{ color: "var(--yellow)" }}>{margemMedia.toFixed(1)}%</div></div>
       </div>
 
       {/* Busca + filtros */}
       <input
-        type="text" placeholder="🔍 Buscar por produto ou nº do pedido…" value={busca}
+        type="text" placeholder="Buscar por produto ou nº do pedido…" value={busca}
         onChange={(e) => setBusca(e.target.value)}
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
       />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {([
           ["todos", `Todos (${pedidos.length})`, "var(--accent)"],
-          ["lucro", "✅ Lucrativos", "var(--green)"],
-          ["prejuizo", `⚠️ Prejuízo (${prejuizoN})`, "var(--red)"],
-          ["semcad", `🏷️ Sem cadastro (${semCadN})`, "var(--yellow)"],
+          ["lucro", "Lucrativos", "var(--green)"],
+          ["prejuizo", `Prejuízo (${prejuizoN})`, "var(--red)"],
+          ["semcad", `Sem cadastro (${semCadN})`, "var(--yellow)"],
         ] as const).map(([id, label, cor]) => (
           <button
             key={id} type="button" onClick={() => setFiltro(id)}
@@ -133,7 +133,7 @@ export default function PedidosTab() {
           <b>Retorno</b> = Valor − Taxa ML − Frete (o que volta pra você) · <b>Lucro</b> = Retorno − CMV − Imposto
         </div>
         {loading ? (
-          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>⏳ Carregando pedidos…</div>
+          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando pedidos…</div>
         ) : filtrados.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Nenhum pedido no período.</div>
         ) : (
@@ -143,7 +143,7 @@ export default function PedidosTab() {
                 <tr>
                   <th style={{ textAlign: "left" }}>Data</th>
                   <th style={{ textAlign: "left" }}>Produto</th>
-                  <th>Qtd</th><th>Valor</th><th>↩️ Retorno</th><th>CMV</th><th>Envio Full</th>
+                  <th>Qtd</th><th>Valor</th><th>Retorno</th><th>CMV</th><th>Envio Full</th>
                   <th>Taxa ML</th><th>Imposto</th><th>Lucro Líq.</th><th>Margem</th>
                 </tr>
               </thead>

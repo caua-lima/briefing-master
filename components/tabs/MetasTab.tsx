@@ -36,7 +36,7 @@ export default function MetasTab({
   return (
     <div className="dash">
       <div className="dash-top">
-        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>🎯 Definição de Metas</h2></div>
+        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Definição de Metas</h2></div>
         {canEdit && <button type="button" className="btn btn-purple btn-sm" onClick={() => setOpenNew(true)}>＋ Nova Meta</button>}
       </div>
 
@@ -44,24 +44,24 @@ export default function MetasTab({
       {activeEntry && (
         <>
           <div className="panel-head" style={{ marginBottom: -4 }}>
-            <span className="panel-title">🎯 Meta ativa — {formatMesBR(activeEntry.mes)}</span>
+            <span className="panel-title">Meta ativa — {formatMesBR(activeEntry.mes)}</span>
             <span className="panel-sub">acompanhamento (velocímetros) no Dashboard</span>
           </div>
           <div className="kpi-grid">
-            <div className="kpi k-acc"><div className="k-lbl">🥇 Meta 1</div><div className="k-val">{fmtBRL(activeEntry.meta1)}</div><div className="k-sub">objetivo principal</div></div>
-            <div className="kpi k-warn"><div className="k-lbl">🥈 Meta 2</div><div className="k-val" style={{ color: "var(--yellow)" }}>{activeEntry.meta2 ? fmtBRL(activeEntry.meta2) : "—"}</div></div>
-            <div className="kpi" style={{ borderLeft: "3px solid var(--purple)" }}><div className="k-lbl">🥉 Meta 3</div><div className="k-val" style={{ color: "var(--purple)" }}>{activeEntry.meta3 ? fmtBRL(activeEntry.meta3) : "—"}</div></div>
-            <div className="kpi k-pos"><div className="k-lbl">📈 Margem alvo</div><div className="k-val" style={{ color: "var(--green)" }}>{activeEntry.metaMargem ?? 10}%</div><div className="k-sub">lucro líquido</div></div>
+            <div className="kpi k-acc"><div className="k-lbl">Meta 1</div><div className="k-val">{fmtBRL(activeEntry.meta1)}</div><div className="k-sub">objetivo principal</div></div>
+            <div className="kpi k-warn"><div className="k-lbl">Meta 2</div><div className="k-val" style={{ color: "var(--yellow)" }}>{activeEntry.meta2 ? fmtBRL(activeEntry.meta2) : "—"}</div></div>
+            <div className="kpi" style={{ borderLeft: "3px solid var(--purple)" }}><div className="k-lbl">Meta 3</div><div className="k-val" style={{ color: "var(--purple)" }}>{activeEntry.meta3 ? fmtBRL(activeEntry.meta3) : "—"}</div></div>
+            <div className="kpi k-pos"><div className="k-lbl">Margem alvo</div><div className="k-val" style={{ color: "var(--green)" }}>{activeEntry.metaMargem ?? 10}%</div><div className="k-sub">lucro líquido</div></div>
           </div>
         </>
       )}
 
       <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(167,139,250,.07)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 8, padding: "10px 14px" }}>
-        💡 Defina as metas de faturamento (🥇🥈🥉) e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
+        Defina as metas de faturamento () e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
       </div>
 
       <div className="panel">
-        <div className="panel-title" style={{ marginBottom: 14 }}>📋 Metas cadastradas</div>
+        <div className="panel-title" style={{ marginBottom: 14 }}>Metas cadastradas</div>
         {data.goalEntries.length === 0 ? (
           <div style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>
             Nenhuma meta definida.<br />Clique em <strong>＋ Nova Meta</strong>.
@@ -122,18 +122,18 @@ function GoalEntryRow({
           {entry.label && <span style={{ fontSize: ".78rem", color: "var(--muted)" }}>· {entry.label}</span>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          {chip("🥇", entry.meta1, "#4f8ef7")}
-          {chip("🥈", entry.meta2, "#f7c948")}
-          {chip("🥉", entry.meta3, "#a855f7")}
+          {chip("", entry.meta1, "#4f8ef7")}
+          {chip("", entry.meta2, "#f7c948")}
+          {chip("", entry.meta3, "#a855f7")}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(34,197,94,.12)", border: "1px solid var(--green)", color: "var(--green)", borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
-            📈 margem {entry.metaMargem ?? 10}%
+            margem {entry.metaMargem ?? 10}%
           </span>
         </div>
       </div>
       {canEdit && (
         <div style={{ display: "flex", gap: 6 }}>
-          <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>✏️ Editar</button>
-          <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>🗑</button>
+          <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>Editar</button>
+          <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>Excluir</button>
         </div>
       )}
     </div>
@@ -185,18 +185,18 @@ function GoalEntryModal({
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="modal-icon">🎯</div>
+      <div className="modal-icon"></div>
       <div className="modal-title">
         {entry ? "Editar Meta" : "Nova Meta"}
       </div>
 
       <div className="config-field">
-        <label>📅 Mês / Ano</label>
+        <label>Mês / Ano</label>
         <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} />
       </div>
 
       <div className="config-field">
-        <label>📝 Nome da meta principal (opcional)</label>
+        <label>Nome da meta principal (opcional)</label>
         <input
           type="text"
           placeholder="Ex: Objetivo Principal, Meta agressiva…"
@@ -207,26 +207,26 @@ function GoalEntryModal({
       </div>
 
       <hr className="config-sep" />
-      <div className="config-section-title">🎯 Metas Mensais de Faturamento</div>
+      <div className="config-section-title">Metas Mensais de Faturamento</div>
 
       <div className="config-field">
-        <label>🥇 Meta 1 — Objetivo Principal (R$)</label>
+        <label>Meta 1 — Objetivo Principal (R$)</label>
         <input type="number" min="0" step="100" placeholder="Ex: 15000" value={m1} onChange={(e) => setM1(e.target.value)} />
       </div>
       <div className="config-field">
-        <label>🥈 Meta 2 (opcional, R$)</label>
+        <label>Meta 2 (opcional, R$)</label>
         <input type="number" min="0" step="100" placeholder="Ex: 20000" value={m2} onChange={(e) => setM2(e.target.value)} />
       </div>
       <div className="config-field">
-        <label>🥉 Meta 3 (opcional, R$)</label>
+        <label>Meta 3 (opcional, R$)</label>
         <input type="number" min="0" step="100" placeholder="Ex: 25000" value={m3} onChange={(e) => setM3(e.target.value)} />
       </div>
 
       <hr className="config-sep" />
-      <div className="config-section-title">💰 Meta de Lucro Líquido</div>
+      <div className="config-section-title">Meta de Lucro Líquido</div>
 
       <div className="config-field">
-        <label>📈 Margem de lucro líquido alvo (%)</label>
+        <label>Margem de lucro líquido alvo (%)</label>
         <input type="number" min="0" step="0.5" placeholder="10" value={margem} onChange={(e) => setMargem(e.target.value)} />
         <div className="hint">
           Padrão 10%. A meta diária é calculada automaticamente pela meta mensal (Meta 1 ÷ dias do mês).
@@ -235,10 +235,10 @@ function GoalEntryModal({
 
       <div className="modal-btns">
         <button type="button" className="btn btn-success" onClick={onSave}>
-          💾 Salvar Meta
+          Salvar Meta
         </button>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
-          ✕ Cancelar
+          Cancelar
         </button>
       </div>
     </Modal>
