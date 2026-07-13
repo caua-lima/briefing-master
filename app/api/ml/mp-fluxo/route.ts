@@ -9,15 +9,24 @@ type MpPayment = {
   id?: number | string;
   status?: string;
   status_detail?: string;
+  payment_type_id?: string;
+  installments?: number;
   transaction_amount?: number;
   transaction_amount_refunded?: number;
   money_release_date?: string;
   money_release_status?: string;
-  transaction_details?: { net_received_amount?: number };
+  transaction_details?: { net_received_amount?: number; total_paid_amount?: number };
 };
 
 // Pagamentos retidos pelo MP (disputa / análise) NÃO entram no "a receber".
 const RETIDO = new Set(["in_mediation", "pending_contingency", "pending_review_manual", "in_process"]);
+
+// Dia civil em horário de Brasília (-03:00) a partir de um instante absoluto.
+// A data crua do MP pode vir em outro fuso e jogava o repasse pro dia errado.
+function brDay(ms: number): string {
+  const d = new Date(ms - 3 * 3600 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
 
 /**
  * Fluxo de caixa REAL do Mercado Pago via /v1/payments/search.
@@ -34,8 +43,10 @@ export async function GET(req: Request) {
 
   try {
     const now = Date.now();
+    const urlObj = new URL(req.url);
     // "desde" (ms) = base do cofrinho; liberadoDesde = repasses que caíram depois disso.
-    const desdeMs = Number(new URL(req.url).searchParams.get("desde") ?? 0) || 0;
+    const desdeMs = Number(urlObj.searchParams.get("desde") ?? 0) || 0;
+    const debug = urlObj.searchParams.get("debug") === "1";
 
     let offset = 0;
     const limit = 100;
@@ -44,6 +55,8 @@ export async function GET(req: Request) {
     let totalMp = 0; // total que o MP reporta (diagnóstico)
     const seen = new Set<string>(); // dedupe: a lista é ao vivo e pode repetir na paginação
     const agendaMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
+    // Diagnóstico por pedido (só quando ?debug=1) para conferir contra o MP.
+    const pend: { id: string; dia: string; liquido: number; bruto: number; tipo: string; parcelas: number; relStatus: string }[] = [];
 
     while (offset < 5000) {
       // Filtro de data RELATIVO (NOW-90DAYS) — o formato ISO era rejeitado em
@@ -93,11 +106,12 @@ export async function GET(req: Request) {
         } else if (futuro) {
           aReceber += net;
           pendentes++;
-          const dia = rel.slice(0, 10);
+          const dia = brDay(relMs);
           const cur = agendaMap.get(dia) ?? { data: dia, liquido: 0, pedidos: 0 };
           cur.liquido += net;
           cur.pedidos++;
           agendaMap.set(dia, cur);
+          if (debug) pend.push({ id: pid, dia, liquido: Math.round(net * 100) / 100, bruto: gross, tipo: String(p.payment_type_id ?? ""), parcelas: Number(p.installments ?? 1), relStatus });
         } else {
           liberado += net;
           if (desdeMs > 0 && Number.isFinite(relMs) && relMs >= desdeMs) liberadoDesde += net;
@@ -112,6 +126,7 @@ export async function GET(req: Request) {
       ok: true, via: "mp",
       aReceber, liberado, liberadoDesde, pendentes, aprovados, count, totalMp, agenda,
       retido, retidos, devolvidoTotal, // diagnóstico: o que foi tirado do "a receber"
+      ...(debug ? { pend: pend.sort((a, b) => a.dia.localeCompare(b.dia) || b.liquido - a.liquido) } : {}),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

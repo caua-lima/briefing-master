@@ -68,6 +68,17 @@ export default function FinanceiroTab() {
   const [baseIn, setBaseIn] = useState({ cofrinho: "", cdi: "", saldo: "" });
   const [novaSaida, setNovaSaida] = useState({ data: isoOf(new Date()), valor: "", desc: "" });
   const [loading, setLoading] = useState(true);
+  type DiagPend = { id: string; dia: string; liquido: number; bruto: number; tipo: string; parcelas: number; relStatus: string };
+  const [diagPend, setDiagPend] = useState<DiagPend[] | null>(null);
+  const [diagOpen, setDiagOpen] = useState(false);
+
+  async function carregarDiag() {
+    setDiagOpen(true);
+    try {
+      const r = await authedFetch(`/api/ml/mp-fluxo?desde=${manual.baseTs || 0}&debug=1`, { cache: "no-store" });
+      if (r.ok) { const j = await r.json(); setDiagPend(j.pend ?? []); }
+    } catch { /* ignora */ }
+  }
 
   useEffect(() => watchFinanceiroManual(setManual), []);
 
@@ -256,6 +267,40 @@ export default function FinanceiroTab() {
           {(fluxoMP.count ?? 0) === 0 && (
             <div style={{ padding: "8px 12px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".76rem", color: "var(--muted)", marginTop: 10 }}>
               O MP respondeu, mas trouxe <b>0 pagamentos</b> (total reportado: {fluxoMP.totalMp ?? 0}). Provável que o <b>MP_ACCESS_TOKEN seja de outra aplicação/conta</b> que não é a que recebe as vendas. Precisa ser o token de <b>produção da conta VaZXPress</b> (a mesma que recebe no Mercado Pago).
+            </div>
+          )}
+
+          {/* Conferência por pedido (para bater com o app do MP) */}
+          {(fluxoMP.count ?? 0) > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={carregarDiag}>
+                {diagOpen ? "Conferência por pedido — atualizar" : "Conferência por pedido (vs MP)"}
+              </button>
+              {diagOpen && diagPend && (
+                <>
+                  <div style={{ fontSize: ".72rem", color: "var(--muted)", margin: "8px 0 6px" }}>
+                    {diagPend.length} pedido(s) a receber. Compare o total de cada dia com o calendário do Mercado Pago — as linhas destacadas são parceladas (costumam ter custo de liberação que o MP desconta).
+                  </div>
+                  <div className="table-wrapper" style={{ maxHeight: 340, overflow: "auto" }}>
+                    <table className="tbl-modern">
+                      <thead><tr>
+                        <th>Dia</th><th style={{ textAlign: "left" }}>Pagamento</th><th>Tipo</th><th>Parc.</th><th style={{ textAlign: "right" }}>Líquido (app)</th>
+                      </tr></thead>
+                      <tbody>
+                        {diagPend.map((p) => (
+                          <tr key={p.id} style={p.parcelas > 1 ? { background: "rgba(247,201,72,.07)" } : undefined}>
+                            <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{p.dia.split("-").reverse().join("/")}</td>
+                            <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".68rem", color: "var(--muted)" }}>{p.id}</td>
+                            <td style={{ color: "var(--muted)", fontSize: ".72rem" }}>{p.tipo}</td>
+                            <td style={{ fontWeight: p.parcelas > 1 ? 700 : 400, color: p.parcelas > 1 ? "#f7c948" : "var(--muted)" }}>{p.parcelas}x</td>
+                            <td style={{ textAlign: "right", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.liquido)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
