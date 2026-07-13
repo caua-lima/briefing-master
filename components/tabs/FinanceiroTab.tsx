@@ -68,7 +68,7 @@ export default function FinanceiroTab() {
   const [baseIn, setBaseIn] = useState({ cofrinho: "", cdi: "", saldo: "" });
   const [novaSaida, setNovaSaida] = useState({ data: isoOf(new Date()), valor: "", desc: "" });
   const [loading, setLoading] = useState(true);
-  type DiagPend = { id: string; dia: string; liquido: number; bruto: number; tipo: string; parcelas: number; relStatus: string };
+  type DiagPend = { id: string; dia: string; liquido: number; bruto: number; tipo: string; parcelas: number; taxas: number; charges: number; frete: number; relStatus: string };
   const [diagPend, setDiagPend] = useState<DiagPend[] | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
 
@@ -279,23 +279,49 @@ export default function FinanceiroTab() {
               {diagOpen && diagPend && (
                 <>
                   <div style={{ fontSize: ".72rem", color: "var(--muted)", margin: "8px 0 6px" }}>
-                    {diagPend.length} pedido(s) a receber. Compare o total de cada dia com o calendário do Mercado Pago — as linhas destacadas são parceladas (costumam ter custo de liberação que o MP desconta).
+                    {diagPend.length} pedido(s) a receber · subtotal por dia em amarelo. Colunas <b>Frete</b> e <b>Charges</b> = o que o MP pode descontar na liberação e o líquido não reflete.
                   </div>
-                  <div className="table-wrapper" style={{ maxHeight: 340, overflow: "auto" }}>
+                  <div className="table-wrapper" style={{ maxHeight: 400, overflow: "auto" }}>
                     <table className="tbl-modern">
                       <thead><tr>
-                        <th>Dia</th><th style={{ textAlign: "left" }}>Pagamento</th><th>Tipo</th><th>Parc.</th><th style={{ textAlign: "right" }}>Líquido (app)</th>
+                        <th>Dia</th><th style={{ textAlign: "left" }}>Pagamento</th><th>Tipo</th><th>Parc.</th>
+                        <th style={{ textAlign: "right" }}>Frete</th><th style={{ textAlign: "right" }}>Charges</th><th style={{ textAlign: "right" }}>Líquido (app)</th>
                       </tr></thead>
                       <tbody>
-                        {diagPend.map((p) => (
-                          <tr key={p.id} style={p.parcelas > 1 ? { background: "rgba(247,201,72,.07)" } : undefined}>
-                            <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{p.dia.split("-").reverse().join("/")}</td>
-                            <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".68rem", color: "var(--muted)" }}>{p.id}</td>
-                            <td style={{ color: "var(--muted)", fontSize: ".72rem" }}>{p.tipo}</td>
-                            <td style={{ fontWeight: p.parcelas > 1 ? 700 : 400, color: p.parcelas > 1 ? "#f7c948" : "var(--muted)" }}>{p.parcelas}x</td>
-                            <td style={{ textAlign: "right", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.liquido)}</td>
-                          </tr>
-                        ))}
+                        {(() => {
+                          const tot = new Map<string, { t: number; frete: number; charges: number; n: number }>();
+                          for (const p of diagPend) {
+                            const e = tot.get(p.dia) ?? { t: 0, frete: 0, charges: 0, n: 0 };
+                            e.t += p.liquido; e.frete += p.frete; e.charges += p.charges; e.n++;
+                            tot.set(p.dia, e);
+                          }
+                          return diagPend.flatMap((p, i) => {
+                            const first = i === 0 || diagPend[i - 1].dia !== p.dia;
+                            const agg = tot.get(p.dia)!;
+                            const diaBR = p.dia.split("-").reverse().join("/");
+                            const rows = [];
+                            if (first) rows.push(
+                              <tr key={"h" + p.dia} style={{ background: "var(--surface2)" }}>
+                                <td colSpan={4} style={{ fontWeight: 800 }}>{diaBR} · {agg.n} ped.</td>
+                                <td style={{ textAlign: "right", color: agg.frete ? "var(--red)" : "var(--muted)" }}>{agg.frete ? fmtBRL(agg.frete) : "—"}</td>
+                                <td style={{ textAlign: "right", color: agg.charges ? "var(--red)" : "var(--muted)" }}>{agg.charges ? fmtBRL(agg.charges) : "—"}</td>
+                                <td style={{ textAlign: "right", fontWeight: 800, color: "var(--yellow)" }}>{fmtBRL(agg.t)}</td>
+                              </tr>,
+                            );
+                            rows.push(
+                              <tr key={p.id}>
+                                <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{diaBR}</td>
+                                <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".68rem", color: "var(--muted)" }}>{p.id}</td>
+                                <td style={{ color: "var(--muted)", fontSize: ".72rem" }}>{p.tipo}</td>
+                                <td style={{ color: p.parcelas > 1 ? "#f7c948" : "var(--muted)" }}>{p.parcelas}x</td>
+                                <td style={{ textAlign: "right", color: p.frete ? "var(--red)" : "var(--muted)" }}>{p.frete ? fmtBRL(p.frete) : "—"}</td>
+                                <td style={{ textAlign: "right", color: p.charges ? "var(--red)" : "var(--muted)" }}>{p.charges ? fmtBRL(p.charges) : "—"}</td>
+                                <td style={{ textAlign: "right", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.liquido)}</td>
+                              </tr>,
+                            );
+                            return rows;
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </div>

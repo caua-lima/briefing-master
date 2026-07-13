@@ -13,8 +13,11 @@ type MpPayment = {
   installments?: number;
   transaction_amount?: number;
   transaction_amount_refunded?: number;
+  shipping_amount?: number;
   money_release_date?: string;
   money_release_status?: string;
+  fee_details?: { type?: string; amount?: number; fee_payer?: string }[];
+  charges_details?: { name?: string; type?: string; amounts?: { original?: number; refunded?: number } }[];
   transaction_details?: { net_received_amount?: number; total_paid_amount?: number };
 };
 
@@ -56,7 +59,7 @@ export async function GET(req: Request) {
     const seen = new Set<string>(); // dedupe: a lista é ao vivo e pode repetir na paginação
     const agendaMap = new Map<string, { data: string; liquido: number; pedidos: number }>();
     // Diagnóstico por pedido (só quando ?debug=1) para conferir contra o MP.
-    const pend: { id: string; dia: string; liquido: number; bruto: number; tipo: string; parcelas: number; relStatus: string }[] = [];
+    const pend: { id: string; dia: string; liquido: number; bruto: number; tipo: string; parcelas: number; taxas: number; charges: number; frete: number; relStatus: string }[] = [];
 
     while (offset < 5000) {
       // Filtro de data RELATIVO (NOW-90DAYS) — o formato ISO era rejeitado em
@@ -111,7 +114,12 @@ export async function GET(req: Request) {
           cur.liquido += net;
           cur.pedidos++;
           agendaMap.set(dia, cur);
-          if (debug) pend.push({ id: pid, dia, liquido: Math.round(net * 100) / 100, bruto: gross, tipo: String(p.payment_type_id ?? ""), parcelas: Number(p.installments ?? 1), relStatus });
+          if (debug) {
+            const taxas = (p.fee_details ?? []).reduce((s, f) => s + Number(f.amount ?? 0), 0);
+            const charges = (p.charges_details ?? []).reduce((s, c) => s + (Number(c.amounts?.original ?? 0) - Number(c.amounts?.refunded ?? 0)), 0);
+            const frete = Number(p.shipping_amount ?? 0);
+            pend.push({ id: pid, dia, liquido: Math.round(net * 100) / 100, bruto: gross, tipo: String(p.payment_type_id ?? ""), parcelas: Number(p.installments ?? 1), taxas: Math.round(taxas * 100) / 100, charges: Math.round(charges * 100) / 100, frete: Math.round(frete * 100) / 100, relStatus });
+          }
         } else {
           liberado += net;
           if (desdeMs > 0 && Number.isFinite(relMs) && relMs >= desdeMs) liberadoDesde += net;
