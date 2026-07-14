@@ -19,12 +19,17 @@ type Modo = "pub" | "geral";
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+// Mês atual até hoje (igual ao painel do Mercado Ads) — do dia 1º até agora.
+function mesAteHoje() {
+  const d = new Date();
+  return { from: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, to: isoOf(d) };
+}
 const num = (n: number, d = 0) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const corRoas = (r: number) => (r >= 3 ? "var(--green)" : r >= 1.5 ? "var(--yellow)" : "var(--red)");
 const corAcos = (a: number, tem: boolean) => (!tem ? "var(--muted)" : a <= 25 ? "var(--green)" : a <= 45 ? "var(--yellow)" : "var(--red)");
 
 export default function AdsTab() {
-  const [range, setRange] = useState(() => ({ from: isoOf(new Date(Date.now() - 29 * 86400000)), to: isoOf(new Date()) }));
+  const [range, setRange] = useState(() => mesAteHoje());
   const [modo, setModo] = useState<Modo>("pub");
   const [items, setItems] = useState<AdItem[]>([]);
   const [loading, setLoading] = useState(true);
