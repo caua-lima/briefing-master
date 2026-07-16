@@ -34,7 +34,12 @@ export default function AdsTab() {
   const [items, setItems] = useState<AdItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [diag, setDiag] = useState<{ advertisersStatus?: number; itemsStatus?: number; itemsStatusV1?: number; itemsStatusV2?: number; periodo?: { from?: string; to?: string } } | null>(null);
+  type Tentativa = { tentativa: string; status?: number; body?: string; erro?: string };
+  const [diag, setDiag] = useState<{
+    advertisersStatus?: number; itemsStatus?: number; itemsStatusV1?: number; itemsStatusV2?: number;
+    advertiserId?: number | string; conta?: { tokenNickname?: string; mesmaConta?: boolean };
+    tentativas?: Tentativa[]; periodo?: { from?: string; to?: string };
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -115,10 +120,36 @@ export default function AdsTab() {
             const adv = diag?.advertisersStatus;
             const it = diag?.itemsStatus;
             if (adv === 401 || adv === 403) return (<>O token do Mercado Livre <b>não tem permissão de Publicidade / Mercado Ads</b>. Reconecte a conta concedendo esse acesso.</>);
-            if (it === 404) return (<>O Mercado Ads recusou a busca dos anúncios (404) em <b>{range.from.split("-").reverse().join("/")} a {range.to.split("-").reverse().join("/")}</b>, mesmo com o token autorizado (anunciante OK). Tentei a API v2 ({String(diag?.itemsStatusV2 ?? "—")}) e a v1 ({String(diag?.itemsStatusV1 ?? "—")}). Se as duas deram 404, o Product Ads pode estar desativado na conta — confira em <b>Mercado Livre → Anúncios → Publicidade</b>.</>);
+            if (it === 404) return (<>O Mercado Ads recusou a busca dos anúncios (404) em <b>{range.from.split("-").reverse().join("/")} a {range.to.split("-").reverse().join("/")}</b>. Conta e permissão estão OK ({diag?.conta?.tokenNickname ?? "—"}, anunciante {String(diag?.advertiserId ?? "—")}). Abaixo, o que cada recurso do ML respondeu:</>);
             return (<>Não consegui puxar os Ads agora. O token está autorizado (anunciante {String(diag?.advertisersStatus ?? "—")}), então deve ser instabilidade do Mercado Ads — tente <b>Atualizar</b> em instantes.</>);
           })()}
-          <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 180, overflow: "auto" }}>{erro}</pre>
+
+          {/* Sonda por recurso — o dado que importa, visível sem rolar JSON */}
+          {diag?.tentativas?.length ? (
+            <div className="table-wrapper" style={{ marginTop: 10, border: "1px solid rgba(239,68,68,.25)" }}>
+              <table className="tbl-modern">
+                <thead><tr>
+                  <th style={{ textAlign: "left" }}>Recurso do ML</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "left" }}>Resposta do ML</th>
+                </tr></thead>
+                <tbody>
+                  {diag.tentativas.map((t) => (
+                    <tr key={t.tentativa}>
+                      <td style={{ textAlign: "left", fontWeight: 600, whiteSpace: "nowrap" }}>{t.tentativa}</td>
+                      <td style={{ fontWeight: 800, color: t.status && t.status < 300 ? "var(--green)" : "var(--red)" }}>{t.status ?? "erro"}</td>
+                      <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".66rem", color: "var(--muted)", wordBreak: "break-all" }}>{t.body || t.erro || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: "pointer", fontSize: ".72rem", color: "var(--muted)" }}>Diagnóstico completo (JSON)</summary>
+            <pre style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 300, overflow: "auto" }}>{erro}</pre>
+          </details>
         </div>
       ) : (
         <>
