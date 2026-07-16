@@ -77,14 +77,14 @@ export async function GET(req: Request) {
     try {
       ads = from <= adsTo ? await getAdsFullByItem(from, adsTo) : [];
     } catch {
-      // O ML costuma devolver 404 quando o período termina no dia corrente (os
-      // dados de hoje ainda não fecharam). Tenta de novo terminando ontem.
+      // Pode ser o período terminando no dia corrente (dados de hoje ainda não
+      // fecharam do lado do ML). Tenta de novo terminando ontem.
       const ontem = todayISO(1);
       try {
         ads = from <= ontem ? await getAdsFullByItem(from, ontem) : [];
-      } catch {
+      } catch (e2) {
         const diag = await probeAds(from, adsTo);
-        return NextResponse.json({ error: "ads_failed", diag, from, to: adsTo, items: [] });
+        return NextResponse.json({ error: "ads_failed", details: String(e2).slice(0, 200), diag, from, to: adsTo, items: [] });
       }
     }
 
