@@ -99,6 +99,50 @@ function itemIdDe(row: Record<string, unknown>): string {
 const base = (adv: Adv) => `${ML_API}/marketplace/advertising/${adv.siteId}/advertisers/${adv.id}/product_ads`;
 const legado = (adv: Adv) => `${ML_API}/advertising/advertisers/${adv.id}/product_ads`;
 
+const ehMlb = (s: string) => /^MLB\d+$/i.test(s);
+
+// Cache do mapa campanha → MLB (o mesmo TTL do anunciante)
+let mapaCache: { mapa: Record<string, string>; at: number } | null = null;
+
+/**
+ * Mapa campaign_id → MLB, montado perguntando ao ML a qual campanha cada um dos
+ * nossos anúncios pertence (/advertising/product_ads/items/{MLB} devolve
+ * campaign_id). Serve para traduzir linhas de CAMPANHA em anúncio de verdade —
+ * sem isso o cruzamento com as vendas (que é por MLB) não acha nada.
+ */
+async function mapaCampanhaMlb(token: string, mlbs: string[]): Promise<Record<string, string>> {
+  if (mapaCache && Date.now() - mapaCache.at < ADV_TTL) return mapaCache.mapa;
+  const mapa: Record<string, string> = {};
+  await Promise.all(
+    mlbs.map(async (mlb) => {
+      try {
+        const r = await get(`${ML_API}/advertising/product_ads/items/${mlb}`, token);
+        if (!r.ok) return;
+        const j = (await r.json()) as Record<string, unknown>;
+        const cid = texto(j.campaign_id);
+        if (cid) mapa[cid] = mlb.toUpperCase();
+      } catch { /* item fora de ads: ignora */ }
+    }),
+  );
+  if (Object.keys(mapa).length > 0) mapaCache = { mapa, at: Date.now() };
+  return mapa;
+}
+
+/** Troca id de campanha pelo MLB do anúncio quando a linha não veio com MLB. */
+async function resolverMlb(
+  rows: Record<string, unknown>[], token: string, mlbs: string[],
+): Promise<Record<string, unknown>[]> {
+  if (mlbs.length === 0 || rows.every((r) => ehMlb(itemIdDe(r)))) return rows;
+  const mapa = await mapaCampanhaMlb(token, mlbs);
+  if (Object.keys(mapa).length === 0) return rows; // sem mapa: mantém como está
+  return rows.map((r) => {
+    const id = itemIdDe(r);
+    if (ehMlb(id)) return r;
+    const mlb = mapa[texto(r.campaign_id) || id];
+    return mlb ? { ...r, item_id: mlb } : r;
+  });
+}
+
 /** Busca paginada de um recurso, tentando as URLs candidatas em ordem. */
 async function buscar(urls: (offset: number) => string[], token: string): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
@@ -172,9 +216,13 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
  * Chave do mapa = item_id em UPPERCASE (ex.: "MLB1234567890").
  * Lança em falha — quem chama decide o que mostrar (nunca 0 como se fosse real).
  */
-export async function getAdsSpendByItem(from: string, to: string): Promise<Record<string, number>> {
+export async function getAdsSpendByItem(
+  from: string, to: string, mlbs: string[] = [],
+): Promise<Record<string, number>> {
+  const token = await getValidMlAccessToken();
+  const rows = await resolverMlb(await adItemRows(from, to, "cost"), token, mlbs);
   const adsByItem: Record<string, number> = {};
-  for (const row of await adItemRows(from, to, "cost")) {
+  for (const row of rows) {
     const itemId = itemIdDe(row);
     if (itemId) adsByItem[itemId] = (adsByItem[itemId] ?? 0) + metrica(row, "cost");
   }
@@ -202,7 +250,10 @@ export type AdItemFull = {
 const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amount,indirect_amount,direct_items_quantity,advertising_items_quantity";
 
 /** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
-export async function getAdsFullByItem(from: string, to: string): Promise<AdItemFull[]> {
+export async function getAdsFullByItem(
+  from: string, to: string, mlbs: string[] = [],
+): Promise<AdItemFull[]> {
+  const token = await getValidMlAccessToken();
   let rows: Record<string, unknown>[];
   try {
     rows = await adItemRows(from, to, AD_METRICS);
@@ -211,6 +262,7 @@ export async function getAdsFullByItem(from: string, to: string): Promise<AdItem
     if (String(e).includes("ml_ads_http_4")) rows = await adItemRows(from, to, "clicks,prints,ctr,cost,cpc,acos");
     else throw e;
   }
+  rows = await resolverMlb(rows, token, mlbs);
   return rows.map((row) => ({
     itemId: itemIdDe(row),
     title: String(row.title ?? row.name ?? row.campaign_name ?? ""),

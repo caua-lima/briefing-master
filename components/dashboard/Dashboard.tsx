@@ -405,7 +405,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
       <table className="tbl-modern">
         <thead>
           <tr>
-            <th>Anúncio</th><th>Qtd</th><th>Retorno</th><th>CMV</th><th>Envio Full</th>
+            <th>Anúncio</th><th>Qtd</th><th>Retorno</th><th>CMV</th><th>Frete</th>
             <th>Taxa ML</th><th>Imposto</th><th>ADS</th><th>ROAS</th><th>Lucro Bruto</th><th>Lucro Líq.</th><th>Margem</th>
           </tr>
         </thead>
@@ -671,7 +671,7 @@ export default function Dashboard({ data }: Props) {
 
   const custoRows: { label: string; value: number; color: string; indisponivel?: boolean }[] = [
     { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0, color: COST_COLORS.cmv },
-    { label: "Envio Full", value: mlMetrics?.totalEnvio ?? 0, color: COST_COLORS.full },
+    { label: "Frete (envio)", value: mlMetrics?.totalEnvio ?? 0, color: COST_COLORS.full },
     { label: "Taxas ML (comissão)", value: mlMetrics?.totalTaxasML ?? 0, color: COST_COLORS.taxa },
     { label: "Imposto sobre venda", value: mlMetrics?.totalImposto ?? 0, color: COST_COLORS.imp },
     { label: "ADS (publicidade)", value: mlMetrics?.totalAds ?? 0, color: COST_COLORS.ads, indisponivel: adsFalhou },
@@ -843,7 +843,7 @@ export default function Dashboard({ data }: Props) {
               <span className="panel-title">Lucro por Anúncio</span>
             </div>
             <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 14 }}>
-              Lucro líq. = Retorno − CMV − Envio Full − Taxa ML − Imposto − ADS · valores puxados do Mercado Livre
+              Lucro líq. = Retorno − CMV − Frete − Taxa ML − Imposto − ADS · o frete é o que você paga no envio (Full ou próprio)
             </div>
             <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
           </div>

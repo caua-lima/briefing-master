@@ -406,3 +406,28 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .drp-pop{left:0;right:0;width:auto}
   .drp-cals{justify-content:center}
 }
+
+/* ================= Celular: ajustes finais ================= */
+@media(max-width:720px){
+  /* iOS dá zoom em qualquer input com fonte < 16px ao focar. Precisa de
+     !important: vários inputs definem a fonte por style inline. */
+  input,select,textarea{font-size:16px!important}
+  /* nenhuma tabela/painel pode empurrar a página pro lado */
+  .table-wrapper{-webkit-overflow-scrolling:touch}
+  .panel,.kpi,.hero,.dash-2col>*,section{min-width:0;max-width:100%}
+  /* topo: conta + botões sem estourar */
+  .dash-top-left{flex-wrap:wrap;min-width:0}
+  .dash-top-left h2{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  /* números grandes não quebram o card */
+  .kpi .k-val,.hero-stat .val{overflow-wrap:anywhere}
+}
+
+@media(max-width:560px){
+  /* dois calendários não cabem; empilhados deixam o popup gigante → mostra 1 */
+  .drp-cals .drp-cal + .drp-cal{display:none}
+  .drp-cal{min-width:0;width:100%}
+  .drp-pop{padding:12px;max-height:78vh;overflow-y:auto}
+  .drp-preset{padding:5px 10px;font-size:.72rem}
+  /* modal ocupa a tela toda com folga, rolando por dentro */
+  .modal-box{width:96%;max-height:88vh}
+}

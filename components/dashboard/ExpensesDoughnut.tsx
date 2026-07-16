@@ -41,7 +41,7 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
   }
 
   const data = {
-    labels: ["Produto (CMV)", "Envio Full", "Taxas ML", "Imposto", "Ads", "Operacional"],
+    labels: ["Produto (CMV)", "Frete (envio)", "Taxas ML", "Imposto", "Ads", "Operacional"],
     datasets: [
       {
         data: [produto, envio, taxasML, imposto, ads, operacional],

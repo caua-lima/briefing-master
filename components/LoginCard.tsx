@@ -49,8 +49,17 @@ export default function LoginCard() {
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>📊</div>
-        <h2>Controle de Lucro ML</h2>
+        <div
+          style={{
+            width: 46, height: 46, borderRadius: 12, margin: "0 auto 14px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
+            color: "#fff", fontWeight: 800, fontSize: "1.15rem", letterSpacing: "-.02em",
+          }}
+        >
+          ML
+        </div>
+        <h2>Dashboard Mercado Livre</h2>
         <p>Entre com e-mail e senha ou com sua conta Google.</p>
 
         <form onSubmit={handleEmail} style={{ textAlign: "left", marginBottom: 6 }}>
@@ -71,7 +80,7 @@ export default function LoginCard() {
           {busy ? "Entrando…" : "Entrar com Google"}
         </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleGoogle(true)} disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
-          🔄 Usar outra conta Google
+          Usar outra conta Google
         </button>
 
         {err && <p style={{ color: "var(--red)", fontSize: ".82rem", marginTop: 12 }}>{err}</p>}
