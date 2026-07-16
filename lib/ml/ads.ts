@@ -1,5 +1,6 @@
 import "server-only";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
+import { SELLER_ID } from "@/lib/ml/orders";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -172,6 +173,24 @@ export async function getAdsFullByItem(from: string, to: string): Promise<AdItem
 export async function probeAds(from: string, to: string): Promise<Record<string, unknown>> {
   try {
     const token = await getValidMlAccessToken();
+
+    // De qual conta ML é esse token? Comparar com o seller_id usado nos pedidos
+    // revela se Ads e Pedidos estão olhando para contas diferentes.
+    const meRes = await fetch(`${ML_API}/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const me = (await meRes.json().catch(() => null)) as
+      | { id?: number; nickname?: string; site_id?: string }
+      | null;
+    const conta = {
+      tokenUserId: me?.id ?? null,
+      tokenNickname: me?.nickname ?? null,
+      tokenSite: me?.site_id ?? null,
+      sellerIdDosPedidos: SELLER_ID,
+      mesmaConta: me?.id != null ? String(me.id) === String(SELLER_ID) : null,
+    };
+
     const advRes = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
       headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
       cache: "no-store",
@@ -215,8 +234,10 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
 
     return {
       periodo: { from, to },
+      conta,
       advertisersStatus: advRes.status,
       advertisersCount: advertisers.length,
+      advertisers, // lista crua: mostra todos os anunciantes que o token enxerga
       advertiserId,
       advertiserSite: (mlb ?? advertisers[0])?.site_id ?? null,
       itemsStatus: itemsStatusV2 ?? itemsStatusV1,
