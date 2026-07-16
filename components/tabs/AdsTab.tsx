@@ -34,7 +34,7 @@ export default function AdsTab() {
   const [items, setItems] = useState<AdItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [diag, setDiag] = useState<{ advertisersStatus?: number; itemsStatus?: number; periodo?: { from?: string; to?: string } } | null>(null);
+  const [diag, setDiag] = useState<{ advertisersStatus?: number; itemsStatus?: number; itemsStatusV1?: number; itemsStatusV2?: number; periodo?: { from?: string; to?: string } } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -115,7 +115,7 @@ export default function AdsTab() {
             const adv = diag?.advertisersStatus;
             const it = diag?.itemsStatus;
             if (adv === 401 || adv === 403) return (<>O token do Mercado Livre <b>não tem permissão de Publicidade / Mercado Ads</b>. Reconecte a conta concedendo esse acesso.</>);
-            if (it === 404) return (<>O Mercado Ads não retornou dados para <b>{range.from.split("-").reverse().join("/")} a {range.to.split("-").reverse().join("/")}</b>. Normalmente é período com <b>data futura</b> (o ML não aceita) ou sem campanha ativa. Tente um período que termine ontem ou antes.</>);
+            if (it === 404) return (<>O Mercado Ads recusou a busca dos anúncios (404) em <b>{range.from.split("-").reverse().join("/")} a {range.to.split("-").reverse().join("/")}</b>, mesmo com o token autorizado (anunciante OK). Tentei a API v2 ({String(diag?.itemsStatusV2 ?? "—")}) e a v1 ({String(diag?.itemsStatusV1 ?? "—")}). Se as duas deram 404, o Product Ads pode estar desativado na conta — confira em <b>Mercado Livre → Anúncios → Publicidade</b>.</>);
             return (<>Não consegui puxar os Ads agora. O token está autorizado (anunciante {String(diag?.advertisersStatus ?? "—")}), então deve ser instabilidade do Mercado Ads — tente <b>Atualizar</b> em instantes.</>);
           })()}
           <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 180, overflow: "auto" }}>{erro}</pre>

@@ -31,14 +31,27 @@ async function getAdvertiserId(token: string): Promise<string | null> {
   return id;
 }
 
-async function fetchJsonRetry(url: string, token: string, tries = 3): Promise<Response> {
-  let res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" });
+async function fetchJsonRetry(url: string, token: string, apiVersion: string, tries = 3): Promise<Response> {
+  const opts: RequestInit = { headers: { Authorization: `Bearer ${token}`, "Api-Version": apiVersion }, cache: "no-store" };
+  let res = await fetch(url, opts);
   // 429 (rate limit) / 5xx → espera curta e tenta de novo
   for (let i = 1; i < tries && (res.status === 429 || res.status >= 500); i++) {
     await new Promise((r) => setTimeout(r, 400 * i));
-    res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" });
+    res = await fetch(url, opts);
   }
   return res;
+}
+
+/**
+ * Product Ads: o ML migrou esses recursos para a Api-Version 2 e descontinuou a
+ * 1, que passou a responder 404. Usa a 2 e só cai pra 1 se a 2 não existir na
+ * conta — assim funciona nos dois cenários sem depender de qual já migrou.
+ */
+async function fetchAds(url: string, token: string): Promise<Response> {
+  const v2 = await fetchJsonRetry(url, token, "2");
+  if (v2.status !== 404) return v2;
+  const v1 = await fetchJsonRetry(url, token, "1", 1);
+  return v1.ok ? v1 : v2;
 }
 
 /**
@@ -46,7 +59,7 @@ async function fetchJsonRetry(url: string, token: string, tries = 3): Promise<Re
  * Chave do mapa = item_id em UPPERCASE (ex.: "MLB1234567890").
  *
  * Endpoint: /advertising/advertisers/{advertiser_id}/product_ads/items
- *   headers: Authorization + Api-Version: 1
+ *   headers: Authorization + Api-Version: 2 (a 1 foi descontinuada → 404)
  *   query:   date_from, date_to (YYYY-MM-DD, limite de 90 dias), metrics, limit, offset
  */
 export async function getAdsSpendByItem(
@@ -66,7 +79,7 @@ export async function getAdsSpendByItem(
       `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
       `date_from=${from}&date_to=${to}&metrics=cost&limit=${limit}&offset=${offset}`;
 
-    const res = await fetchJsonRetry(url, token);
+    const res = await fetchAds(url, token);
     if (!res.ok) throw new Error(`ml_ads_failed: ${await res.text()}`);
 
     const j = (await res.json()) as {
@@ -123,7 +136,7 @@ export async function getAdsFullByItem(from: string, to: string): Promise<AdItem
     const url =
       `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
       `date_from=${from}&date_to=${to}&metrics=${AD_METRICS}&limit=${limit}&offset=${offset}`;
-    const res = await fetchJsonRetry(url, token);
+    const res = await fetchAds(url, token);
     if (!res.ok) throw new Error(`ml_ads_full_failed: ${res.status} ${await res.text()}`);
     const j = (await res.json()) as { results?: Record<string, unknown>[]; paging?: { total?: number } };
     const results = Array.isArray(j?.results) ? j.results : [];
@@ -168,15 +181,20 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
     const mlb = advertisers.find((a) => String(a?.site_id ?? "").toUpperCase() === "MLB");
     const advertiserId = (mlb ?? advertisers[0])?.advertiser_id ?? null;
 
+    // Testa as duas versões da API: o ML descontinuou a 1 (404) e migrou pra 2.
+    let itemsStatusV2: number | null = null;
+    let itemsStatusV1: number | null = null;
     let itemsStatus: number | null = null;
     let itemsSample: unknown = null;
     if (advertiserId != null) {
-      const r = await fetch(
-        `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?date_from=${from}&date_to=${to}&metrics=cost&limit=3`,
-        { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" },
-      );
-      itemsStatus = r.status;
-      itemsSample = await r.json().catch(() => null);
+      const itemsUrl = `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?date_from=${from}&date_to=${to}&metrics=cost&limit=3`;
+      const r2 = await fetch(itemsUrl, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "2" }, cache: "no-store" });
+      itemsStatusV2 = r2.status;
+      itemsSample = await r2.json().catch(() => null);
+      const r1 = await fetch(itemsUrl, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" });
+      itemsStatusV1 = r1.status;
+      if (r1.ok && !r2.ok) itemsSample = await r1.json().catch(() => null);
+      itemsStatus = r2.ok ? r2.status : r1.status; // status efetivo
     }
 
     return {
@@ -185,6 +203,8 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
       advertisersCount: advertisers.length,
       advertiserId,
       itemsStatus,
+      itemsStatusV2,
+      itemsStatusV1,
       itemsSample,
     };
   } catch (e) {
