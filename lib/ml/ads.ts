@@ -181,20 +181,36 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
     const mlb = advertisers.find((a) => String(a?.site_id ?? "").toUpperCase() === "MLB");
     const advertiserId = (mlb ?? advertisers[0])?.advertiser_id ?? null;
 
-    // Testa as duas versões da API: o ML descontinuou a 1 (404) e migrou pra 2.
+    // Sonda as variações do recurso e captura o CORPO como texto — o ML manda a
+    // causa real ali (ex.: "No permissions found for user_id"), e ler como JSON
+    // estava descartando essa mensagem.
+    const H = (v: string) => ({ Authorization: `Bearer ${token}`, "Api-Version": v });
+    const tentativas: Record<string, unknown>[] = [];
     let itemsStatusV2: number | null = null;
     let itemsStatusV1: number | null = null;
-    let itemsStatus: number | null = null;
-    let itemsSample: unknown = null;
+
     if (advertiserId != null) {
-      const itemsUrl = `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?date_from=${from}&date_to=${to}&metrics=cost&limit=3`;
-      const r2 = await fetch(itemsUrl, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "2" }, cache: "no-store" });
-      itemsStatusV2 = r2.status;
-      itemsSample = await r2.json().catch(() => null);
-      const r1 = await fetch(itemsUrl, { headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" }, cache: "no-store" });
-      itemsStatusV1 = r1.status;
-      if (r1.ok && !r2.ok) itemsSample = await r1.json().catch(() => null);
-      itemsStatus = r2.ok ? r2.status : r1.status; // status efetivo
+      const base = `${ML_API}/advertising/advertisers/${advertiserId}/product_ads`;
+      const q = `date_from=${from}&date_to=${to}&metrics=cost&limit=3`;
+      const alvos: { nome: string; url: string; v: string }[] = [
+        { nome: "items v2", url: `${base}/items?${q}`, v: "2" },
+        { nome: "items v1", url: `${base}/items?${q}`, v: "1" },
+        { nome: "campaigns v2", url: `${base}/campaigns?${q}`, v: "2" },
+        { nome: "campaigns v1", url: `${base}/campaigns?${q}`, v: "1" },
+        { nome: "campaigns v2 sem datas", url: `${base}/campaigns?limit=3`, v: "2" },
+        { nome: "advertiser v2", url: `${ML_API}/advertising/advertisers/${advertiserId}`, v: "2" },
+      ];
+      for (const a of alvos) {
+        try {
+          const r = await fetch(a.url, { headers: H(a.v), cache: "no-store" });
+          const body = (await r.text().catch(() => "")).slice(0, 180);
+          tentativas.push({ tentativa: a.nome, status: r.status, body });
+          if (a.nome === "items v2") itemsStatusV2 = r.status;
+          if (a.nome === "items v1") itemsStatusV1 = r.status;
+        } catch (e) {
+          tentativas.push({ tentativa: a.nome, erro: String(e).slice(0, 120) });
+        }
+      }
     }
 
     return {
@@ -202,10 +218,11 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
       advertisersStatus: advRes.status,
       advertisersCount: advertisers.length,
       advertiserId,
-      itemsStatus,
+      advertiserSite: (mlb ?? advertisers[0])?.site_id ?? null,
+      itemsStatus: itemsStatusV2 ?? itemsStatusV1,
       itemsStatusV2,
       itemsStatusV1,
-      itemsSample,
+      tentativas,
     };
   } catch (e) {
     return { error: String(e) };
