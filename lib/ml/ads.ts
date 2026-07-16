@@ -6,30 +6,60 @@ const ML_API = "https://api.mercadolibre.com";
 
 type Advertiser = { advertiser_id?: number | string; site_id?: string; account_name?: string };
 
-// Cache do advertiser_id por lambda quente (evita resolver a cada chamada)
-let advCache: { id: string | null; at: number } | null = null;
+type Adv = { id: string; siteId: string };
+
+// Cache do anunciante por lambda quente (evita resolver a cada chamada)
+let advCache: { adv: Adv | null; at: number } | null = null;
 const ADV_TTL = 10 * 60 * 1000;
 
 /**
- * Resolve o advertiser_id da conta (NÃO é o seller_id). O ML exige buscar o
- * anunciante via /advertising/advertisers?product_id=PADS com header Api-Version.
+ * Resolve o anunciante da conta (NÃO é o seller_id) e o site dele. O site entra
+ * na URL dos recursos de Product Ads, por isso precisa vir junto.
  * Prioriza o anunciante do site MLB (Brasil).
  */
-async function getAdvertiserId(token: string): Promise<string | null> {
-  if (advCache && Date.now() - advCache.at < ADV_TTL) return advCache.id;
+async function getAdvertiser(token: string): Promise<Adv | null> {
+  if (advCache && Date.now() - advCache.at < ADV_TTL) return advCache.adv;
 
   const res = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
     headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
     cache: "no-store",
   });
-  if (!res.ok) return advCache?.id ?? null; // mantém cache anterior em falha transitória
+  if (!res.ok) return advCache?.adv ?? null; // mantém cache anterior em falha transitória
   const j = (await res.json()) as { advertisers?: Advertiser[] };
   const list = Array.isArray(j?.advertisers) ? j.advertisers : [];
   const mlb = list.find((a) => String(a.site_id ?? "").toUpperCase() === "MLB");
   const chosen = mlb ?? list[0];
-  const id = chosen?.advertiser_id != null ? String(chosen.advertiser_id) : null;
-  if (id) advCache = { id, at: Date.now() }; // NÃO cacheia null (evita travar em 0)
-  return id;
+  if (chosen?.advertiser_id == null) return null;
+  const adv: Adv = {
+    id: String(chosen.advertiser_id),
+    siteId: String(chosen.site_id ?? "MLB").toUpperCase(),
+  };
+  advCache = { adv, at: Date.now() }; // NÃO cacheia null (evita travar em 0)
+  return adv;
+}
+
+/**
+ * URLs do recurso de Product Ads. O ML moveu esses recursos para
+ * /marketplace/advertising/{site}/advertisers/{id}/product_ads/{recurso}/search
+ * e removeu o path antigo (/advertising/advertisers/{id}/product_ads/{recurso}),
+ * que passou a responder 404. Mantém o antigo como fallback.
+ */
+function adsUrls(adv: Adv, recurso: "items" | "campaigns", query: string): string[] {
+  return [
+    `${ML_API}/marketplace/advertising/${adv.siteId}/advertisers/${adv.id}/product_ads/${recurso}/search?${query}`,
+    `${ML_API}/advertising/advertisers/${adv.id}/product_ads/${recurso}?${query}`,
+  ];
+}
+
+/** Tenta as URLs em ordem e devolve a 1ª que não for 404. */
+async function fetchAdsResource(urls: string[], token: string): Promise<Response> {
+  let ultima: Response | null = null;
+  for (const url of urls) {
+    const res = await fetchAds(url, token);
+    if (res.status !== 404) return res;
+    ultima = res;
+  }
+  return ultima as Response;
 }
 
 async function fetchJsonRetry(url: string, token: string, apiVersion: string, tries = 3): Promise<Response> {
@@ -61,14 +91,12 @@ async function fetchAds(url: string, token: string): Promise<Response> {
  * poder tentar a outra estratégia.
  */
 async function itemsPage(
-  advertiserId: string, token: string, from: string, to: string,
+  adv: Adv, token: string, from: string, to: string,
   metrics: string, campaignId: string | null, offset: number,
 ): Promise<{ results: Record<string, unknown>[]; total: number } | null> {
   const filtro = campaignId ? `&filters[campaign_id]=${encodeURIComponent(campaignId)}` : "";
-  const url =
-    `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
-    `date_from=${from}&date_to=${to}&metrics=${metrics}&limit=50&offset=${offset}${filtro}`;
-  const res = await fetchAds(url, token);
+  const query = `date_from=${from}&date_to=${to}&metrics=${metrics}&limit=50&offset=${offset}${filtro}`;
+  const res = await fetchAdsResource(adsUrls(adv, "items", query), token);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`ml_ads_failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
   const j = (await res.json()) as { results?: Record<string, unknown>[]; paging?: { total?: number } };
@@ -78,13 +106,13 @@ async function itemsPage(
 
 /** Todas as páginas de um escopo (geral ou de uma campanha). null = 404 logo de cara. */
 async function itemsAll(
-  advertiserId: string, token: string, from: string, to: string,
+  adv: Adv, token: string, from: string, to: string,
   metrics: string, campaignId: string | null,
 ): Promise<Record<string, unknown>[] | null> {
   const out: Record<string, unknown>[] = [];
   let offset = 0;
   while (true) {
-    const page = await itemsPage(advertiserId, token, from, to, metrics, campaignId, offset);
+    const page = await itemsPage(adv, token, from, to, metrics, campaignId, offset);
     if (page === null) return offset === 0 ? null : out;
     out.push(...page.results);
     offset += page.results.length;
@@ -94,11 +122,9 @@ async function itemsAll(
 }
 
 /** IDs das campanhas de Product Ads do anunciante no período. */
-async function campaignIds(advertiserId: string, token: string, from: string, to: string): Promise<string[]> {
-  const url =
-    `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/campaigns?` +
-    `date_from=${from}&date_to=${to}&metrics=cost&limit=100&offset=0`;
-  const res = await fetchAds(url, token);
+async function campaignIds(adv: Adv, token: string, from: string, to: string): Promise<string[]> {
+  const query = `date_from=${from}&date_to=${to}&metrics=cost&limit=100&offset=0`;
+  const res = await fetchAdsResource(adsUrls(adv, "campaigns", query), token);
   if (!res.ok) return [];
   const j = (await res.json()) as { results?: Record<string, unknown>[] };
   return (j.results ?? [])
@@ -113,18 +139,18 @@ async function campaignIds(advertiserId: string, token: string, from: string, to
  */
 async function adItemRows(from: string, to: string, metrics: string): Promise<Record<string, unknown>[]> {
   const token = await getValidMlAccessToken();
-  const advertiserId = await getAdvertiserId(token);
-  if (!advertiserId) return []; // conta sem anunciante/publicidade
+  const adv = await getAdvertiser(token);
+  if (!adv) return []; // conta sem anunciante/publicidade
 
-  const direto = await itemsAll(advertiserId, token, from, to, metrics, null);
+  const direto = await itemsAll(adv, token, from, to, metrics, null);
   if (direto !== null) return direto;
 
-  const ids = await campaignIds(advertiserId, token, from, to);
+  const ids = await campaignIds(adv, token, from, to);
   if (ids.length === 0) throw new Error("ml_ads_404: itens recusados e nenhuma campanha retornada");
 
   const out: Record<string, unknown>[] = [];
   for (const cid of ids) {
-    const rows = await itemsAll(advertiserId, token, from, to, metrics, cid);
+    const rows = await itemsAll(adv, token, from, to, metrics, cid);
     if (rows) out.push(...rows);
   }
   return out;
@@ -233,23 +259,24 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
     let itemsStatusV1: number | null = null;
 
     if (advertiserId != null) {
-      const base = `${ML_API}/advertising/advertisers/${advertiserId}/product_ads`;
+      const site = String((mlb ?? advertisers[0])?.site_id ?? "MLB").toUpperCase();
+      const novo = `${ML_API}/marketplace/advertising/${site}/advertisers/${advertiserId}/product_ads`;
+      const antigo = `${ML_API}/advertising/advertisers/${advertiserId}/product_ads`;
       const q = `date_from=${from}&date_to=${to}&metrics=cost&limit=3`;
       const alvos: { nome: string; url: string; v: string }[] = [
-        { nome: "items v2", url: `${base}/items?${q}`, v: "2" },
-        { nome: "items v1", url: `${base}/items?${q}`, v: "1" },
-        { nome: "campaigns v2", url: `${base}/campaigns?${q}`, v: "2" },
-        { nome: "campaigns v1", url: `${base}/campaigns?${q}`, v: "1" },
-        { nome: "campaigns v2 sem datas", url: `${base}/campaigns?limit=3`, v: "2" },
-        { nome: "advertiser v2", url: `${ML_API}/advertising/advertisers/${advertiserId}`, v: "2" },
+        { nome: "NOVO items/search v2", url: `${novo}/items/search?${q}`, v: "2" },
+        { nome: "NOVO campaigns/search v2", url: `${novo}/campaigns/search?${q}`, v: "2" },
+        { nome: "NOVO items/search v1", url: `${novo}/items/search?${q}`, v: "1" },
+        { nome: "antigo items v2", url: `${antigo}/items?${q}`, v: "2" },
+        { nome: "antigo campaigns v2", url: `${antigo}/campaigns?${q}`, v: "2" },
       ];
       for (const a of alvos) {
         try {
           const r = await fetch(a.url, { headers: H(a.v), cache: "no-store" });
           const body = (await r.text().catch(() => "")).slice(0, 180);
           tentativas.push({ tentativa: a.nome, status: r.status, body });
-          if (a.nome === "items v2") itemsStatusV2 = r.status;
-          if (a.nome === "items v1") itemsStatusV1 = r.status;
+          if (a.nome === "NOVO items/search v2") itemsStatusV2 = r.status;
+          if (a.nome === "antigo items v2") itemsStatusV1 = r.status;
         } catch (e) {
           tentativas.push({ tentativa: a.nome, erro: String(e).slice(0, 120) });
         }
