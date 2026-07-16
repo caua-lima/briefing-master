@@ -68,12 +68,17 @@ export async function GET(req: Request) {
     const from = url.searchParams.get("from") || todayISO(29);
     const to = url.searchParams.get("to") || todayISO(0);
 
+    // A API de ADS do ML rejeita datas futuras (404) → limita o fim ao dia de
+    // hoje no fuso BR. Mesma trava que o dashboard já usa.
+    const hj = todayISO(0);
+    const adsTo = to > hj ? hj : to;
+
     let ads;
     try {
-      ads = await getAdsFullByItem(from, to);
+      ads = from <= adsTo ? await getAdsFullByItem(from, adsTo) : [];
     } catch {
-      const diag = await probeAds(from, to);
-      return NextResponse.json({ error: "ads_failed", diag, from, to, items: [] });
+      const diag = await probeAds(from, adsTo);
+      return NextResponse.json({ error: "ads_failed", diag, from, to: adsTo, items: [] });
     }
 
     const db = getAdminDb();

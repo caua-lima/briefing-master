@@ -34,14 +34,18 @@ export default function AdsTab() {
   const [items, setItems] = useState<AdItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const [diag, setDiag] = useState<{ advertisersStatus?: number; itemsStatus?: number; periodo?: { from?: string; to?: string } } | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true); setErro(null);
+    setLoading(true); setErro(null); setDiag(null);
     try {
       const r = await authedFetch(`/api/ml/ads?from=${range.from}&to=${range.to}`, { cache: "no-store" });
       const j = await r.json();
-      if (j.error) { setErro(j.diag ? JSON.stringify(j.diag, null, 2) : (j.details ?? j.error)); setItems([]); }
-      else setItems(j.items ?? []);
+      if (j.error) {
+        setDiag(j.diag ?? null);
+        setErro(j.diag ? JSON.stringify(j.diag, null, 2) : (j.details ?? j.error));
+        setItems([]);
+      } else setItems(j.items ?? []);
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [range]);
@@ -107,7 +111,13 @@ export default function AdsTab() {
 
       {erro ? (
         <div style={{ padding: "12px 14px", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.3)", borderRadius: 8, fontSize: ".8rem", color: "var(--red)" }}>
-          Não consegui puxar os Ads (provável falta de permissão de <b>Mercado Ads</b> no token do ML — reconecte concedendo o acesso).
+          {(() => {
+            const adv = diag?.advertisersStatus;
+            const it = diag?.itemsStatus;
+            if (adv === 401 || adv === 403) return (<>O token do Mercado Livre <b>não tem permissão de Publicidade / Mercado Ads</b>. Reconecte a conta concedendo esse acesso.</>);
+            if (it === 404) return (<>O Mercado Ads não retornou dados para <b>{range.from.split("-").reverse().join("/")} a {range.to.split("-").reverse().join("/")}</b>. Normalmente é período com <b>data futura</b> (o ML não aceita) ou sem campanha ativa. Tente um período que termine ontem ou antes.</>);
+            return (<>Não consegui puxar os Ads agora. O token está autorizado (anunciante {String(diag?.advertisersStatus ?? "—")}), então deve ser instabilidade do Mercado Ads — tente <b>Atualizar</b> em instantes.</>);
+          })()}
           <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 180, overflow: "auto" }}>{erro}</pre>
         </div>
       ) : (
