@@ -56,51 +56,95 @@ async function fetchAds(url: string, token: string): Promise<Response> {
 }
 
 /**
+ * Uma página de itens. `campaignId` opcional: o ML passou a recusar (404) a
+ * busca de itens sem escopo de campanha. Devolve null no 404 para o chamador
+ * poder tentar a outra estratégia.
+ */
+async function itemsPage(
+  advertiserId: string, token: string, from: string, to: string,
+  metrics: string, campaignId: string | null, offset: number,
+): Promise<{ results: Record<string, unknown>[]; total: number } | null> {
+  const filtro = campaignId ? `&filters[campaign_id]=${encodeURIComponent(campaignId)}` : "";
+  const url =
+    `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
+    `date_from=${from}&date_to=${to}&metrics=${metrics}&limit=50&offset=${offset}${filtro}`;
+  const res = await fetchAds(url, token);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`ml_ads_failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  const j = (await res.json()) as { results?: Record<string, unknown>[]; paging?: { total?: number } };
+  const results = Array.isArray(j?.results) ? j.results : [];
+  return { results, total: j?.paging?.total ?? results.length };
+}
+
+/** Todas as páginas de um escopo (geral ou de uma campanha). null = 404 logo de cara. */
+async function itemsAll(
+  advertiserId: string, token: string, from: string, to: string,
+  metrics: string, campaignId: string | null,
+): Promise<Record<string, unknown>[] | null> {
+  const out: Record<string, unknown>[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await itemsPage(advertiserId, token, from, to, metrics, campaignId, offset);
+    if (page === null) return offset === 0 ? null : out;
+    out.push(...page.results);
+    offset += page.results.length;
+    if (page.results.length === 0 || offset >= page.total) break;
+  }
+  return out;
+}
+
+/** IDs das campanhas de Product Ads do anunciante no período. */
+async function campaignIds(advertiserId: string, token: string, from: string, to: string): Promise<string[]> {
+  const url =
+    `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/campaigns?` +
+    `date_from=${from}&date_to=${to}&metrics=cost&limit=100&offset=0`;
+  const res = await fetchAds(url, token);
+  if (!res.ok) return [];
+  const j = (await res.json()) as { results?: Record<string, unknown>[] };
+  return (j.results ?? [])
+    .map((c) => String(c.id ?? c.campaign_id ?? ""))
+    .filter(Boolean);
+}
+
+/**
+ * Linhas de item com métricas. Tenta a busca direta e, se o ML recusar (404 —
+ * ele passou a exigir o escopo de campanha), varre campanha a campanha usando
+ * filters[campaign_id].
+ */
+async function adItemRows(from: string, to: string, metrics: string): Promise<Record<string, unknown>[]> {
+  const token = await getValidMlAccessToken();
+  const advertiserId = await getAdvertiserId(token);
+  if (!advertiserId) return []; // conta sem anunciante/publicidade
+
+  const direto = await itemsAll(advertiserId, token, from, to, metrics, null);
+  if (direto !== null) return direto;
+
+  const ids = await campaignIds(advertiserId, token, from, to);
+  if (ids.length === 0) throw new Error("ml_ads_404: itens recusados e nenhuma campanha retornada");
+
+  const out: Record<string, unknown>[] = [];
+  for (const cid of ids) {
+    const rows = await itemsAll(advertiserId, token, from, to, metrics, cid);
+    if (rows) out.push(...rows);
+  }
+  return out;
+}
+
+/**
  * Gasto de ADS (Product Ads) por item_id (MLB) no período.
  * Chave do mapa = item_id em UPPERCASE (ex.: "MLB1234567890").
- *
- * Endpoint: /advertising/advertisers/{advertiser_id}/product_ads/items
- *   headers: Authorization + Api-Version: 2 (a 1 foi descontinuada → 404)
- *   query:   date_from, date_to (YYYY-MM-DD, limite de 90 dias), metrics, limit, offset
  */
 export async function getAdsSpendByItem(
   from: string,
   to: string,
 ): Promise<Record<string, number>> {
-  const token = await getValidMlAccessToken();
-  const advertiserId = await getAdvertiserId(token);
-  if (!advertiserId) return {}; // conta sem anunciante/publicidade
-
   const adsByItem: Record<string, number> = {};
-  let offset = 0;
-  const limit = 50;
-
-  while (true) {
-    const url =
-      `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
-      `date_from=${from}&date_to=${to}&metrics=cost&limit=${limit}&offset=${offset}`;
-
-    const res = await fetchAds(url, token);
-    if (!res.ok) throw new Error(`ml_ads_failed: ${await res.text()}`);
-
-    const j = (await res.json()) as {
-      results?: Record<string, unknown>[];
-      paging?: { total?: number };
-    };
-    const results = Array.isArray(j?.results) ? j.results : [];
-
-    for (const row of results) {
-      const itemId = String(row.id ?? row.item_id ?? "").trim().toUpperCase();
-      const metrics = (row.metrics as Record<string, unknown>) ?? {};
-      const cost = Number(metrics.cost ?? row.cost ?? 0);
-      if (itemId) adsByItem[itemId] = (adsByItem[itemId] ?? 0) + cost;
-    }
-
-    const total = j?.paging?.total ?? results.length;
-    offset += results.length;
-    if (offset >= total || results.length === 0) break;
+  for (const row of await adItemRows(from, to, "cost")) {
+    const itemId = String(row.id ?? row.item_id ?? "").trim().toUpperCase();
+    const metrics = (row.metrics as Record<string, unknown>) ?? {};
+    const cost = Number(metrics.cost ?? row.cost ?? 0);
+    if (itemId) adsByItem[itemId] = (adsByItem[itemId] ?? 0) + cost;
   }
-
   return adsByItem;
 }
 
@@ -126,47 +170,27 @@ const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amou
 
 /** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
 export async function getAdsFullByItem(from: string, to: string): Promise<AdItemFull[]> {
-  const token = await getValidMlAccessToken();
-  const advertiserId = await getAdvertiserId(token);
-  if (!advertiserId) return [];
-
-  const out: AdItemFull[] = [];
-  let offset = 0;
-  const limit = 50;
-  while (true) {
-    const url =
-      `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items?` +
-      `date_from=${from}&date_to=${to}&metrics=${AD_METRICS}&limit=${limit}&offset=${offset}`;
-    const res = await fetchAds(url, token);
-    if (!res.ok) throw new Error(`ml_ads_full_failed: ${res.status} ${await res.text()}`);
-    const j = (await res.json()) as { results?: Record<string, unknown>[]; paging?: { total?: number } };
-    const results = Array.isArray(j?.results) ? j.results : [];
-    for (const row of results) {
-      const m = (row.metrics as Record<string, unknown>) ?? row;
-      const n = (k: string) => Number(m[k] ?? row[k] ?? 0) || 0;
-      out.push({
-        itemId: String(row.id ?? row.item_id ?? "").trim().toUpperCase(),
-        title: String(row.title ?? row.name ?? ""),
-        status: String(row.status ?? ""),
-        clicks: n("clicks"),
-        prints: n("prints"),
-        ctr: n("ctr"),
-        cost: n("cost"),
-        cpc: n("cpc"),
-        acos: n("acos"),
-        cvr: n("cvr"),
-        sales: n("total_amount"),
-        units: n("advertising_items_quantity"),
-        directSales: n("direct_amount"),
-        directUnits: n("direct_items_quantity"),
-        indirectSales: n("indirect_amount"),
-      });
-    }
-    const total = j?.paging?.total ?? results.length;
-    offset += results.length;
-    if (offset >= total || results.length === 0) break;
-  }
-  return out;
+  return (await adItemRows(from, to, AD_METRICS)).map((row) => {
+    const m = (row.metrics as Record<string, unknown>) ?? row;
+    const n = (k: string) => Number(m[k] ?? row[k] ?? 0) || 0;
+    return {
+      itemId: String(row.id ?? row.item_id ?? "").trim().toUpperCase(),
+      title: String(row.title ?? row.name ?? ""),
+      status: String(row.status ?? ""),
+      clicks: n("clicks"),
+      prints: n("prints"),
+      ctr: n("ctr"),
+      cost: n("cost"),
+      cpc: n("cpc"),
+      acos: n("acos"),
+      cvr: n("cvr"),
+      sales: n("total_amount"),
+      units: n("advertising_items_quantity"),
+      directSales: n("direct_amount"),
+      directUnits: n("direct_items_quantity"),
+      indirectSales: n("indirect_amount"),
+    };
+  });
 }
 
 /** Diagnóstico da API de ADS: mostra advertiser, status e amostra dos itens. */
