@@ -76,12 +76,22 @@ function metrica(row: Record<string, unknown>, chave: string): number {
   return 0;
 }
 
-/** MLB do item, aceitando as chaves que o ML já usou. */
+const CHAVES_ID = ["item_id", "mlb_item_id", "item", "id"] as const;
+const texto = (v: unknown) =>
+  typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "";
+
+/**
+ * MLB do anúncio. Prioriza um valor no formato MLBxxxx: o cruzamento com as
+ * vendas é por MLB, e pegar o id da campanha aqui zerava o modo "Geral".
+ */
 function itemIdDe(row: Record<string, unknown>): string {
-  for (const k of ["id", "item_id", "mlb_item_id", "item"]) {
-    const v = row[k];
-    if (typeof v === "string" && v.trim()) return v.trim().toUpperCase();
-    if (typeof v === "number") return String(v).toUpperCase();
+  for (const k of CHAVES_ID) {
+    const s = texto(row[k]);
+    if (/^MLB\d+$/i.test(s)) return s.toUpperCase();
+  }
+  for (const k of CHAVES_ID) {
+    const s = texto(row[k]);
+    if (s) return s.toUpperCase();
   }
   return "";
 }
@@ -121,8 +131,12 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
 
   const q = (offset: number) => `date_from=${from}&date_to=${to}&metrics=${metrics}&limit=50&offset=${offset}`;
 
-  // 1) Itens direto
-  const direto = await buscar((o) => [`${base(adv)}/items/search?${q(o)}`, `${legado(adv)}/items?${q(o)}`], token);
+  // 1) Anúncios direto. "ads" é o recurso que traz o MLB do item — "items" vinha
+  //    vazio e nos jogava no fallback de campanha (sem MLB, o "Geral" zerava).
+  const direto = await buscar(
+    (o) => [`${base(adv)}/ads/search?${q(o)}`, `${base(adv)}/items/search?${q(o)}`, `${legado(adv)}/items?${q(o)}`],
+    token,
+  );
   if (direto.length > 0) return direto;
 
   // 2) Sem itens: pega as campanhas e busca os itens de cada uma
@@ -138,6 +152,8 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
     const qc = (offset: number) => `${q(offset)}&filters[campaign_id]=${encodeURIComponent(cid)}`;
     const rows = await buscar(
       (o) => [
+        `${base(adv)}/ads/search?${qc(o)}`,
+        `${base(adv)}/campaigns/${cid}/ads/search?${q(o)}`,
         `${base(adv)}/campaigns/${cid}/items/search?${q(o)}`,
         `${base(adv)}/items/search?${qc(o)}`,
         `${legado(adv)}/items?${qc(o)}`,
@@ -233,6 +249,7 @@ export async function probeAds(from: string, to: string): Promise<Record<string,
       const adv: Adv = { id: String(advertiserId), siteId: site };
       const q = `date_from=${from}&date_to=${to}&metrics=cost&limit=3`;
       const alvos: { nome: string; url: string }[] = [
+        { nome: "NOVO ads/search", url: `${base(adv)}/ads/search?${q}` },
         { nome: "NOVO items/search", url: `${base(adv)}/items/search?${q}` },
         { nome: "NOVO campaigns/search", url: `${base(adv)}/campaigns/search?${q}` },
         { nome: "antigo items", url: `${legado(adv)}/items?${q}` },
