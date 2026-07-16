@@ -77,8 +77,15 @@ export async function GET(req: Request) {
     try {
       ads = from <= adsTo ? await getAdsFullByItem(from, adsTo) : [];
     } catch {
-      const diag = await probeAds(from, adsTo);
-      return NextResponse.json({ error: "ads_failed", diag, from, to: adsTo, items: [] });
+      // O ML costuma devolver 404 quando o período termina no dia corrente (os
+      // dados de hoje ainda não fecharam). Tenta de novo terminando ontem.
+      const ontem = todayISO(1);
+      try {
+        ads = from <= ontem ? await getAdsFullByItem(from, ontem) : [];
+      } catch {
+        const diag = await probeAds(from, adsTo);
+        return NextResponse.json({ error: "ads_failed", diag, from, to: adsTo, items: [] });
+      }
     }
 
     const db = getAdminDb();

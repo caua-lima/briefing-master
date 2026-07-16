@@ -80,6 +80,12 @@ function normalizeItemId(s: string): string {
   return s.trim().toUpperCase().replace(/^MLB/, "");
 }
 
+// Dia civil no fuso BR (-03:00), deslocado por offsetDays (ex.: -1 = ontem).
+function brDayISO(offsetDays = 0): string {
+  const d = new Date(Date.now() - 3 * 3600 * 1000 + offsetDays * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
 function buildRange(from?: string, to?: string, month?: string) {
   if (from && to) {
     return {
@@ -318,8 +324,16 @@ export async function GET(req: Request) {
     // Chamadas SEQUENCIAIS: a 1ª aquece o cache do advertiser e evita o burst
     // paralelo que causava rate limit (ADS zerado).
     const adsTo = toStr > hj ? hj : toStr;
+    // O ML devolve 404 quando o período termina no dia corrente (dados de hoje
+    // ainda não fecharam). Antes de desistir e zerar o ADS — o que inflava a
+    // margem —, refaz a busca terminando ontem.
+    const ontem = brDayISO(-1);
     const adsByItem: Record<string, number> =
-      fromStr <= adsTo ? await getAdsSpendByItem(fromStr, adsTo).catch(() => ({})) : {};
+      fromStr <= adsTo
+        ? await getAdsSpendByItem(fromStr, adsTo).catch(() =>
+            fromStr <= ontem ? getAdsSpendByItem(fromStr, ontem).catch(() => ({})) : {},
+          )
+        : {};
     const adsHoje: Record<string, number> = await getAdsSpendByItem(hj, hj).catch(() => ({}));
 
     // ── 4. Pedidos do período + de hoje (AO VIVO, com fallback) ─
