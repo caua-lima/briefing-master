@@ -324,16 +324,24 @@ export async function GET(req: Request) {
     // Chamadas SEQUENCIAIS: a 1ª aquece o cache do advertiser e evita o burst
     // paralelo que causava rate limit (ADS zerado).
     const adsTo = toStr > hj ? hj : toStr;
-    // O ML devolve 404 quando o período termina no dia corrente (dados de hoje
-    // ainda não fecharam). Antes de desistir e zerar o ADS — o que inflava a
-    // margem —, refaz a busca terminando ontem.
+    // O ML às vezes recusa o período terminando no dia corrente. Tenta até ontem
+    // antes de desistir. Se AINDA assim falhar, marca adsFalhou: zerar o ADS em
+    // silêncio dava número errado (custo some, margem infla) — a tela precisa
+    // avisar em vez de mostrar R$ 0,00 como se fosse verdade.
     const ontem = brDayISO(-1);
-    const adsByItem: Record<string, number> =
-      fromStr <= adsTo
-        ? await getAdsSpendByItem(fromStr, adsTo).catch(() =>
-            fromStr <= ontem ? getAdsSpendByItem(fromStr, ontem).catch(() => ({})) : {},
-          )
-        : {};
+    let adsFalhou = false;
+    let adsByItem: Record<string, number> = {};
+    if (fromStr <= adsTo) {
+      try {
+        adsByItem = await getAdsSpendByItem(fromStr, adsTo);
+      } catch {
+        try {
+          adsByItem = fromStr <= ontem ? await getAdsSpendByItem(fromStr, ontem) : {};
+        } catch {
+          adsFalhou = true;
+        }
+      }
+    }
     const adsHoje: Record<string, number> = await getAdsSpendByItem(hj, hj).catch(() => ({}));
 
     // ── 4. Pedidos do período + de hoje (AO VIVO, com fallback) ─
@@ -491,6 +499,7 @@ export async function GET(req: Request) {
       },
       serieDiaria,
       adsDiag,
+      adsFalhou, // true = não consegui o gasto de ADS; a tela NÃO deve mostrar 0
       from: fromStr,
       to: toStr,
     };

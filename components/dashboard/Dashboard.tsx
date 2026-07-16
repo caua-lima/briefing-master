@@ -77,6 +77,7 @@ type MlMetrics = {
   serieDiaria:        { data: string; faturamento: number }[];
   devolucoesDetalhe?: Devolucao[];
   adsDiag?:           unknown;
+  adsFalhou?:         boolean;
   from:               string;
   to:                 string;
 };
@@ -172,7 +173,7 @@ function Delta({ current, previous, mode }: { current: number; previous: number 
 
 // ── KPI ────────────────────────────────────────────────────────
 function Kpi({
-  label, value, tone, isPct, sub, delta,
+  label, value, tone, isPct, sub, delta, indisponivel,
 }: {
   label: string;
   value: number;
@@ -180,6 +181,7 @@ function Kpi({
   isPct?: boolean;
   sub?: string;
   delta?: React.ReactNode;
+  indisponivel?: boolean; // dado não veio: mostra "—", nunca 0
 }) {
   const color =
     tone === "pos" ? "var(--green)" :
@@ -188,8 +190,8 @@ function Kpi({
   return (
     <div className={`kpi k-${tone}`}>
       <div className="k-lbl">{label}</div>
-      <div className="k-val" style={{ color }}>
-        {isPct ? `${value.toFixed(1)}%` : fmtBRL(value)}
+      <div className="k-val" style={{ color: indisponivel ? "var(--muted)" : color }}>
+        {indisponivel ? "—" : isPct ? `${value.toFixed(1)}%` : fmtBRL(value)}
       </div>
       {sub && <div className="k-sub">{sub}</div>}
       {delta}
@@ -663,12 +665,16 @@ export default function Dashboard({ data }: Props) {
     (mlMetrics?.totalCMV ?? 0) + (mlMetrics?.totalEnvio ?? 0) + (mlMetrics?.totalTaxasML ?? 0) +
     (mlMetrics?.totalImposto ?? 0) + (mlMetrics?.totalAds ?? 0) + (mlMetrics?.custosOperacionais ?? 0);
 
-  const custoRows: { label: string; value: number; color: string }[] = [
+  // Quando o ADS não vem, NÃO mostramos 0 — 0 é um número errado (some do custo
+  // e infla a margem). A linha vira "indisponível" e a tela avisa.
+  const adsFalhou = mlMetrics?.adsFalhou === true;
+
+  const custoRows: { label: string; value: number; color: string; indisponivel?: boolean }[] = [
     { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0, color: COST_COLORS.cmv },
     { label: "Envio Full", value: mlMetrics?.totalEnvio ?? 0, color: COST_COLORS.full },
     { label: "Taxas ML (comissão)", value: mlMetrics?.totalTaxasML ?? 0, color: COST_COLORS.taxa },
     { label: "Imposto sobre venda", value: mlMetrics?.totalImposto ?? 0, color: COST_COLORS.imp },
-    { label: "ADS (publicidade)", value: mlMetrics?.totalAds ?? 0, color: COST_COLORS.ads },
+    { label: "ADS (publicidade)", value: mlMetrics?.totalAds ?? 0, color: COST_COLORS.ads, indisponivel: adsFalhou },
     { label: "Custos operacionais", value: mlMetrics?.custosOperacionais ?? 0, color: COST_COLORS.op },
   ];
 
@@ -709,7 +715,15 @@ export default function Dashboard({ data }: Props) {
         </pre>
       )}
 
-      {mlMetrics && mlMetrics.totalAds === 0 && (() => {
+      {adsFalhou && (
+        <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.45)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
+          <b>Atenção: o gasto com ADS não veio do Mercado Livre neste período.</b>{" "}
+          Não estou mostrando R$ 0,00 para não te dar número errado — mas isso significa que o{" "}
+          <b>lucro e a margem abaixo estão otimistas</b> (falta descontar o ADS). O resto dos números está correto.
+        </div>
+      )}
+
+      {mlMetrics && !adsFalhou && mlMetrics.totalAds === 0 && (() => {
         const d = mlMetrics.adsDiag as { advertisersStatus?: number; advertiserId?: unknown } | null;
         const blocked = !!d && (d.advertisersStatus === 401 || d.advertisersStatus === 403 || d.advertiserId == null);
         if (!blocked) return null;
@@ -773,7 +787,8 @@ export default function Dashboard({ data }: Props) {
                 delta={<Delta current={lucroLiquido} previous={prevMetrics?.lucroComCustos} mode="pct" />} />
               <Kpi label="Margem líquida" value={mlMetrics?.margemComCustos ?? 0} tone="warn" isPct
                 delta={<Delta current={mlMetrics?.margemComCustos ?? 0} previous={prevMetrics?.margemComCustos} mode="points" />} />
-              <Kpi label="Gasto com ADS" value={mlMetrics?.totalAds ?? 0} tone="neg" />
+              <Kpi label="Gasto com ADS" value={mlMetrics?.totalAds ?? 0} tone="neg"
+                indisponivel={adsFalhou} sub={adsFalhou ? "ML não retornou — não é zero" : undefined} />
               <Kpi label="Vendas canceladas" value={mlMetrics?.vendasCanceladas ?? 0} tone="neg" sub="não contam no lucro" />
               <Kpi label="Devoluções" value={mlMetrics?.vendasDevolvidas ?? 0} tone="neg" sub="0 a 0 (produto volta ao estoque)" />
             </div>
@@ -799,11 +814,13 @@ export default function Dashboard({ data }: Props) {
               {custoRows.map((r) => (
                 <div key={r.label} className="cost-row">
                   <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
-                  <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>
+                  {r.indisponivel
+                    ? <span title="O Mercado Livre não retornou o gasto com ADS. Não mostro R$ 0,00 para não te dar número errado." style={{ color: "#f7c948", fontWeight: 700, fontSize: ".82rem" }}>indisponível</span>
+                    : <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>}
                 </div>
               ))}
               <div className="cost-total">
-                <span>Total de custos</span>
+                <span>Total de custos{adsFalhou && <span style={{ color: "#f7c948", fontWeight: 400, fontSize: ".72rem" }}> (sem ADS)</span>}</span>
                 <span style={{ color: "var(--red)" }}>{fmtBRL(totalCustos)}</span>
               </div>
             </div>
