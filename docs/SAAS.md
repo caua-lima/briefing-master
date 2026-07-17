@@ -67,8 +67,11 @@ Hoje (global) → SaaS (por tenant):
   `app/api/ml/{today,returns,estoque-forecast,mp-saldo,debug-*}/route.ts`.
 - `ml_tokens/main` (token único) → `users/{uid}/ml_token`. **Aparece em:**
   `app/api/ml/{token,account,callback,disconnect,force-logout,returns}`.
-- `MP_ACCESS_TOKEN` (env) → `users/{uid}/mp_token` via OAuth do Mercado Pago.
-  **Aparece em:** `app/api/ml/{mp-fluxo,mp-saldo}/route.ts`.
+
+> **Mercado Pago está FORA do escopo do SaaS.** A aba Financeiro (fluxo de caixa,
+> cofrinho, saídas) e as rotas `mp-fluxo`/`mp-saldo`/`financeiro` foram removidas
+> do branch `saas` (ainda existem na `main`, no dash pessoal). Isso elimina o
+> OAuth do Mercado Pago do produto — menos uma integração pra vender.
 
 > Este é o item de maior esforço: quase toda rota de API assume o token/seller
 > globais. O caminho seguro é criar um `getTenant(req)` que resolve
@@ -77,8 +80,8 @@ Hoje (global) → SaaS (por tenant):
 
 ### 4.2 Dados por usuário
 Coleções globais hoje → subcoleção por usuário:
-- `ml_orders`, `ml_returns`, `estoque`, `custos`, e os docs de
-  financeiro/metas/goals (em `lib/firebase/data.ts`) → `users/{uid}/<coleção>`.
+- `ml_orders`, `ml_returns`, `estoque`, `custos`, e os docs de metas/goals
+  (em `lib/firebase/data.ts`) → `users/{uid}/<coleção>`.
 - **Regras do Firestore:** cada usuário só lê/escreve `users/{uid}/**`; admin
   master lê `access_grants`. Sem isso, vaza dado de um cliente pro outro — é o
   risco nº 1 de um SaaS financeiro.
@@ -92,12 +95,11 @@ demanda ao abrir + cron por tenant ativo). Cuidar de rate limit do ML por conta.
 1. **Isolamento** — branch/Vercel/Firebase novos. (em andamento)
 2. **Multi-tenancy dos dados** — escopo `users/{uid}/…` + regras Firestore.
 3. **ML OAuth por usuário** — `getTenant`, de-globalizar seller_id/token.
-4. **MP OAuth por usuário** — conectar Mercado Pago de terceiros.
-5. **Licença + admin master** — `access_grants`, tela bloqueada, painel do dono.
-6. **Onboarding** — cadastro → conecta ML → conecta MP → (dono libera) → usa.
-7. **Landing + tráfego** — página de venda, provas, agendamento de call.
+4. **Licença + admin master** — `access_grants`, tela bloqueada, painel do dono.
+5. **Onboarding** — cadastro → conecta ML → (dono libera) → usa.
+6. **Landing + tráfego** — página de venda, provas, agendamento de call.
 
-Versão vendável já no passo 5–6.
+Versão vendável já no passo 4–5. (Financeiro/Mercado Pago fora do escopo.)
 
 ## 6. O que o DONO precisa fazer fora do código
 
@@ -108,7 +110,6 @@ Versão vendável já no passo 5–6.
 - No **app do Mercado Livre**: habilitar OAuth multiusuário e adicionar o
   redirect URI do domínio novo (o app atual é o do uso pessoal — melhor um app
   separado pro SaaS).
-- **Mercado Pago**: criar aplicação OAuth pra conectar contas de vendedores.
 - **Jurídico:** Termos de Uso + Política de Privacidade (LGPD). Você vai guardar
   dado financeiro de terceiros — isso é obrigatório antes de vender.
 

@@ -7,7 +7,6 @@ import { AccessGuard, useAccess } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
 import MetasTab from "@/components/tabs/MetasTab";
 import PedidosTab from "@/components/tabs/PedidosTab";
-import FinanceiroTab from "@/components/tabs/FinanceiroTab";
 import AdsTab from "@/components/tabs/AdsTab";
 import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
@@ -15,13 +14,12 @@ import AccessControlTab from "@/components/tabs/AccessControlTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 
-type Tab = "dashboard" | "pedidos" | "financeiro" | "ads" | "metas" | "custos" | "estoque" | "acesso";
+type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "acesso";
 
 // Todos veem tudo. Só o owner edita (as regras do Firestore garantem isso).
 const NAV_ITEMS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "pedidos", label: "Pedidos" },
-  { id: "financeiro", label: "Financeiro" },
   { id: "ads", label: "Ads" },
   { id: "metas", label: "Metas" },
   { id: "custos", label: "Custos" },
@@ -33,7 +31,6 @@ const NAV_ITEMS: { id: Tab; label: string }[] = [
 const ICON_PATHS: Record<Tab, React.ReactNode> = {
   dashboard: (<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>),
   pedidos: (<><path d="M6 8h12l-1 12H7L6 8z" /><path d="M9 8V6.5a3 3 0 0 1 6 0V8" /></>),
-  financeiro: (<><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10.5h18" /><circle cx="16.5" cy="14.5" r="1.2" /></>),
   ads: (<><path d="M4 10v4a1 1 0 0 0 1 1h2l5 3.5V6.5L7 10H5a1 1 0 0 0-1 1z" /><path d="M16 9a4.5 4.5 0 0 1 0 6" /></>),
   metas: (<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>),
   custos: (<><path d="M6 3h12v18l-2-1.3L14 21l-2-1.3L10 21l-2-1.3L6 21z" /><path d="M9 8.5h6M9 12h6" /></>),
@@ -374,7 +371,6 @@ function AppShell() {
                 )}
                 {activeTab === "dashboard" && <Dashboard data={data} />}
                 {activeTab === "pedidos" && <PedidosTab />}
-                {activeTab === "financeiro" && <FinanceiroTab />}
                 {activeTab === "ads" && <AdsTab />}
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
