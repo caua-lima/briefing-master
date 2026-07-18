@@ -337,38 +337,74 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
 
 // ── Meta Diária (velocímetro) ──────────────────────────────────
 function MetaDiariaCard({
-  faturamentoHoje, pedidosHoje, metaDiaria,
+  faturamentoHoje, pedidosHoje, metaDiaria, metaPlana, diasRestantes,
 }: {
   faturamentoHoje: number;
   pedidosHoje: number;
   metaDiaria: number | null;
+  metaPlana: number | null;
+  diasRestantes: number | null;
 }) {
-  const pct = metaDiaria && metaDiaria > 0 ? clamp((faturamentoHoje / metaDiaria) * 100, 0, 100) : 0;
-  const batida = metaDiaria ? faturamentoHoje >= metaDiaria : false;
+  const semMeta = metaDiaria == null;
+  // metaDiaria == 0 → não falta mais nada: a meta do mês já foi batida.
+  const mesBatido = metaDiaria === 0;
+  const pct = metaDiaria && metaDiaria > 0 ? clamp((faturamentoHoje / metaDiaria) * 100, 0, 100) : (mesBatido ? 100 : 0);
+  const batida = mesBatido || (metaDiaria ? faturamentoHoje >= metaDiaria : false);
   const falta = metaDiaria ? Math.max(metaDiaria - faturamentoHoje, 0) : 0;
+
+  // Quanto a meta de hoje mudou vs o ritmo plano (meta do mês ÷ dias).
+  // Acima de 1% de diferença já vale explicar o porquê.
+  const ajuste = metaDiaria != null && metaPlana != null && metaPlana > 0
+    ? (metaDiaria - metaPlana) / metaPlana
+    : 0;
+  const atrasado = ajuste > 0.01;
+  const adiantado = ajuste < -0.01;
 
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
-      {metaDiaria ? (
-        <Gauge
-          caption="Meta Diária de Hoje"
-          pct={pct}
-          centerText={`${pct.toFixed(0)}%`}
-          leftLabel="R$ 0"
-          rightLabel={fmtBRL(metaDiaria)}
-          footer={
-            <>
-              <b style={{ color: "var(--text)" }}>{fmtBRL(faturamentoHoje)}</b> · {pedidosHoje} pedido(s) ·{" "}
-              <span style={{ color: batida ? "var(--green)" : "var(--muted)" }}>
-                {batida ? "batida!" : `faltam ${fmtBRL(falta)}`}
-              </span>
-            </>
-          }
-        />
-      ) : (
+      {semMeta ? (
         <>
           <div className="panel-title" style={{ marginBottom: 8 }}>Meta Diária de Hoje</div>
           <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Configure uma meta (Meta 1) na aba Metas.</div>
+        </>
+      ) : (
+        <>
+          <Gauge
+            caption="Meta Diária de Hoje"
+            pct={pct}
+            centerText={mesBatido ? "100%" : `${pct.toFixed(0)}%`}
+            leftLabel="R$ 0"
+            rightLabel={mesBatido ? "meta do mês batida" : fmtBRL(metaDiaria ?? 0)}
+            footer={
+              <>
+                <b style={{ color: "var(--text)" }}>{fmtBRL(faturamentoHoje)}</b> · {pedidosHoje} pedido(s) ·{" "}
+                <span style={{ color: batida ? "var(--green)" : "var(--muted)" }}>
+                  {mesBatido ? "meta do mês já batida!" : batida ? "batida!" : `faltam ${fmtBRL(falta)}`}
+                </span>
+              </>
+            }
+          />
+          {/* Por que a meta de hoje não é a meta plana */}
+          {!mesBatido && metaPlana != null && diasRestantes != null && (
+            <div style={{ marginTop: 10, textAlign: "center", fontSize: ".72rem", lineHeight: 1.5 }}>
+              {atrasado && (
+                <span style={{ color: "#f7c948" }}>
+                  ↑ subiu de <b>{fmtBRL(metaPlana)}</b> — você está atrás do ritmo
+                </span>
+              )}
+              {adiantado && (
+                <span style={{ color: "var(--green)" }}>
+                  ↓ caiu de <b>{fmtBRL(metaPlana)}</b> — você está adiantado
+                </span>
+              )}
+              {!atrasado && !adiantado && (
+                <span style={{ color: "var(--muted)" }}>no ritmo da meta ({fmtBRL(metaPlana)}/dia)</span>
+              )}
+              <span style={{ color: "var(--muted)", display: "block" }}>
+                o que falta ÷ {diasRestantes} dia(s) restante(s)
+              </span>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -658,8 +694,25 @@ export default function Dashboard({ data }: Props) {
     return (variavel / diaAtual) * totalDias - (mlMetrics.custosOperacionais ?? 0);
   }, [isMesAtual, mlMetrics, mes]);
 
-  // Meta diária automática = meta mensal (Meta 1) ÷ dias do mês
-  const metaDiariaAtiva = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
+  // ── Meta diária DINÂMICA ──────────────────────────────────────
+  // Plana = meta do mês ÷ dias do mês (só referência de "ritmo ideal").
+  const metaDiariaPlana = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
+
+  const diasRestantesMes = isMesAtual ? Math.max(diasNoMes(mes) - diaAtualNoMes() + 1, 1) : null;
+
+  // Meta de HOJE = o que ainda falta pra meta do mês ÷ dias que restam (hoje
+  // incluso). Se um dia fica abaixo, o que sobrou se redistribui e a meta dos
+  // dias seguintes sobe sozinha.
+  //
+  // Usa o acumulado até ONTEM de propósito: se usasse o de hoje, o alvo cairia
+  // conforme as vendas do dia entrassem — a meta fugiria da própria medição.
+  const metaDiariaAtiva = useMemo(() => {
+    if (!goals?.meta1) return null;
+    if (!isMesAtual || !diasRestantesMes) return metaDiariaPlana; // outro período: plana
+    const fatAteOntem = Math.max(fatLiquido - (mlMetrics?.faturamentoHoje ?? 0), 0);
+    const falta = Math.max(goals.meta1 - fatAteOntem, 0);
+    return falta / diasRestantesMes;
+  }, [goals?.meta1, isMesAtual, diasRestantesMes, metaDiariaPlana, fatLiquido, mlMetrics?.faturamentoHoje]);
 
   const totalCustos =
     (mlMetrics?.totalCMV ?? 0) + (mlMetrics?.totalEnvio ?? 0) + (mlMetrics?.totalTaxasML ?? 0) +
@@ -799,6 +852,8 @@ export default function Dashboard({ data }: Props) {
             faturamentoHoje={mlMetrics?.faturamentoHoje ?? 0}
             pedidosHoje={mlMetrics?.pedidosHoje ?? 0}
             metaDiaria={metaDiariaAtiva}
+            metaPlana={metaDiariaPlana}
+            diasRestantes={diasRestantesMes}
           />
 
           {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
