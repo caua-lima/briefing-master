@@ -40,15 +40,28 @@ function getCurrentUserEmail(): string {
   return email;
 }
 
-// ─── path helpers (apenas coleções globais compartilhadas) ─────
+/**
+ * uid do usuário logado. No SaaS cada cliente tem os PRÓPRIOS dados, então todo
+ * acesso passa por aqui: sem uid não se lê nem escreve nada.
+ */
+function getCurrentUid(): string {
+  const auth = getAuth();
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("User not authenticated");
+  return uid;
+}
+
+// ─── path helpers: dados SEMPRE dentro de users/{uid}/… ─────────
+// Multi-tenant: um cliente nunca enxerga a coleção do outro. Único ponto de
+// escopo do lado do cliente — se mudar aqui, muda em todas as 29 chamadas.
 function sCol(name: string) {
   const { db } = getFirebase();
-  return collection(db, name);
+  return collection(db, "users", getCurrentUid(), name);
 }
 
 function sDoc(name: string, id: string) {
   const { db } = getFirebase();
-  return doc(db, name, id);
+  return doc(db, "users", getCurrentUid(), name, id);
 }
 
 function aDoc(email: string) {

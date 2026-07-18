@@ -1,90 +1,79 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════════════════════════
+    // SaaS multi-tenant. Regra de ouro: cada cliente só toca no que é
+    // dele (users/{uid}/**), e só enquanto a licença estiver válida.
+    // ═══════════════════════════════════════════════════════════════
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function requesterDoc() {
-      return get(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
+    function grantPath() {
+      return /databases/$(database)/documents/controleAcesso/$(request.auth.token.email);
     }
 
-    // Só o owner pode escrever. Admin foi removido — qualquer outro papel é leitura.
-    function isOwner() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email))
-        && requesterDoc().data.role == "owner";
+    function temGrant() {
+      return signedIn() && exists(grantPath());
     }
 
-    function isAuthorized() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
+    function grant() {
+      return get(grantPath()).data;
     }
 
+    // Admin master = dono do SaaS. Só ele libera/suspende licenças.
+    function isMaster() {
+      return temGrant() && grant().role == "owner";
+    }
+
+    // Licença válida: liberada pelo dono, não suspensa e dentro do prazo.
+    // Sem expiresAt = acesso sem prazo (o dono é o caso típico).
+    function licencaAtiva() {
+      return temGrant()
+        && grant().get("status", "ativo") != "suspenso"
+        && (grant().get("expiresAt", null) == null || grant().expiresAt > request.time);
+    }
+
+    // ── Dados do cliente ──────────────────────────────────────────
+    // Estoque, custos, metas, movimentações, rascunho, dias — tudo aqui.
+    // request.auth.uid == uid é o que impede um cliente de ler o do outro.
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid && licencaAtiva();
+    }
+
+    // ── Registro de licenças ──────────────────────────────────────
     match /controleAcessoMeta/{docId} {
       allow read: if signedIn();
+      // bootstrap: o primeiro a entrar vira owner (só funciona uma vez)
       allow create: if signedIn()
         && docId == "config"
         && !exists(/databases/$(database)/documents/controleAcessoMeta/config)
         && request.resource.data.ownerEmail == request.auth.token.email;
-      allow update, delete: if isOwner();
+      allow update, delete: if isMaster();
     }
 
     match /controleAcesso/{email} {
-      allow read: if signedIn() && (request.auth.token.email == email || isOwner());
-      allow list: if isOwner();
+      // o cliente enxerga a própria licença (pra ver validade); o master, todas
+      allow read: if signedIn() && (request.auth.token.email == email || isMaster());
+      allow list: if isMaster();
       allow create: if signedIn() && (
         (!exists(/databases/$(database)/documents/controleAcessoMeta/config)
           && request.auth.token.email == email
           && request.resource.data.role == "owner")
-        || isOwner()
+        || isMaster()
       );
-      allow update, delete: if isOwner() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
+      // o owner pode se auto-manter (evita travar o dono pra fora)
+      allow update, delete: if isMaster()
+        || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
     }
 
-    // Coleções do time: leitura por autorizados, escrita só do owner.
-    match /rascunho/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    match /dias/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    // Configurações internas: leitura por autorizados (o dashboard lê),
-    // escrita somente por admin/owner.
-    match /metas/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    match /metasHistorico/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    match /custos/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    match /estoque/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    // Livro de movimentações do estoque (entradas/baixas/ajustes)
-    match /estoque_movimentos/{docId} {
-      allow read: if isAuthorized();
-      allow write: if isOwner();
-    }
-
-    // Legacy: Allow authorized users read old data, writes only own uid
-    match /usuarios/{uid}/{document=**} {
-      allow read: if isAuthorized();
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
+    // ── Coleções globais antigas: SEM regra, de propósito ─────────
+    // rascunho, dias, metas, metasHistorico, custos, estoque,
+    // estoque_movimentos no nível raiz eram do modelo single-tenant.
+    // Sem match, o Firestore NEGA. Assim, se sobrar algum código
+    // gravando fora de users/{uid}/, ele falha alto — em vez de
+    // silenciosamente misturar o dado de um cliente com o de outro.
   }
 }
