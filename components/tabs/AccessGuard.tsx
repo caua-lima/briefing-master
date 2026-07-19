@@ -8,7 +8,7 @@ import {
   checkAccess,
   getAccessBootstrap,
 } from "@/lib/firebase/data";
-import type { AccessEntry } from "@/lib/domain/types";
+import { licencaValida, type AccessEntry, type LicencaInvalida } from "@/lib/domain/types";
 
 type AccessInfo = { role: AccessEntry["role"]; email: string; isOwner: boolean; canEdit: boolean };
 const AccessCtx = createContext<AccessInfo>({ role: "user", email: "", isOwner: false, canEdit: false });
@@ -20,6 +20,7 @@ type AccessResult = {
   email: string;
   granted: boolean;
   entry: AccessEntry | null;
+  motivo?: LicencaInvalida; // por que foi bloqueado (quando granted=false)
 };
 
 type AccessCache = AccessResult & {
@@ -136,7 +137,10 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
 
         if (!cancelled) {
-          if (found) {
+          // Ter registro não basta: a licença precisa estar válida (não
+          // suspensa e dentro do prazo). Mesma regra do servidor.
+          const lic = licencaValida(found);
+          if (found && lic.ok) {
             if (u.displayName || u.photoURL) {
               import("@/lib/firebase/data").then(({ updateAccessEntry }) =>
                 updateAccessEntry(email, {
@@ -153,10 +157,13 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
                 : nextAccess,
             );
           } else {
-            const nextAccess = { email, granted: false, entry: null };
+            const motivo = found && !lic.ok ? lic.motivo : "sem_licenca";
+            const nextAccess = { email, granted: false, entry: found, motivo };
             writeCachedAccess(nextAccess);
             setAccess((prev) =>
-              prev && prev.email === email && prev.granted === false ? prev : nextAccess,
+              prev && prev.email === email && prev.granted === false && prev.motivo === motivo
+                ? prev
+                : nextAccess,
             );
           }
         }
@@ -195,7 +202,7 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
 
   if (isPending) return <LoadingScreen />;
   if (!access.granted)
-    return <DeniedScreen onLogout={signOut} userEmail={user.email ?? ""} />;
+    return <DeniedScreen onLogout={signOut} userEmail={user.email ?? ""} motivo={access?.motivo} expiresAt={access?.entry?.expiresAt ?? null} />;
 
   const role = access.entry?.role ?? "user";
   const isOwner = role === "owner"; // só o owner edita; todo o resto é somente leitura
@@ -231,10 +238,31 @@ function LoadingScreen() {
 function DeniedScreen({
   onLogout,
   userEmail,
+  motivo,
+  expiresAt,
 }: {
   onLogout: () => void;
   userEmail: string;
+  motivo?: LicencaInvalida;
+  expiresAt?: number | null;
 }) {
+  // Vencida e "nunca teve acesso" são situações diferentes: o cliente que
+  // pagou e venceu precisa saber que é só renovar.
+  const venceuEm = expiresAt ? new Date(expiresAt).toLocaleDateString("pt-BR") : null;
+  const titulo =
+    motivo === "expirada" ? "Seu acesso expirou" :
+    motivo === "suspensa" ? "Acesso suspenso" :
+    "Acesso não autorizado";
+  const explicacao =
+    motivo === "expirada"
+      ? <>O acesso da conta <strong style={{ color: "var(--text)" }}>{userEmail}</strong> {venceuEm ? <>venceu em <strong style={{ color: "var(--text)" }}>{venceuEm}</strong></> : "venceu"}.</>
+      : motivo === "suspensa"
+      ? <>O acesso da conta <strong style={{ color: "var(--text)" }}>{userEmail}</strong> está temporariamente suspenso.</>
+      : <>A conta <strong style={{ color: "var(--text)" }}>{userEmail}</strong> não possui permissão para acessar este sistema.</>;
+  const acao =
+    motivo === "expirada" ? "Fale com o suporte para renovar sua assinatura."
+    : motivo === "suspensa" ? "Entre em contato para regularizar."
+    : "Entre em contato com o administrador para solicitar acesso.";
   return (
     <div
       style={{
@@ -265,7 +293,7 @@ function DeniedScreen({
             color: "var(--text)",
           }}
         >
-          Acesso não autorizado
+          {titulo}
         </h2>
         <p
           style={{
@@ -275,8 +303,7 @@ function DeniedScreen({
             marginBottom: 8,
           }}
         >
-          A conta <strong style={{ color: "var(--text)" }}>{userEmail}</strong>{" "}
-          não possui permissão para acessar este sistema.
+          {explicacao}
         </p>
         <p
           style={{
@@ -285,7 +312,7 @@ function DeniedScreen({
             marginBottom: 24,
           }}
         >
-          Entre em contato com o administrador para solicitar acesso.
+          {acao}
         </p>
         <button
           type="button"

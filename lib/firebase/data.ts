@@ -367,6 +367,56 @@ export async function removeAccessEntry(email: string) {
   await deleteDoc(aDoc(email));
 }
 
+// ── Licenças (admin master) ───────────────────────────────────
+/** Fim do acesso em N meses a partir de uma data (default: agora). */
+export function prazoEmMeses(meses: number, base: Date = new Date()): number {
+  const d = new Date(base);
+  d.setMonth(d.getMonth() + meses);
+  return d.getTime();
+}
+
+/**
+ * Libera (ou renova) o acesso de um e-mail por N meses. É a operação que o dono
+ * faz depois de fechar a venda na call.
+ *
+ * Renovar SOMA a partir do vencimento atual quando ele ainda está no futuro —
+ * assim renovar antes de vencer não faz o cliente perder os dias restantes.
+ */
+export async function liberarAcesso(
+  email: string,
+  meses: number,
+  nota?: string,
+): Promise<number> {
+  const alvo = email.trim().toLowerCase();
+  const atual = await checkAccess(alvo);
+  const base =
+    atual?.expiresAt && atual.expiresAt > Date.now() ? new Date(atual.expiresAt) : new Date();
+  const expiresAt = prazoEmMeses(meses, base);
+
+  await setDoc(
+    aDoc(alvo),
+    sanitizeUndefined({
+      ...(atual ?? { email: alvo, role: "user" as const, addedAt: Date.now() }),
+      email: alvo,
+      role: atual?.role ?? "user",
+      status: "ativo",
+      expiresAt,
+      nota: nota ?? atual?.nota,
+    }),
+    { merge: true },
+  );
+  return expiresAt;
+}
+
+/** Corta o acesso na hora, preservando o prazo (dá pra reativar depois). */
+export async function suspenderAcesso(email: string) {
+  await updateDoc(aDoc(email), { status: "suspenso" });
+}
+
+export async function reativarAcesso(email: string) {
+  await updateDoc(aDoc(email), { status: "ativo" });
+}
+
 export async function checkAccess(email: string): Promise<AccessEntry | null> {
   const snap = await getDoc(aDoc(email));
   return snap.exists() ? (snap.data() as AccessEntry) : null;

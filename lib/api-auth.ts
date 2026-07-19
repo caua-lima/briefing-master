@@ -1,6 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { licencaValida } from "@/lib/domain/types";
 
 export type AuthContext = {
   email: string;
@@ -67,8 +68,21 @@ export async function requireAccess(
     return NextResponse.json({ error: "forbidden", details: "Not authorized" }, { status: 403 });
   }
 
+  // ⚠️ Checagem de LICENÇA aqui é obrigatória: as rotas usam o Admin SDK, que
+  // IGNORA as regras do Firestore. Sem isto, um cliente com licença vencida ou
+  // suspensa continuaria puxando os próprios dados direto pela API — a trava da
+  // tela seria só cosmética.
+  const entry = snap.data() as { role?: string; expiresAt?: number | null; status?: string };
+  const licenca = licencaValida(entry);
+  if (!licenca.ok) {
+    return NextResponse.json(
+      { error: "licenca_invalida", motivo: licenca.motivo },
+      { status: 403 },
+    );
+  }
+
   // Qualquer papel que não seja "owner" é tratado como somente-leitura ("user").
-  const role: AuthContext["role"] = snap.data()?.role === "owner" ? "owner" : "user";
+  const role: AuthContext["role"] = entry.role === "owner" ? "owner" : "user";
   if (opts.adminOnly && role !== "owner") {
     return NextResponse.json({ error: "forbidden", details: "Owner only" }, { status: 403 });
   }

@@ -129,4 +129,30 @@ export type AccessEntry = {
   displayName?: string;
   photoURL?: string;
   addedAt?: number;
+  /**
+   * Licença (SaaS): o dono libera por e-mail com prazo.
+   * - expiresAt: timestamp (ms) do fim do acesso. null/ausente = sem prazo
+   *   (caso do próprio dono).
+   * - status: "suspenso" corta o acesso na hora, sem mexer no prazo.
+   */
+  expiresAt?: number | null;
+  status?: "ativo" | "suspenso";
+  nota?: string; // anotação do dono (ex.: "fechou na call de 12/07, anual")
 };
+
+/** Motivo pelo qual uma licença não vale — usado no servidor e na tela. */
+export type LicencaInvalida = "sem_licenca" | "suspensa" | "expirada";
+
+/** Regra ÚNICA de validade da licença. Servidor e cliente usam a mesma. */
+export function licencaValida(
+  entry: { expiresAt?: number | null; status?: string } | null | undefined,
+  agora: number = Date.now(),
+): { ok: true } | { ok: false; motivo: LicencaInvalida } {
+  if (!entry) return { ok: false, motivo: "sem_licenca" };
+  if (entry.status === "suspenso") return { ok: false, motivo: "suspensa" };
+  // Sem expiresAt = acesso sem prazo (dono).
+  if (entry.expiresAt != null && agora >= entry.expiresAt) {
+    return { ok: false, motivo: "expirada" };
+  }
+  return { ok: true };
+}
