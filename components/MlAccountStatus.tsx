@@ -44,7 +44,12 @@ export function MlAccountStatus() {
       const res = await authedFetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
         localStorage.setItem('ml_disconnected', 'true');
-        window.location.href = '/api/ml/auth?login=true';
+        // /api/ml/auth agora é autenticado (precisa saber QUEM está conectando)
+        // e devolve a URL do ML em vez de redirecionar sozinho.
+        const r = await authedFetch('/api/ml/auth');
+        const j = await r.json().catch(() => null);
+        if (j?.url) window.location.href = j.url;
+        else { setFeedback({ type: 'error', message: '❌ Não consegui iniciar a conexão com o ML' }); setSwapLoading(false); }
       } else {
         setFeedback({ type: 'error', message: '❌ Erro ao trocar conta' });
         setSwapLoading(false);

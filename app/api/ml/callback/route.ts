@@ -1,65 +1,50 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "../../../../lib/firebase/admin";
 import { exchangeCodeForToken } from "@/lib/ml/client";
+import { consumirOAuthState, salvarConexao } from "@/lib/ml/tenant";
 
-function readCookie(req: Request, name: string): string | null {
-  const raw = req.headers.get("cookie") ?? "";
-  const m = raw.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
-  return m ? decodeURIComponent(m[1]) : null;
+/**
+ * Retorno do OAuth do Mercado Livre.
+ *
+ * Chega SEM sessão (é o ML redirecionando o navegador), então descobrimos de
+ * quem é a conexão pelo `state` — que aponta para o uid e o code_verifier
+ * guardados no servidor quando o usuário iniciou o fluxo. O state é de uso
+ * único e expira em 10 min.
+ */
+function erro(req: Request, motivo: string) {
+  const url = new URL("/", req.url);
+  url.searchParams.set("ml_erro", motivo);
+  return NextResponse.redirect(url);
 }
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state") ?? "";
 
-    if (!code) {
-      return NextResponse.json({ error: "Missing code" }, { status: 400 });
+    if (!code) return erro(req, "sem_code");
+
+    const sessao = await consumirOAuthState(state);
+    if (!sessao) {
+      // state ausente/expirado/reusado — refazer a conexão do começo
+      return erro(req, "sessao_expirada");
     }
 
-    // PKCE: recupera o code_verifier salvo no cookie pela rota /auth
-    const codeVerifier = readCookie(req, "ml_pkce_verifier") ?? "";
-    const token = await exchangeCodeForToken(code, codeVerifier);
+    const token = await exchangeCodeForToken(code, sessao.verifier);
+    if (!token?.access_token) return erro(req, "sem_token");
 
-    const db = getAdminDb();
+    // Guarda a conexão NO USUÁRIO que iniciou o fluxo e resolve qual conta ML é
+    await salvarConexao(sessao.uid, {
+      access_token: token.access_token,
+      refresh_token: token.refresh_token,
+      expires_in: token.expires_in,
+    });
 
-    // try fetch the authenticated user's profile to store alongside tokens
-    let userProfile: any = null;
-    try {
-      const profileRes = await fetch("https://api.mercadolibre.com/users/me", {
-        headers: { Authorization: `Bearer ${token.access_token}` },
-        cache: "no-store",
-      });
-      if (profileRes.ok) userProfile = await profileRes.json();
-    } catch (e) {
-      // ignore profile fetch errors, token still saved
-    }
-
-    await db.collection("ml_tokens").doc("main").set(
-      {
-        access_token: token.access_token || null,
-        refresh_token: token.refresh_token || null,
-        expires_in: token.expires_in || null,
-        user_id: token.user_id || null,
-        user_profile: userProfile,
-        updated_at: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-
-    // Redireciona para a home em vez de retornar JSON
-    const response = NextResponse.redirect(new URL("/", req.url));
-    // Limpa o flag de desconectado e o verifier do PKCE
-    response.cookies.set("ml_disconnected", "false", { maxAge: 0 });
-    response.cookies.set("ml_pkce_verifier", "", { maxAge: 0, path: "/" });
-    return response;
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        error: "Unexpected error in callback",
-        details: error?.message || String(error),
-      },
-      { status: 500 }
-    );
+    const ok = new URL("/", req.url);
+    ok.searchParams.set("ml_conectado", "1");
+    return NextResponse.redirect(ok);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return erro(req, `falha:${msg.slice(0, 80)}`);
   }
 }

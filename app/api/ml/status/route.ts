@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getMlTokenStatus } from "../token";
 import { requireAccess } from "@/lib/api-auth";
+import { getStatusML } from "@/lib/ml/tenant";
 
+/** Situação da conexão do ML DESTE usuário. */
 export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
-  const status = await getMlTokenStatus();
-  return NextResponse.json(status);
+  return NextResponse.json(await getStatusML(gate.uid));
 }

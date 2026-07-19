@@ -1,41 +1,39 @@
 import { NextResponse } from "next/server";
-import { getMlTokenStatus, getMlAccessToken, getMlTokenData } from "../token";
 import { requireAccess } from "@/lib/api-auth";
+import { getStatusML, getMlAccessToken } from "@/lib/ml/tenant";
 
+const ML_API = "https://api.mercadolibre.com";
+
+/**
+ * Conta do Mercado Livre conectada por ESTE usuário. O nickname/seller_id já
+ * são gravados no momento da conexão, então normalmente não bate no ML.
+ */
 export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
-  const status = await getMlTokenStatus();
+  const status = await getStatusML(gate.uid);
   if (!status.connected) return NextResponse.json(status);
 
-  // if we already have a cached profile, return it immediately
-  const tokenData = await getMlTokenData();
-  if (tokenData?.user_profile) return NextResponse.json({ ...status, user: tokenData.user_profile });
+  // Já temos o apelido salvo da conexão: responde sem ir ao ML.
+  if (status.nickname) {
+    return NextResponse.json({
+      ...status,
+      user: { id: status.seller_id, nickname: status.nickname },
+    });
+  }
 
-  const access = await getMlAccessToken();
+  const access = await getMlAccessToken(gate.uid);
   if (!access) return NextResponse.json({ connected: false });
 
   try {
-    const res = await fetch(`https://api.mercadolibre.com/users/me`, {
+    const res = await fetch(`${ML_API}/users/me`, {
       headers: { Authorization: `Bearer ${access}` },
       cache: "no-store",
     });
-
     if (!res.ok) return NextResponse.json({ ...status, user: null });
-
-    const user = await res.json();
-
-    // persist profile for faster responses
-    try {
-      const db = (await import("@/lib/firebase/admin")).getAdminDb();
-      await db.collection("ml_tokens").doc("main").set({ user_profile: user, updated_at: new Date().toISOString() }, { merge: true });
-    } catch (e) {
-      // ignore persistence errors
-    }
-
-    return NextResponse.json({ ...status, user });
-  } catch (err) {
+    return NextResponse.json({ ...status, user: await res.json() });
+  } catch {
     return NextResponse.json({ ...status, user: null });
   }
 }

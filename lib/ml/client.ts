@@ -13,14 +13,16 @@ export function generatePkce(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-export function getAuthURL(codeChallenge: string): string {
+export function getAuthURL(codeChallenge: string, state?: string): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: ML_APP_ID,
     redirect_uri: ML_REDIRECT_URI,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    state: Date.now().toString(), // evita cache
+    // O state carrega QUEM está conectando (aponta pro uid guardado no
+    // servidor). Sem ele, o callback não saberia de quem é a conexão.
+    state: state ?? Date.now().toString(),
   });
 
   return `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;

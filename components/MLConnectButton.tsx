@@ -59,10 +59,12 @@ export function MLConnectButton() {
       // 2. Limpa localStorage
       localStorage.setItem('ml_disconnected', 'true');
       
-      // 3. Aguarda um pouco e redireciona para login
-      setTimeout(() => {
-        window.location.href = '/api/ml/auth?login=true';
-      }, 300);
+      // 3. Pede a URL do ML já vinculada ao usuário logado.
+      //    (/api/ml/auth é autenticado: precisa saber de quem é a conexão)
+      const r = await authedFetch('/api/ml/auth');
+      const j = await r.json().catch(() => null);
+      if (j?.url) window.location.href = j.url;
+      else { console.error('Não consegui iniciar a conexão com o ML', j); setConnecting(false); }
     } catch (err) {
       console.error('Erro ao conectar ML', err);
       setConnecting(false);

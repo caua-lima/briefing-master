@@ -1,18 +1,24 @@
-// app/api/ml/auth/route.ts
-import { getAuthURL, generatePkce } from "@/lib/ml/client";
 import { NextResponse } from "next/server";
+import { getAuthURL, generatePkce } from "@/lib/ml/client";
+import { requireAccess } from "@/lib/api-auth";
+import { criarOAuthState } from "@/lib/ml/tenant";
 
-export async function GET() {
+/**
+ * Início do OAuth do Mercado Livre — AUTENTICADO.
+ *
+ * No SaaS cada cliente conecta a própria conta ML, então precisamos saber QUEM
+ * está conectando. O callback do ML chega sem sessão (é um redirect do ML pro
+ * navegador), por isso guardamos uid + code_verifier no servidor e mandamos só
+ * um `state` opaco na URL — nada sensível trafega e o uid não é falsificável.
+ *
+ * O cliente chama isto com o token do Firebase e recebe a URL para redirecionar.
+ */
+export async function GET(req: Request) {
+  const gate = await requireAccess(req);
+  if (gate instanceof NextResponse) return gate;
+
   const { verifier, challenge } = generatePkce();
+  const state = await criarOAuthState(gate.uid, verifier);
 
-  const response = NextResponse.redirect(getAuthURL(challenge));
-  // guarda o code_verifier para usar no callback (PKCE)
-  response.cookies.set("ml_pkce_verifier", verifier, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 600,
-    path: "/",
-  });
-  return response;
+  return NextResponse.json({ url: getAuthURL(challenge, state) });
 }

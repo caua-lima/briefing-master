@@ -1,27 +1,20 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
+import { desconectarML } from "@/lib/ml/tenant";
 
+/**
+ * Desconecta a conta do Mercado Livre DESTE usuário. Não exige owner: no SaaS
+ * cada cliente administra a própria conexão (e só a dele — o uid vem do token).
+ */
 export async function POST(req: Request) {
-  const gate = await requireAccess(req, { adminOnly: true });
+  const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
   try {
-    const db = getAdminDb();
-    await db.collection("ml_tokens").doc("main").set(
-      {
-        access_token: null,
-        refresh_token: null,
-        expires_in: null,
-        user_id: null,
-        user_profile: null,
-        updated_at: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-
+    await desconectarML(gate.uid);
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: "disconnect_failed", details: error?.message || String(error) }, { status: 500 });
+  } catch (error: unknown) {
+    const details = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "disconnect_failed", details }, { status: 500 });
   }
 }

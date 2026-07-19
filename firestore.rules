@@ -69,6 +69,14 @@ service cloud.firestore {
         || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
     }
 
+    // ── Coleções SERVER-ONLY: SEM regra, de propósito ─────────────
+    // ml_conexoes/{uid}      → tokens do Mercado Livre (refresh_token!)
+    // ml_oauth_states/{state} → uid + code_verifier durante o OAuth
+    //
+    // NUNCA crie match para elas. Sem regra o Firestore nega tudo que vem do
+    // cliente; só o Admin SDK (servidor) enxerga. Se um cliente conseguisse
+    // ler ml_conexoes, teria o refresh_token do ML de outro vendedor.
+
     // ── Coleções globais antigas: SEM regra, de propósito ─────────
     // rascunho, dias, metas, metasHistorico, custos, estoque,
     // estoque_movimentos no nível raiz eram do modelo single-tenant.
