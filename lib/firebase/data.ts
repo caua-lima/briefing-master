@@ -24,6 +24,8 @@ import type {
   GoalEntry,
   Goals,
   Product,
+  Sugestao,
+  SugestaoStatus,
 } from "@/lib/domain/types";
 import { getFirebase } from "./client";
 
@@ -430,4 +432,64 @@ export async function getAccessBootstrap(): Promise<{ ownerEmail: string } | nul
 export async function isAccessListEmpty(): Promise<boolean> {
   const snap = await getDocs(query(aCol(), limit(1)));
   return snap.empty;
+}
+// ── Sugestões dos clientes ────────────────────────────────────
+// Coleção GLOBAL (não fica em users/{uid}): o dono precisa enxergar as
+// sugestões de todos os clientes num lugar só. As regras do Firestore
+// garantem que cada cliente só leia as próprias.
+function sugCol() {
+  const { db } = getFirebase();
+  return collection(db, "sugestoes");
+}
+function sugDoc(id: string) {
+  const { db } = getFirebase();
+  return doc(db, "sugestoes", id);
+}
+
+export async function enviarSugestao(
+  texto: string,
+  categoria: Sugestao["categoria"],
+): Promise<void> {
+  const email = getCurrentUserEmail().toLowerCase();
+  const id = `sug_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  await setDoc(sugDoc(id), {
+    id,
+    email,
+    texto: texto.trim(),
+    categoria,
+    status: "nova" as SugestaoStatus,
+    criadoEm: Date.now(),
+  });
+}
+
+/** Sugestões do próprio usuário (a consulta filtra por e-mail — as regras exigem). */
+export function watchMinhasSugestoes(cb: (s: Sugestao[]) => void): () => void {
+  const email = getCurrentUserEmail().toLowerCase();
+  const q = query(sugCol(), where("email", "==", email));
+  return onSnapshot(q, (snap) => {
+    const lista = snap.docs.map((d) => d.data() as Sugestao);
+    cb(lista.sort((a, b) => b.criadoEm - a.criadoEm));
+  });
+}
+
+/** Todas as sugestões — só o dono consegue (regra do Firestore). */
+export function watchTodasSugestoes(cb: (s: Sugestao[]) => void): () => void {
+  return onSnapshot(sugCol(), (snap) => {
+    const lista = snap.docs.map((d) => d.data() as Sugestao);
+    cb(lista.sort((a, b) => b.criadoEm - a.criadoEm));
+  });
+}
+
+export async function responderSugestao(
+  id: string,
+  patch: { status?: SugestaoStatus; resposta?: string },
+): Promise<void> {
+  await updateDoc(sugDoc(id), sanitizeUndefined({
+    ...patch,
+    respondidoEm: Date.now(),
+  }));
+}
+
+export async function excluirSugestao(id: string): Promise<void> {
+  await deleteDoc(sugDoc(id));
 }

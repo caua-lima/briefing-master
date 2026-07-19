@@ -69,6 +69,21 @@ service cloud.firestore {
         || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
     }
 
+    // ── Sugestões dos clientes ────────────────────────────────────
+    // Coleção global (o dono precisa ver as de todos num lugar só), mas cada
+    // cliente só enxerga as próprias: a regra de read exige que o e-mail do
+    // documento seja o dele. Isso vale também para consultas — uma listagem
+    // sem o filtro por e-mail é NEGADA pelo Firestore.
+    match /sugestoes/{id} {
+      allow read: if isMaster()
+        || (signedIn() && resource.data.email == request.auth.token.email);
+      // só quem tem licença ativa envia, e só em nome do próprio e-mail
+      allow create: if licencaAtiva()
+        && request.resource.data.email == request.auth.token.email;
+      // status e resposta são do dono; o cliente não altera o que enviou
+      allow update, delete: if isMaster();
+    }
+
     // ── Coleções SERVER-ONLY: SEM regra, de propósito ─────────────
     // ml_conexoes/{uid}      → tokens do Mercado Livre (refresh_token!)
     // ml_oauth_states/{state} → uid + code_verifier durante o OAuth

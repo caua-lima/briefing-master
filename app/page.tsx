@@ -11,10 +11,11 @@ import AdsTab from "@/components/tabs/AdsTab";
 import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
+import SugestoesTab from "@/components/tabs/SugestoesTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 
-type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "acesso";
+type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "sugestoes" | "acesso";
 
 // Todos veem tudo. Só o owner edita (as regras do Firestore garantem isso).
 const NAV_ITEMS: { id: Tab; label: string }[] = [
@@ -24,6 +25,7 @@ const NAV_ITEMS: { id: Tab; label: string }[] = [
   { id: "metas", label: "Metas" },
   { id: "custos", label: "Custos" },
   { id: "estoque", label: "Estoque" },
+  { id: "sugestoes", label: "Sugestões" },
   { id: "acesso", label: "Acesso" },
 ];
 
@@ -35,6 +37,7 @@ const ICON_PATHS: Record<Tab, React.ReactNode> = {
   metas: (<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>),
   custos: (<><path d="M6 3h12v18l-2-1.3L14 21l-2-1.3L10 21l-2-1.3L6 21z" /><path d="M9 8.5h6M9 12h6" /></>),
   estoque: (<><path d="M3 8l9-4 9 4-9 4-9-4z" /><path d="M3 8v8l9 4 9-4V8" /><path d="M12 12v8" /></>),
+  sugestoes: (<><path d="M12 3a7 7 0 0 0-4 12.7V18h8v-2.3A7 7 0 0 0 12 3z" /><path d="M10 21h4" /></>),
   acesso: (<><circle cx="12" cy="8" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>),
 };
 
@@ -375,6 +378,7 @@ function AppShell() {
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
+                {activeTab === "sugestoes" && <SugestoesTab />}
                 {activeTab === "acesso" && <AccessControlTab uid={user.uid} data={data} />}
               </>
             )}

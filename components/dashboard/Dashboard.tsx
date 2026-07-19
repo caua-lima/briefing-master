@@ -17,6 +17,7 @@ import MetasGauge from "./MetasGauge";
 import Gauge from "./Gauge";
 import DateRangePicker from "./DateRangePicker";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { MLConnectButton } from "@/components/MLConnectButton";
 
 type Props = { data: UserData };
 
@@ -545,6 +546,8 @@ export default function Dashboard({ data }: Props) {
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  // null = ainda verificando. false = cliente novo, sem ML conectado.
+  const [mlConectado, setMlConectado] = useState<boolean | null>(null);
   const mountedRef = useRef(true);
 
   function runDiagAds() {
@@ -610,6 +613,13 @@ export default function Dashboard({ data }: Props) {
     })();
     return () => { alive = false; };
   }, [prevRange]);
+
+  useEffect(() => {
+    authedFetch("/api/ml/status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (mountedRef.current) setMlConectado(Boolean(j?.connected)); })
+      .catch(() => { if (mountedRef.current) setMlConectado(null); });
+  }, []);
 
   useEffect(() => {
     authedFetch("/api/ml/account", { cache: "no-store" })
@@ -789,7 +799,9 @@ export default function Dashboard({ data }: Props) {
       })()}
 
       {/* ── Conteúdo ── */}
-      {mlLoading ? (
+      {mlConectado === false ? (
+        <PrimeirosPassos />
+      ) : mlLoading ? (
         <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>Carregando dados…</div>
       ) : (
         <>
@@ -913,6 +925,93 @@ export default function Dashboard({ data }: Props) {
           <DevolucoesPanel total={mlMetrics?.devolucoes ?? 0} detalhe={mlMetrics?.devolucoesDetalhe ?? []} />
         </>
       )}
+    </div>
+  );
+}
+
+// ── Primeiros passos (cliente novo, sem o ML conectado) ────────
+/**
+ * Sem isto, quem entra pela primeira vez vê um dashboard inteiro zerado e não
+ * entende se está quebrado ou vazio. Aqui o caminho fica explícito.
+ */
+function PrimeirosPassos() {
+  const passos = [
+    {
+      n: 1,
+      titulo: "Conecte sua conta do Mercado Livre",
+      texto: "É de onde vêm as vendas, taxas, fretes e anúncios. Leva 30 segundos e você autoriza direto no ML.",
+      acao: true,
+    },
+    {
+      n: 2,
+      titulo: "Cadastre seus produtos no Estoque",
+      texto: "Informe o custo de cada produto e o SKU/MLB. Sem o custo, dá pra ver faturamento — mas não o lucro real.",
+    },
+    {
+      n: 3,
+      titulo: "Defina sua meta do mês",
+      texto: "Na aba Metas. O painel passa a mostrar o quanto falta por dia para bater.",
+    },
+  ];
+
+  return (
+    <div className="panel" style={{ padding: "28px 24px" }}>
+      <div style={{ maxWidth: 620, margin: "0 auto", textAlign: "center" }}>
+        <div
+          style={{
+            width: 52, height: 52, borderRadius: 14, margin: "0 auto 16px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
+            color: "#fff", fontWeight: 800, fontSize: "1.2rem",
+          }}
+        >
+          ML
+        </div>
+        <h2 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: 8 }}>
+          Bem-vindo! Vamos configurar em 3 passos
+        </h2>
+        <p style={{ fontSize: ".88rem", color: "var(--muted)", lineHeight: 1.6, marginBottom: 24 }}>
+          Seus dados ainda não aparecem porque a conta do Mercado Livre não está conectada.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 620, margin: "0 auto" }}>
+        {passos.map((p) => (
+          <div
+            key={p.n}
+            style={{
+              display: "flex", gap: 14, alignItems: "flex-start",
+              background: "var(--surface2)", border: "1px solid var(--border)",
+              borderLeft: `3px solid ${p.acao ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: 10, padding: "14px 16px",
+            }}
+          >
+            <span
+              style={{
+                width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: p.acao ? "var(--accent)" : "var(--border)",
+                color: p.acao ? "#fff" : "var(--muted)", fontWeight: 800, fontSize: ".8rem",
+              }}
+            >
+              {p.n}
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: ".92rem", marginBottom: 3 }}>{p.titulo}</div>
+              <div style={{ fontSize: ".8rem", color: "var(--muted)", lineHeight: 1.5 }}>{p.texto}</div>
+              {p.acao && (
+                <div style={{ marginTop: 10 }}>
+                  <MLConnectButton />
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ maxWidth: 620, margin: "20px auto 0", fontSize: ".76rem", color: "var(--muted)", textAlign: "center", lineHeight: 1.6 }}>
+        Só leitura: o sistema <b>nunca</b> altera nada na sua conta do Mercado Livre.
+      </div>
     </div>
   );
 }

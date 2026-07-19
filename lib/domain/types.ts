@@ -143,6 +143,28 @@ export type AccessEntry = {
 /** Motivo pelo qual uma licença não vale — usado no servidor e na tela. */
 export type LicencaInvalida = "sem_licenca" | "suspensa" | "expirada";
 
+// ── Sugestões dos clientes ────────────────────────────────────
+export type SugestaoStatus = "nova" | "analisando" | "aceita" | "recusada" | "entregue";
+
+export type Sugestao = {
+  id: string;
+  email: string;          // quem enviou
+  texto: string;
+  categoria: "ideia" | "problema" | "outro";
+  status: SugestaoStatus;
+  criadoEm: number;
+  resposta?: string;      // retorno do dono para o cliente
+  respondidoEm?: number;
+};
+
+export const SUGESTAO_STATUS: Record<SugestaoStatus, { label: string; cor: string }> = {
+  nova:       { label: "Nova",       cor: "#4f8ef7" },
+  analisando: { label: "Analisando", cor: "#f7c948" },
+  aceita:     { label: "Aceita",     cor: "#22c55e" },
+  entregue:   { label: "Entregue",   cor: "#a855f7" },
+  recusada:   { label: "Recusada",   cor: "#64748b" },
+};
+
 /** Regra ÚNICA de validade da licença. Servidor e cliente usam a mesma. */
 export function licencaValida(
   entry: { expiresAt?: number | null; status?: string } | null | undefined,
