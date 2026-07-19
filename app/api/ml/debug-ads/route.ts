@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     const from = url.searchParams.get("from") || `${ym}-01`;
     const to = url.searchParams.get("to") || now.toISOString().slice(0, 10);
 
-    const token = await getValidMlAccessToken();
+    const token = await getValidMlAccessToken(gate.uid);
 
     // 1. Anunciantes
     const advRes = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {

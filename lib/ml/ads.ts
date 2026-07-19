@@ -6,28 +6,30 @@ const ML_API = "https://api.mercadolibre.com";
 type Advertiser = { advertiser_id?: number | string; site_id?: string; account_name?: string };
 type Adv = { id: string; siteId: string };
 
-// Cache do anunciante por lambda quente (evita resolver a cada chamada)
-let advCache: { adv: Adv | null; at: number } | null = null;
+// Cache do anunciante POR USUÁRIO. Antes era uma variável só: num SaaS isso
+// serviria o anunciante de um cliente para outro (dado de terceiro na tela).
+const advCache = new Map<string, { adv: Adv | null; at: number }>();
 const ADV_TTL = 10 * 60 * 1000;
 
 /**
  * Resolve o anunciante da conta (NÃO é o seller_id) e o site dele.
  * O site entra na URL dos recursos de Product Ads, por isso vem junto.
  */
-async function getAdvertiser(token: string): Promise<Adv | null> {
-  if (advCache && Date.now() - advCache.at < ADV_TTL) return advCache.adv;
+async function getAdvertiser(uid: string, token: string): Promise<Adv | null> {
+  const cached = advCache.get(uid);
+  if (cached && Date.now() - cached.at < ADV_TTL) return cached.adv;
 
   const res = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
     headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
     cache: "no-store",
   });
-  if (!res.ok) return advCache?.adv ?? null; // mantém cache anterior em falha transitória
+  if (!res.ok) return advCache.get(uid)?.adv ?? null; // mantém cache anterior em falha transitória
   const j = (await res.json()) as { advertisers?: Advertiser[] };
   const list = Array.isArray(j?.advertisers) ? j.advertisers : [];
   const chosen = list.find((a) => String(a.site_id ?? "").toUpperCase() === "MLB") ?? list[0];
   if (chosen?.advertiser_id == null) return null;
   const adv: Adv = { id: String(chosen.advertiser_id), siteId: String(chosen.site_id ?? "MLB").toUpperCase() };
-  advCache = { adv, at: Date.now() }; // NÃO cacheia null (evita travar em 0)
+  advCache.set(uid, { adv, at: Date.now() }); // NÃO cacheia null (evita travar em 0)
   return adv;
 }
 
@@ -101,8 +103,8 @@ const legado = (adv: Adv) => `${ML_API}/advertising/advertisers/${adv.id}/produc
 
 const ehMlb = (s: string) => /^MLB\d+$/i.test(s);
 
-// Cache do mapa campanha → MLB (o mesmo TTL do anunciante)
-let mapaCache: { mapa: Record<string, string>; at: number } | null = null;
+// Cache do mapa campanha → MLB, POR USUÁRIO (mesmo TTL do anunciante)
+const mapaCache = new Map<string, { mapa: Record<string, string>; at: number }>();
 
 /**
  * Mapa campaign_id → MLB, montado perguntando ao ML a qual campanha cada um dos
@@ -110,8 +112,9 @@ let mapaCache: { mapa: Record<string, string>; at: number } | null = null;
  * campaign_id). Serve para traduzir linhas de CAMPANHA em anúncio de verdade —
  * sem isso o cruzamento com as vendas (que é por MLB) não acha nada.
  */
-async function mapaCampanhaMlb(token: string, mlbs: string[]): Promise<Record<string, string>> {
-  if (mapaCache && Date.now() - mapaCache.at < ADV_TTL) return mapaCache.mapa;
+async function mapaCampanhaMlb(uid: string, token: string, mlbs: string[]): Promise<Record<string, string>> {
+  const cached = mapaCache.get(uid);
+  if (cached && Date.now() - cached.at < ADV_TTL) return cached.mapa;
   const mapa: Record<string, string> = {};
   await Promise.all(
     mlbs.map(async (mlb) => {
@@ -124,16 +127,16 @@ async function mapaCampanhaMlb(token: string, mlbs: string[]): Promise<Record<st
       } catch { /* item fora de ads: ignora */ }
     }),
   );
-  if (Object.keys(mapa).length > 0) mapaCache = { mapa, at: Date.now() };
+  if (Object.keys(mapa).length > 0) mapaCache.set(uid, { mapa, at: Date.now() });
   return mapa;
 }
 
 /** Troca id de campanha pelo MLB do anúncio quando a linha não veio com MLB. */
 async function resolverMlb(
-  rows: Record<string, unknown>[], token: string, mlbs: string[],
+  uid: string, rows: Record<string, unknown>[], token: string, mlbs: string[],
 ): Promise<Record<string, unknown>[]> {
   if (mlbs.length === 0 || rows.every((r) => ehMlb(itemIdDe(r)))) return rows;
-  const mapa = await mapaCampanhaMlb(token, mlbs);
+  const mapa = await mapaCampanhaMlb(uid, token, mlbs);
   if (Object.keys(mapa).length === 0) return rows; // sem mapa: mantém como está
   return rows.map((r) => {
     const id = itemIdDe(r);
@@ -168,9 +171,9 @@ async function buscar(urls: (offset: number) => string[], token: string): Promis
 }
 
 /** Linhas de item com métricas, tentando o recurso novo e, se preciso, por campanha. */
-async function adItemRows(from: string, to: string, metrics: string): Promise<Record<string, unknown>[]> {
-  const token = await getValidMlAccessToken();
-  const adv = await getAdvertiser(token);
+async function adItemRows(uid: string, from: string, to: string, metrics: string): Promise<Record<string, unknown>[]> {
+  const token = await getValidMlAccessToken(uid);
+  const adv = await getAdvertiser(uid, token);
   if (!adv) throw new Error("ml_ads_sem_anunciante");
 
   const q = (offset: number) => `date_from=${from}&date_to=${to}&metrics=${metrics}&limit=50&offset=${offset}`;
@@ -217,10 +220,10 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
  * Lança em falha — quem chama decide o que mostrar (nunca 0 como se fosse real).
  */
 export async function getAdsSpendByItem(
-  from: string, to: string, mlbs: string[] = [],
+  uid: string, from: string, to: string, mlbs: string[] = [],
 ): Promise<Record<string, number>> {
-  const token = await getValidMlAccessToken();
-  const rows = await resolverMlb(await adItemRows(from, to, "cost"), token, mlbs);
+  const token = await getValidMlAccessToken(uid);
+  const rows = await resolverMlb(uid, await adItemRows(uid, from, to, "cost"), token, mlbs);
   const adsByItem: Record<string, number> = {};
   for (const row of rows) {
     const itemId = itemIdDe(row);
@@ -251,18 +254,18 @@ const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amou
 
 /** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
 export async function getAdsFullByItem(
-  from: string, to: string, mlbs: string[] = [],
+  uid: string, from: string, to: string, mlbs: string[] = [],
 ): Promise<AdItemFull[]> {
-  const token = await getValidMlAccessToken();
+  const token = await getValidMlAccessToken(uid);
   let rows: Record<string, unknown>[];
   try {
-    rows = await adItemRows(from, to, AD_METRICS);
+    rows = await adItemRows(uid, from, to, AD_METRICS);
   } catch (e) {
     // Uma métrica inválida derruba a busca inteira → tenta o conjunto essencial.
-    if (String(e).includes("ml_ads_http_4")) rows = await adItemRows(from, to, "clicks,prints,ctr,cost,cpc,acos");
+    if (String(e).includes("ml_ads_http_4")) rows = await adItemRows(uid, from, to, "clicks,prints,ctr,cost,cpc,acos");
     else throw e;
   }
-  rows = await resolverMlb(rows, token, mlbs);
+  rows = await resolverMlb(uid, rows, token, mlbs);
   return rows.map((row) => ({
     itemId: itemIdDe(row),
     title: String(row.title ?? row.name ?? row.campaign_name ?? ""),
@@ -283,9 +286,9 @@ export async function getAdsFullByItem(
 }
 
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */
-export async function probeAds(from: string, to: string): Promise<Record<string, unknown>> {
+export async function probeAds(uid: string, from: string, to: string): Promise<Record<string, unknown>> {
   try {
-    const token = await getValidMlAccessToken();
+    const token = await getValidMlAccessToken(uid);
     const advRes = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
       headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
       cache: "no-store",

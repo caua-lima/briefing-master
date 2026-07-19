@@ -27,6 +27,18 @@ export type MlConexao = {
 
 const conexaoRef = (uid: string) => getAdminDb().collection(CONEXOES).doc(uid);
 
+/**
+ * Coleção de dados DESTE cliente, no servidor: users/{uid}/<nome>.
+ *
+ * Tem que casar exatamente com o caminho que o cliente usa em
+ * lib/firebase/data.ts (sCol/sDoc). Se o servidor ler a coleção global e o
+ * cliente gravar em users/{uid}/, um não enxerga o outro — e no pior caso o
+ * servidor serviria o dado de um cliente para outro.
+ */
+export function tenantCol(uid: string, nome: string) {
+  return getAdminDb().collection("users").doc(uid).collection(nome);
+}
+
 export async function getMlConexao(uid: string): Promise<MlConexao | null> {
   const snap = await conexaoRef(uid).get();
   return snap.exists ? (snap.data() as MlConexao) : null;
@@ -128,6 +140,22 @@ export async function salvarConexao(
 
 export async function desconectarML(uid: string): Promise<void> {
   await conexaoRef(uid).delete();
+}
+
+/**
+ * Todos os clientes com o ML conectado. Usado pelo cron, que roda sem usuário
+ * logado e precisa sincronizar cada conta separadamente.
+ */
+export async function listarTenantsConectados(): Promise<
+  { uid: string; sellerId: string | null }[]
+> {
+  const snap = await getAdminDb().collection(CONEXOES).get();
+  return snap.docs
+    .filter((d) => {
+      const c = d.data() as MlConexao;
+      return Boolean(c.refresh_token || c.access_token);
+    })
+    .map((d) => ({ uid: d.id, sellerId: (d.data() as MlConexao).seller_id ?? null }));
 }
 
 export async function getStatusML(uid: string) {

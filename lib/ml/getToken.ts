@@ -1,14 +1,13 @@
-import { getMlAccessToken } from "@/app/api/ml/token";
+import { getValidMlAccessToken as tokenDoUsuario } from "@/lib/ml/tenant";
 
 /**
- * Retorna um access token válido do Mercado Livre, renovando via refresh_token
- * quando necessário. Delega para o gerenciador canônico em app/api/ml/token.ts
- * (fonte única de verdade — evita formatos de `updated_at` divergentes).
+ * Access token válido do Mercado Livre DO USUÁRIO informado, renovando pelo
+ * refresh_token quando necessário.
+ *
+ * No SaaS não existe "o token" — existe o token de cada cliente. Por isso o uid
+ * é obrigatório: quem chama precisa dizer de quem é a conta. O uid vem do
+ * requireAccess(req) das rotas (token do Firebase já verificado).
  */
-export async function getValidMlAccessToken(): Promise<string> {
-  const token = await getMlAccessToken();
-  if (!token) {
-    throw new Error("Token ML não encontrado ou expirado. Reconecte o Mercado Livre.");
-  }
-  return token;
+export async function getValidMlAccessToken(uid: string): Promise<string> {
+  return tokenDoUsuario(uid);
 }

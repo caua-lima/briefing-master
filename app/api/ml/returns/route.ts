@@ -1,26 +1,15 @@
 import { NextResponse } from "next/server";
+import { tenantCol } from "@/lib/ml/tenant";
 import { getAdminDb } from "../../../../lib/firebase/admin";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId } from "@/lib/ml/tenant";
 import { requireAccess } from "@/lib/api-auth";
-
-async function getSellerId() {
-  const envSellerId = process.env.ML_SELLER_ID;
-  if (envSellerId) return envSellerId;
-
-  const db = getAdminDb();
-  const doc = await db.collection("ml_tokens").doc("main").get();
-
-  if (!doc.exists) return null;
-  const data = doc.data();
-  return data?.user_id ? String(data.user_id) : null;
-}
 
 export async function GET(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(gate.uid);
 
     if (!token) {
       return NextResponse.json(
@@ -29,7 +18,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const sellerId = await getSellerId();
+    const sellerId = await getSellerId(gate.uid);
 
     if (!sellerId) {
       return NextResponse.json(
@@ -75,7 +64,7 @@ export async function GET(req: Request) {
     const batch = db.batch();
 
     returns.forEach((item: any) => {
-      const ref = db.collection("ml_returns").doc(item.id);
+      const ref = tenantCol(gate.uid, "ml_returns").doc(item.id);
       batch.set(ref, item, { merge: true });
     });
 

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId } from "@/lib/ml/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
-const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 /** Testa vários endpoints candidatos de inbound do Full e mostra qual responde. */
 export async function GET(req: Request) {
   const gate = await requireAccess(req, { adminOnly: true });
   if (gate instanceof NextResponse) return gate;
+  const SELLER_ID = await getSellerId(gate.uid);
 
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(gate.uid);
     if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json", "Api-Version": "1" };
 

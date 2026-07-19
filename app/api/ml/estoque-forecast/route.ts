@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { tenantCol, getSellerId } from "@/lib/ml/tenant";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken } from "@/lib/ml/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
-const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 export const maxDuration = 30;
 
@@ -23,6 +23,7 @@ function normalizeSku(s: string): string {
 export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
+  const SELLER_ID = await getSellerId(gate.uid);
 
   try {
     const url = new URL(req.url);
@@ -32,13 +33,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ ...cache.body, cached: true });
     }
 
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(gate.uid);
     if (!token) return NextResponse.json({ error: "sem token", vendas: {}, dias }, { status: 200 });
 
     const db = getAdminDb();
 
     // Mapa MLB/SKU → productId
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(gate.uid, "estoque").get();
     const porMlb = new Map<string, string>();
     const porSku = new Map<string, string>();
     for (const doc of prodSnap.docs) {

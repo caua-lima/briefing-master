@@ -1,38 +1,55 @@
 import { NextResponse } from "next/server";
-import { getMlAccessToken } from "../token";
 import { isCronRequest } from "@/lib/api-auth";
+import { getMlAccessToken, getSellerId, listarTenantsConectados } from "@/lib/ml/tenant";
 import { currentMonthRangeBR, syncOrdersRange, syncReturnsRange } from "@/lib/ml/sync";
 
 export const maxDuration = 60;
 
 /**
- * Endpoint de sincronização automática, chamado pelo Vercel Cron.
- * O Vercel injeta `Authorization: Bearer <CRON_SECRET>` quando a env
- * CRON_SECRET está configurada — validamos isso via isCronRequest.
+ * Sincronização automática (Vercel Cron).
  *
- * Sincroniza o mês atual (pedidos + devoluções) para manter o dashboard
- * sempre atualizado sem depender do botão manual.
+ * Roda SEM usuário logado, então percorre todos os clientes com o ML conectado
+ * e sincroniza a conta de cada um separadamente — cada tenant tem token,
+ * vendedor e coleções próprios.
+ *
+ * Um cliente que falhe (token revogado, conta suspensa) não pode derrubar a
+ * sincronização dos outros: cada um é tratado isoladamente e o erro é reportado
+ * no resultado.
  */
 export async function GET(req: Request) {
   if (!isCronRequest(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  try {
-    const accessToken = await getMlAccessToken();
-    if (!accessToken) {
-      return NextResponse.json({ error: "Token ML não encontrado" }, { status: 400 });
+  const range = currentMonthRangeBR();
+  const tenants = await listarTenantsConectados();
+  const resultados: { uid: string; ok: boolean; orders?: number; returns?: number; erro?: string }[] = [];
+
+  for (const t of tenants) {
+    try {
+      const token = await getMlAccessToken(t.uid);
+      if (!token) {
+        resultados.push({ uid: t.uid, ok: false, erro: "sem token" });
+        continue;
+      }
+      const sellerId = t.sellerId ?? (await getSellerId(t.uid));
+      const [orders, returns] = await Promise.all([
+        syncOrdersRange(t.uid, sellerId, token, range),
+        syncReturnsRange(t.uid, sellerId, token, range),
+      ]);
+      resultados.push({ uid: t.uid, ok: true, orders, returns });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      resultados.push({ uid: t.uid, ok: false, erro: msg.slice(0, 160) });
     }
-
-    const range = currentMonthRangeBR();
-    const [savedOrders, savedReturns] = await Promise.all([
-      syncOrdersRange(accessToken, range),
-      syncReturnsRange(accessToken, range),
-    ]);
-
-    return NextResponse.json({ ok: true, savedOrders, savedReturns, at: new Date().toISOString() });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: "cron_sync_failed", details: msg }, { status: 500 });
   }
+
+  return NextResponse.json({
+    ok: true,
+    tenants: tenants.length,
+    sincronizados: resultados.filter((r) => r.ok).length,
+    falhas: resultados.filter((r) => !r.ok).length,
+    resultados,
+    at: new Date().toISOString(),
+  });
 }

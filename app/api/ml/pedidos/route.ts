@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { tenantCol } from "@/lib/ml/tenant";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 
@@ -41,8 +42,8 @@ export async function GET(req: Request) {
 
     // Pedidos do período (dedupe UTC/BR)
     const [snapUTC, snapBR] = await Promise.all([
-      db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      tenantCol(gate.uid, "ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      tenantCol(gate.uid, "ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const ordersMap = new Map<string, FirebaseFirestore.DocumentData>();
     for (const snap of [snapUTC, snapBR])
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
     const orders = Array.from(ordersMap.values());
 
     // Índice de produtos
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(gate.uid, "estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {

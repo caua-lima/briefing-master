@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { tenantCol } from "@/lib/ml/tenant";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 
@@ -9,8 +10,8 @@ export async function GET(req: Request) {
   const db = getAdminDb();
 
   const [ordersSnap, estoqueSnap] = await Promise.all([
-    db.collection("ml_orders").limit(3).get(),
-    db.collection("estoque").get(),
+    tenantCol(gate.uid, "ml_orders").limit(3).get(),
+    tenantCol(gate.uid, "estoque").get(),
   ]);
 
   const sample_orders = ordersSnap.docs.map((doc) => {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, tenantCol } from "@/lib/ml/tenant";
 import { requireAccess } from "@/lib/api-auth";
 
 export async function POST(req: Request) {
@@ -9,7 +9,7 @@ export async function POST(req: Request) {
 
   try {
     const adminDb = getAdminDb();
-    const accessToken = await getMlAccessToken();
+    const accessToken = await getMlAccessToken(gate.uid);
 
     if (!accessToken) {
       return NextResponse.json(
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
       const orderId = String(order.id);
 
       batch.set(
-        adminDb.collection("ml_orders").doc(orderId),
+        tenantCol(gate.uid, "ml_orders").doc(orderId),
         {
           order_id: orderId,
           status: order.status ?? null,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId } from "@/lib/ml/tenant";
 import { requireAccess } from "@/lib/api-auth";
 import {
   currentMonthRangeBR,
@@ -33,16 +33,17 @@ export async function POST(req: Request) {
   if (gate instanceof NextResponse) return gate;
 
   try {
-    const accessToken = await getMlAccessToken();
+    const accessToken = await getMlAccessToken(gate.uid);
+    const sellerId = await getSellerId(gate.uid);
     if (!accessToken) {
       return NextResponse.json({ error: "Token não encontrado" }, { status: 400 });
     }
 
     const range = rangeFromRequest(req);
     const [savedOrders, savedReturns, savedClaims] = await Promise.all([
-      syncOrdersRange(accessToken, range),
-      syncReturnsRange(accessToken, range),
-      syncClaimsRange(accessToken, range).catch(() => 0), // best-effort
+      syncOrdersRange(gate.uid, sellerId, accessToken, range),
+      syncReturnsRange(gate.uid, sellerId, accessToken, range),
+      syncClaimsRange(gate.uid, accessToken, range).catch(() => 0), // best-effort
     ]);
 
     return NextResponse.json({ ok: true, savedOrders, savedReturns, savedClaims, range });

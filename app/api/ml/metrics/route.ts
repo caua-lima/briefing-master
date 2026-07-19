@@ -3,7 +3,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsSpendByItem, probeAds } from "@/lib/ml/ads";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
-import { getMlAccessToken } from "../token";
+import { getTenantML, tenantCol } from "@/lib/ml/tenant";
 
 export const maxDuration = 30;
 
@@ -294,7 +294,7 @@ export async function GET(req: Request) {
     const db = getAdminDb();
 
     // ── 1. Estoque: indexar por MLB (sem prefixo) e por SKU ───
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(gate.uid, "estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {
@@ -333,34 +333,34 @@ export async function GET(req: Request) {
     let adsByItem: Record<string, number> = {};
     if (fromStr <= adsTo) {
       try {
-        adsByItem = await getAdsSpendByItem(fromStr, adsTo);
+        adsByItem = await getAdsSpendByItem(gate.uid, fromStr, adsTo);
       } catch {
         try {
-          adsByItem = fromStr <= ontem ? await getAdsSpendByItem(fromStr, ontem) : {};
+          adsByItem = fromStr <= ontem ? await getAdsSpendByItem(gate.uid, fromStr, ontem) : {};
         } catch {
           adsFalhou = true;
         }
       }
     }
-    const adsHoje: Record<string, number> = await getAdsSpendByItem(hj, hj).catch(() => ({}));
+    const adsHoje: Record<string, number> = await getAdsSpendByItem(gate.uid, hj, hj).catch(() => ({}));
 
     // ── 4. Pedidos do período + de hoje (AO VIVO, com fallback) ─
-    const token = await getMlAccessToken();
+    const { token, sellerId } = await getTenantML(gate.uid);
     const fromISO = `${fromStr}T00:00:00.000-03:00`;
     const toISO = `${toStr}T23:59:59.999-03:00`;
     const hjFromISO = `${hj}T00:00:00.000-03:00`;
     const hjToISO = `${hj}T23:59:59.999-03:00`;
 
-    let orders = token ? await fetchOrdersLive(token, fromISO, toISO) : null;
-    let ordersHoje = token ? await fetchOrdersLive(token, hjFromISO, hjToISO) : null;
+    let orders = token ? await fetchOrdersLive(token, sellerId, fromISO, toISO) : null;
+    let ordersHoje = token ? await fetchOrdersLive(token, sellerId, hjFromISO, hjToISO) : null;
 
     // fallback para o Firestore se o fetch ao vivo falhar
-    if (!orders) orders = await loadOrders(db, start, end, startBR, endBR);
-    if (!ordersHoje) ordersHoje = await loadOrders(db, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, hjFromISO, hjToISO);
+    if (!orders) orders = await loadOrders(gate.uid, start, end, startBR, endBR);
+    if (!ordersHoje) ordersHoje = await loadOrders(gate.uid, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, hjFromISO, hjToISO);
 
     // enriquece o frete (shipping_cost) a partir do cache do Firestore
     const allIds = [...orders, ...ordersHoje].map((o) => String(o.order_id ?? "")).filter(Boolean);
-    const shipMap = await readShippingCosts(db, allIds);
+    const shipMap = await readShippingCosts(gate.uid, allIds);
     for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
     for (const o of ordersHoje) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
 
@@ -369,8 +369,8 @@ export async function GET(req: Request) {
     // Devolução = venda revertida, produto volta ao estoque → 0 a 0.
     // Os dois entram no faturamento BRUTO, mas saem do líquido e do lucro.
     const [retUTC, retBR] = await Promise.all([
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      tenantCol(gate.uid, "ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      tenantCol(gate.uid, "ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const retMap = new Map<string, FirebaseFirestore.DocumentData>();
     for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
@@ -398,7 +398,7 @@ export async function GET(req: Request) {
       .sort((a, b) => a.data.localeCompare(b.data));
 
     // Diagnóstico de ADS quando o total do período vem 0 (identifica a causa)
-    const adsDiag = agg.totalAds === 0 && fromStr <= adsTo ? await probeAds(fromStr, adsTo) : null;
+    const adsDiag = agg.totalAds === 0 && fromStr <= adsTo ? await probeAds(gate.uid, fromStr, adsTo) : null;
 
     // ── 5. Devoluções (informativo — já excluídas do faturamento/lucro acima) ──
     const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
@@ -426,7 +426,7 @@ export async function GET(req: Request) {
     const isFullMonth = fy === ty && fm === tm && fd === 1 && td === lastDayFrom;
     const monthsInPeriod = Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
 
-    const custosSnap = await db.collection("custos").get();
+    const custosSnap = await tenantCol(gate.uid, "custos").get();
     let custosOp = 0;
     for (const doc of custosSnap.docs) {
       const d = doc.data();

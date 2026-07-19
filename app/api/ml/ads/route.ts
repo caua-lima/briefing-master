@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { getTenantML, tenantCol } from "@/lib/ml/tenant";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, probeAds } from "@/lib/ml/ads";
-import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 
 export const maxDuration = 30;
@@ -75,15 +75,15 @@ export async function GET(req: Request) {
 
     let ads;
     try {
-      ads = from <= adsTo ? await getAdsFullByItem(from, adsTo) : [];
+      ads = from <= adsTo ? await getAdsFullByItem(gate.uid, from, adsTo) : [];
     } catch {
       // Pode ser o período terminando no dia corrente (dados de hoje ainda não
       // fecharam do lado do ML). Tenta de novo terminando ontem.
       const ontem = todayISO(1);
       try {
-        ads = from <= ontem ? await getAdsFullByItem(from, ontem) : [];
+        ads = from <= ontem ? await getAdsFullByItem(gate.uid, from, ontem) : [];
       } catch (e2) {
-        const diag = await probeAds(from, adsTo);
+        const diag = await probeAds(gate.uid, from, adsTo);
         return NextResponse.json({ error: "ads_failed", details: String(e2).slice(0, 200), diag, from, to: adsTo, items: [] });
       }
     }
@@ -91,7 +91,7 @@ export async function GET(req: Request) {
     const db = getAdminDb();
 
     // ── Produtos (custo médio + imposto) indexados por MLB e SKU ──
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(gate.uid, "estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {
@@ -107,19 +107,19 @@ export async function GET(req: Request) {
     const fromISO = `${from}T00:00:00.000-03:00`;
     const toISO = `${to}T23:59:59.999-03:00`;
     const start = `${from}T00:00:00.000Z`, end = `${to}T23:59:59.999Z`;
-    const token = await getValidMlAccessToken().catch(() => "");
-    let orders = token ? await fetchOrdersLive(token, fromISO, toISO) : null;
-    if (!orders) orders = await loadOrders(db, start, end, fromISO, toISO);
+    const { token, sellerId } = await getTenantML(gate.uid).catch(() => ({ token: "", sellerId: "" }));
+    let orders = token ? await fetchOrdersLive(token, sellerId, fromISO, toISO) : null;
+    if (!orders) orders = await loadOrders(gate.uid, start, end, fromISO, toISO);
 
     // enriquece frete do cache do Firestore
     const ids = orders.map((o) => String(o.order_id ?? "")).filter(Boolean);
-    const shipMap = await readShippingCosts(db, ids);
+    const shipMap = await readShippingCosts(gate.uid, ids);
     for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
 
     // ── Devoluções + cancelamentos (excluídos do lucro, igual ao dashboard) ──
     const [retUTC, retBR] = await Promise.all([
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", fromISO).where("date_created", "<=", toISO).get(),
+      tenantCol(gate.uid, "ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      tenantCol(gate.uid, "ml_returns").where("date_created", ">=", fromISO).where("date_created", "<=", toISO).get(),
     ]);
     const cancelIds = new Set<string>();
     const devolIds = new Set<string>();

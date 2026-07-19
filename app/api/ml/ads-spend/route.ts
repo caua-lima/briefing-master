@@ -14,7 +14,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "from e to são obrigatórios" }, { status: 400 });
     }
 
-    const adsByItem = await getAdsSpendByItem(from, to);
+    const adsByItem = await getAdsSpendByItem(gate.uid, from, to);
     return NextResponse.json({ adsByItem, from, to });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,7 +1,11 @@
 import "server-only";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/ml/tenant";
 
 export const ML_API = "https://api.mercadolibre.com";
-export const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
+// No SaaS o vendedor é o do cliente logado: quem chama passa o sellerId, que
+// sai de lib/ml/tenant (getSellerId → /users/me da conta conectada).
+// A env ML_SELLER_ID era do modelo de conta única e não é mais usada aqui.
 
 export type OrderItemDoc = {
   sku?: string;
@@ -22,17 +26,22 @@ export type OrderDoc = {
   items: OrderItemDoc[];
 };
 
-/** Lê os pedidos de um intervalo (UTC e BR) do Firestore, deduplicando por order_id. */
+/**
+ * Lê os pedidos de um intervalo (UTC e BR) do Firestore, deduplicando por
+ * order_id. Sempre dentro de users/{uid}/ml_orders — nunca da coleção global,
+ * senão um cliente veria os pedidos do outro.
+ */
 export async function loadOrders(
-  db: FirebaseFirestore.Firestore,
+  uid: string,
   start: string,
   end: string,
   startBR: string,
   endBR: string,
 ): Promise<FirebaseFirestore.DocumentData[]> {
+  const col = tenantCol(uid, "ml_orders");
   const [snapUTC, snapBR] = await Promise.all([
-    db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-    db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+    col.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+    col.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
   ]);
   const map = new Map<string, FirebaseFirestore.DocumentData>();
   for (const snap of [snapUTC, snapBR])
@@ -50,6 +59,7 @@ export async function loadOrders(
  */
 export async function fetchOrdersLive(
   token: string,
+  sellerId: string,
   fromISO: string,
   toISO: string,
 ): Promise<FirebaseFirestore.DocumentData[] | null> {
@@ -58,7 +68,7 @@ export async function fetchOrdersLive(
     let offset = 0;
     while (true) {
       const url =
-        `${ML_API}/orders/search?seller=${SELLER_ID}` +
+        `${ML_API}/orders/search?seller=${sellerId}` +
         `&order.date_created.from=${encodeURIComponent(fromISO)}` +
         `&order.date_created.to=${encodeURIComponent(toISO)}` +
         `&limit=50&offset=${offset}`;
@@ -99,15 +109,17 @@ export async function fetchOrdersLive(
   }
 }
 
-/** Lê shipping_cost já sincronizado do Firestore para os pedidos informados. */
+/** Lê shipping_cost já sincronizado (de users/{uid}/ml_orders). */
 export async function readShippingCosts(
-  db: FirebaseFirestore.Firestore,
+  uid: string,
   ids: string[],
 ): Promise<Map<string, number>> {
+  const db = getAdminDb();
+  const col = tenantCol(uid, "ml_orders");
   const map = new Map<string, number>();
   const CHUNK = 300;
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const refs = ids.slice(i, i + CHUNK).filter(Boolean).map((id) => db.collection("ml_orders").doc(id));
+    const refs = ids.slice(i, i + CHUNK).filter(Boolean).map((id) => col.doc(id));
     if (refs.length === 0) continue;
     const snaps = await db.getAll(...refs);
     for (const snap of snaps) {
