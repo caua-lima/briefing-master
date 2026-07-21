@@ -298,7 +298,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
 const TIPO_LABEL: Record<MovimentoTipo, string> = {
   entrada: "Entrada",
-  saldo_inicial: "Saldo inicial",
+  saldo_inicial: "Custo do Full",
   saida_full: "Envio Full",
   ajuste: "Ajuste",
 };
@@ -365,9 +365,19 @@ function ProductRow({
         </td>
         <td style={{ textAlign: "right", whiteSpace: "nowrap", color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
         <td>
-          <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+          <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
             <button type="button" className="btn btn-success btn-xs" title="Entrada (compra)" onClick={() => onMov("entrada")}>＋ Entrada</button>
-            <button type="button" className="btn btn-ghost btn-xs" title="Enviar pro Full (baixa, não é venda)" onClick={() => onMov("saida_full")}>Full</button>
+            <button type="button" className="btn btn-ghost btn-xs" title="Enviar de casa pro Full (baixa, não é venda)" onClick={() => onMov("saida_full")}>Enviar Full</button>
+            {ehFull && full > 0 && (
+              <button
+                type="button"
+                className={custoMedio > 0 ? "btn btn-ghost btn-xs" : "btn btn-warning btn-xs"}
+                title="Informar o custo das unidades que já estão no Full, pra o lucro sair certo"
+                onClick={() => onMov("saldo_inicial")}
+              >
+                {custoMedio > 0 ? "Custo Full" : "Custear Full"}
+              </button>
+            )}
           </div>
         </td>
         <td>
@@ -395,7 +405,7 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>Movimentações</span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>Saldo inicial</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("saldo_inicial")}>Custo do Full</button>
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => onMov("ajuste")}>Ajuste / perda</button>
         </div>
       </div>
@@ -438,24 +448,43 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   const isSaldo = tipo === "saldo_inicial";
   const isAjuste = tipo === "ajuste";
   const precisaCusto = isEntrada || isSaldo;
-  const [qtd, setQtd] = useState("");
+
+  const { qtd: full, proprio } = fullDe(product, estoqueML);
+  const casa = product.qtdLocal ?? 0;
+  const avgAtual = custoMedioDe(product);
+
+  // Saldo inicial serve pra custear o que JÁ ESTÁ no Full: pré-preenche com a
+  // quantidade que o ML mostra no Full, pra você só confirmar o custo.
+  const [qtd, setQtd] = useState(isSaldo && full > 0 ? String(full) : "");
   const [custo, setCusto] = useState(precisaCusto ? (product.custoMedio ? String(product.custoMedio) : product.custo || "") : "");
   const [data, setData] = useState(todayISO());
   const [obs, setObs] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const titulo = isEntrada ? "＋ Entrada (compra)" : isSaldo ? "Saldo inicial" : tipo === "saida_full" ? "Envio pro Full" : "Ajuste de estoque";
+  const titulo = isEntrada ? "＋ Entrada (compra)" : isSaldo ? "Custo do que está no Full" : tipo === "saida_full" ? "Envio pro Full" : "Ajuste de estoque";
 
   const qNum = parseNum(qtd);
   const cNum = parseNum(custo);
-  // Estoque atual = tudo que você tem hoje (em casa + Full + próprio). É a base
-  // do blend: o custo médio parte do custo atual sobre esse estoque.
-  const { qtd: full, proprio } = fullDe(product, estoqueML);
-  const estoqueAtual = (product.qtdLocal ?? 0) + full + proprio;
-  const avgAtual = custoMedioDe(product);
-  const novoAvg = precisaCusto && qNum > 0 && estoqueAtual + qNum > 0
+
+  // ENTRADA: blenda a compra nova contra tudo que você tem (casa+Full+próprio).
+  const estoqueAtual = casa + full + proprio;
+  const novoAvgEntrada = qNum > 0 && estoqueAtual + qNum > 0
     ? (estoqueAtual * avgAtual + qNum * cNum) / (estoqueAtual + qNum)
     : avgAtual;
+
+  // SALDO INICIAL (Full): as unidades do Full ainda não têm custo. Blenda elas,
+  // ao custo informado, contra o que está FORA do Full (casa + próprio), que já
+  // reflete o custo médio atual. Sem estoque fora do Full, o custo do Full vira
+  // o próprio custo médio. Antes o saldo SOBRESCREVIA o custo médio — errado
+  // quando já havia estoque em casa com custo.
+  const foraDoFull = casa + proprio;
+  const novoAvgSaldo = qNum > 0
+    ? (avgAtual > 0 && foraDoFull > 0
+        ? (foraDoFull * avgAtual + qNum * cNum) / (foraDoFull + qNum)
+        : cNum)
+    : avgAtual;
+
+  const novoAvg = isEntrada ? novoAvgEntrada : novoAvgSaldo;
 
   async function handleSave() {
     if (!qNum || (!isAjuste && qNum <= 0)) { alert("Informe a quantidade."); return; }
@@ -470,8 +499,8 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
         custoUnit: precisaCusto ? cNum : undefined,
         data,
         obs: obs.trim() || undefined,
-        // Entrada faz o blend; saldo inicial DEFINE o custo médio das unidades que já existem.
-      }, isEntrada ? novoAvg : isSaldo ? cNum : undefined);
+        // Entrada e saldo do Full gravam o custo médio recalculado.
+      }, precisaCusto ? novoAvg : undefined);
       onSaved();
     } catch (err: unknown) {
       alert("Erro ao salvar movimentação: " + (err instanceof Error ? err.message : String(err)));
@@ -492,12 +521,12 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
 
       {precisaCusto && (
         <div className="config-field">
-          <label>Custo unitário {isSaldo ? "do estoque que já existe" : "desta compra"} (R$)</label>
+          <label>Custo unitário {isSaldo ? "das unidades no Full" : "desta compra"} (R$)</label>
           <input type="number" min="0" step="0.01" placeholder="Ex: 11.50" value={custo} onChange={(e) => setCusto(e.target.value)} />
-          {isEntrada && qNum > 0 && cNum > 0 && (
+          {qNum > 0 && cNum > 0 && (
             <div className="hint">
-              Custo médio após esta entrada: <b style={{ color: "var(--green)" }}>{fmtBRL(novoAvg)}</b>
-              {avgAtual > 0 && <> (era {fmtBRL(avgAtual)})</>}
+              Custo médio {isSaldo ? "depois de custear o Full" : "após esta entrada"}: <b style={{ color: "var(--green)" }}>{fmtBRL(novoAvg)}</b>
+              {avgAtual > 0 && Math.abs(novoAvg - avgAtual) > 0.001 && <> (era {fmtBRL(avgAtual)})</>}
             </div>
           )}
         </div>
@@ -505,7 +534,9 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
 
       {isSaldo && (
         <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(79,142,247,.08)", border: "1px solid rgba(79,142,247,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
-          <b>Saldo inicial</b> = estoque que você já tinha antes de começar a lançar (ex.: o que já está no Full). Entra na <b>média do custo</b> com a quantidade e o custo reais, mas <b>não soma no “em casa”</b> (essas unidades já estão fora).
+          {full > 0
+            ? <>O ML mostra <b>{full} un</b> deste produto no Full sem custo lançado. Informe quanto você pagou por unidade — isso <b>entra no custo médio</b> pra o lucro sair certo quando elas venderem. Não soma no “em casa” (já estão fora).</>
+            : <>Use pra custear unidades que <b>já estavam no estoque</b> antes de você começar a lançar (ex.: o que está no Full). Entra na média do custo, mas <b>não soma no “em casa”</b>.</>}
         </div>
       )}
 
