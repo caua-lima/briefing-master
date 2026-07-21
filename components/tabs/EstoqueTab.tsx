@@ -751,7 +751,7 @@ function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
   type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
   type TipoRemessa = { tipo: string; qtd: number };
-  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[]; tipos: TipoRemessa[] };
+  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[]; tipos: TipoRemessa[]; refs: string[] };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number; inventariosConsultados?: number; anunciosDaConta?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
@@ -873,9 +873,14 @@ function DiagnosticoInboundFull() {
                         </td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>
                           {r.recebido}
-                          {r.tipos?.length > 1 && (
+                          {!!r.tipos?.length && (
                             <div style={{ fontWeight: 400, fontSize: ".66rem", color: "var(--muted)" }}>
-                              {r.tipos.map((t) => `${t.qtd} ${t.tipo.replace("_", " ").toLowerCase()}`).join(" + ")}
+                              {r.tipos.map((t) => `${t.qtd} ${t.tipo.replace(/_/g, " ").toLowerCase()}`).join(" + ")}
+                            </div>
+                          )}
+                          {!!r.refs?.length && (
+                            <div style={{ fontWeight: 400, fontSize: ".66rem", color: "var(--green)" }}>
+                              ref: {r.refs.join(", ")}
                             </div>
                           )}
                         </td>

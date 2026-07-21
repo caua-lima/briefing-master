@@ -136,7 +136,7 @@ export async function GET(req: Request) {
     type Agg = {
       data: string; recebido: number; problema: number;
       porInventory: Map<string, number>; porTipo: Map<string, number>;
-      saldoData: string; saldo: number;
+      refs: Set<string>; saldoData: string; saldo: number;
     };
     const porRemessaAgg = new Map<string, Agg>();
     let truncado = false;
@@ -187,6 +187,11 @@ export async function GET(req: Request) {
 
             const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
             const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
+            // Devolução de cliente também volta ao Full com inbound_id próprio.
+            // Se ela trouxer alguma referência a mais (shipment_id, order_id),
+            // dá pra separar envio nosso de devolução — sem isso, automatizar
+            // faria toda devolução descontar do estoque de casa.
+            const outrasRefs = refs.map((x) => String(x?.type ?? "")).filter((t) => t && t !== "inbound_id");
             // Ajuste/transferência sem remessa é movimento avulso do Full,
             // nada a ver com envio nosso — não pode virar baixa de estoque.
             if (!remessa) continue;
@@ -203,8 +208,9 @@ export async function GET(req: Request) {
 
             const agg = porRemessaAgg.get(remessa) ?? {
               data, recebido: 0, problema: 0, porInventory: new Map<string, number>(),
-              porTipo: new Map<string, number>(), saldoData: "", saldo: 0,
+              porTipo: new Map<string, number>(), refs: new Set<string>(), saldoData: "", saldo: 0,
             };
+            for (const t of outrasRefs) agg.refs.add(t);
             agg.recebido += entrou;
             agg.problema += ruins;
             agg.porTipo.set(tipo, (agg.porTipo.get(tipo) ?? 0) + entrou + ruins);
@@ -246,6 +252,7 @@ export async function GET(req: Request) {
         recebido: a.recebido,
         problema: a.problema,
         saldoFull: a.saldo,
+        refs: Array.from(a.refs),
         tipos: Array.from(a.porTipo.entries())
           .filter(([, q]) => q > 0)
           .sort((p, q) => q[1] - p[1])
