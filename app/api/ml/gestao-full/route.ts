@@ -71,7 +71,9 @@ export async function GET(req: Request) {
     // Recebimentos (inbound) por inventory_id — best-effort
     const invArr = Array.from(inventoryIds);
     const now = new Date(Date.now() - 3 * 3600 * 1000);
-    const from = new Date(now.getTime() - 90 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    // O ML recusa janela > 60 dias nesta busca ("Date range can't be greater
+    // than 60 days"). 55 deixa folga para fuso/arredondamento de borda.
+    const from = new Date(now.getTime() - 55 * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const to = now.toISOString().slice(0, 10);
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
     let opStatus = 0;

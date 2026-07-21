@@ -794,7 +794,7 @@ function DiagnosticoInboundFull() {
           }}>
             {ok
               ? <>
-                  <b>Disponível!</b> O ML respondeu ({recebimentos.length} recebimento{recebimentos.length === 1 ? "" : "s"} nos últimos 90 dias).
+                  <b>Disponível!</b> O ML respondeu ({recebimentos.length} recebimento{recebimentos.length === 1 ? "" : "s"} nos últimos 55 dias).
                   {!!dados.tiposVistos?.length && (
                     <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
                       Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
