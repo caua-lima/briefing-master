@@ -750,39 +750,11 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
   type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
-  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[] };
+  type TipoRemessa = { tipo: string; qtd: number };
+  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[]; tipos: TipoRemessa[] };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number; inventariosConsultados?: number; anunciosDaConta?: number } | null>(null);
-  type Probe = { forma: string; status: number; linhas: number; corpo: string };
-  type PorTipo = { remessa: string; tipo: string; unidades: number; linhas: number };
-  type Auditoria = { probes: Probe[]; varreduraStatus: number; varreduraErro: string; lidas: number; porTipo: PorTipo[] };
-  const [auditoria, setAuditoria] = useState<Auditoria | null>(null);
-  // Sem isso, auditoria que falha não mostra nada e parece que o botão morreu.
-  const [auditoriaErro, setAuditoriaErro] = useState("");
-  const [auditando, setAuditando] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
-
-  async function auditar() {
-    setAuditando(true);
-    setAuditoria(null);
-    setAuditoriaErro("");
-    try {
-      // Passamos uma remessa real: as sondas por external_references precisam de alvo.
-      const alvo = dados?.remessas?.[0]?.remessa ?? "1";
-      const r = await authedFetch(`/api/ml/gestao-full?auditar=${encodeURIComponent(alvo)}`, { cache: "no-store" });
-      const txt = await r.text();
-      if (!r.ok) {
-        setAuditoriaErro(`HTTP ${r.status} — ${txt.slice(0, 400)}`);
-      } else {
-        const j = JSON.parse(txt) as { auditoria?: Auditoria };
-        if (j.auditoria) setAuditoria(j.auditoria);
-        else setAuditoriaErro(`Resposta sem auditoria: ${txt.slice(0, 400)}`);
-      }
-    } catch (e) {
-      setAuditoriaErro(`Falhou antes de responder: ${String(e).slice(0, 300)}`);
-    }
-    setAuditando(false);
-  }
 
   async function verificar() {
     setAberto(true);
@@ -899,7 +871,14 @@ function DiagnosticoInboundFull() {
                             </div>
                           ))}
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: 700 }}>{r.recebido}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>
+                          {r.recebido}
+                          {r.tipos?.length > 1 && (
+                            <div style={{ fontWeight: 400, fontSize: ".66rem", color: "var(--muted)" }}>
+                              {r.tipos.map((t) => `${t.qtd} ${t.tipo.replace("_", " ").toLowerCase()}`).join(" + ")}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ textAlign: "right", color: r.problema > 0 ? "var(--red)" : "var(--muted)", fontWeight: r.problema > 0 ? 700 : 400 }}>
                           {r.problema || "—"}
                         </td>
@@ -915,81 +894,6 @@ function DiagnosticoInboundFull() {
                 {dados.truncado && " (limite de páginas atingido — pode faltar remessa antiga)"}
               </div>
 
-              <div style={{ marginTop: 12 }}>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={auditar} disabled={auditando}>
-                  {auditando ? "Auditando…" : "Auditar remessa (por que falta unidade)"}
-                </button>
-              </div>
-
-              {auditoriaErro && (
-                <div style={{
-                  marginTop: 10, padding: 8, borderRadius: 6,
-                  background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.4)",
-                  color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".7rem",
-                  wordBreak: "break-word", whiteSpace: "pre-wrap",
-                }}>
-                  A auditoria falhou. {auditoriaErro}
-                </div>
-              )}
-
-              {auditoria && (
-                <div style={{ marginTop: 10 }}>
-                  {auditoria.porTipo.length === 0 && auditoria.probes.length === 0 && (
-                    <div style={{ fontSize: ".78rem", color: "#f7c948", marginBottom: 8 }}>
-                      A auditoria rodou mas voltou vazia — {auditoria.lidas} linhas lidas,
-                      varredura HTTP {auditoria.varreduraStatus}.
-                    </div>
-                  )}
-                  <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
-                    <b>1.</b> Dá pra pedir a remessa inteira pelo número dela?
-                  </div>
-                  <div className="table-wrapper" style={{ maxHeight: 200, overflow: "auto" }}>
-                    <table className="tbl-modern">
-                      <thead><tr>
-                        <th style={{ textAlign: "left" }}>Filtro testado</th>
-                        <th style={{ textAlign: "right" }}>HTTP</th>
-                        <th style={{ textAlign: "right" }}>Linhas</th>
-                      </tr></thead>
-                      <tbody>
-                        {auditoria.probes.map((p) => (
-                          <tr key={p.forma}>
-                            <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".66rem", wordBreak: "break-all" }}>{p.forma}</td>
-                            <td style={{ textAlign: "right", fontWeight: 700, color: p.status === 200 ? "var(--green)" : "var(--muted)" }}>{p.status}</td>
-                            <td style={{ textAlign: "right" }}>{p.linhas >= 0 ? p.linhas : "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div style={{ fontSize: ".78rem", color: "var(--muted)", margin: "12px 0 6px" }}>
-                    <b>2.</b> Outros tipos de operação alimentam a mesma remessa?
-                    {auditoria.varreduraStatus !== 200 && ` (varredura falhou: HTTP ${auditoria.varreduraStatus})`}
-                  </div>
-                  <div className="table-wrapper" style={{ maxHeight: 300, overflow: "auto" }}>
-                    <table className="tbl-modern">
-                      <thead><tr>
-                        <th style={{ textAlign: "left" }}>Remessa</th>
-                        <th style={{ textAlign: "left" }}>Tipo</th>
-                        <th style={{ textAlign: "right" }}>Unidades</th>
-                      </tr></thead>
-                      <tbody>
-                        {auditoria.porTipo.map((t) => (
-                          <tr key={`${t.remessa}-${t.tipo}`}>
-                            <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>#{t.remessa}</td>
-                            <td style={{ textAlign: "left", fontSize: ".72rem", color: t.tipo === "INBOUND_RECEPTION" ? "var(--muted)" : "var(--green)" }}>{t.tipo}</td>
-                            <td style={{ textAlign: "right", fontWeight: 700 }}>{t.unidades}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
-                    {auditoria.lidas} linhas lidas na varredura
-                    {auditoria.varreduraErro && ` · ${auditoria.varreduraErro}`}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

@@ -118,103 +118,6 @@ export async function GET(req: Request) {
     const from = new Date(now.getTime() - dias * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const to = now.toISOString().slice(0, 10);
 
-    /**
-     * Modo auditoria: a soma por INBOUND_RECEPTION fecha abaixo do que o
-     * Seller Center mostra (60 contra 80). Aqui testamos as duas hipóteses
-     * que sobraram, de uma vez:
-     *   1. filtrar por external_references traria a remessa inteira, inclusive
-     *      de inventory_id que não conhecemos;
-     *   2. outros tipos (QUARANTINE_RESTOCK, ADJUSTMENT…) completam a conta.
-     * Fica atrás de um parâmetro porque é mais pesado em cota.
-     */
-    const auditar = new URL(req.url).searchParams.get("auditar");
-    if (auditar) {
-      const alvo = auditar === "1" ? "" : auditar;
-      const q = `seller_id=${SELLER_ID}`;
-      const inv20 = invArr.slice(0, 20).join(",");
-      const formas = alvo
-        ? [
-            `/stock/fulfillment/operations/search?${q}&external_references.inbound_id=${alvo}&limit=5`,
-            `/stock/fulfillment/operations/search?${q}&external_references=${alvo}&limit=5`,
-            `/stock/fulfillment/operations/search?${q}&inbound_id=${alvo}&limit=5`,
-            `/stock/fulfillment/operations/search?${q}&inventory_id=${inv20}&external_references.inbound_id=${alvo}&date_from=${from}&date_to=${to}&limit=5`,
-          ]
-        : [];
-      const probes: { forma: string; status: number; linhas: number; corpo: string }[] = [];
-      for (const path of formas) {
-        try {
-          const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
-          const txt = await res.text().catch(() => "");
-          let linhas = -1;
-          try {
-            const j = JSON.parse(txt) as { results?: unknown[] };
-            linhas = Array.isArray(j.results) ? j.results.length : -1;
-          } catch { /* corpo não-JSON */ }
-          probes.push({
-            forma: (path.split("?")[1] ?? "").replace(`seller_id=${SELLER_ID}&`, "").slice(0, 120),
-            status: res.status, linhas, corpo: txt.slice(0, 160),
-          });
-        } catch (e) {
-          probes.push({ forma: path.slice(0, 120), status: -1, linhas: -1, corpo: String(e).slice(0, 120) });
-        }
-        await new Promise((r) => setTimeout(r, 200));
-      }
-
-      // Varredura sem filtro de tipo, agregando por remessa × tipo.
-      const porTipo = new Map<string, { remessa: string; tipo: string; unidades: number; linhas: number }>();
-      let varreduraStatus = 0;
-      let varreduraErro = "";
-      let lidas = 0;
-      for (let i = 0; i < invArr.length; i += 20) {
-        const chunk = invArr.slice(i, i + 20);
-        for (let offset = 0; offset < 600; offset += 100) {
-          if (offset > 0) await new Promise((r) => setTimeout(r, 250));
-          const path =
-            `/stock/fulfillment/operations/search?${q}&inventory_id=${chunk.join(",")}` +
-            `&date_from=${from}&date_to=${to}&limit=100&offset=${offset}`;
-          const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
-          varreduraStatus = res.status;
-          if (!res.ok) {
-            if (!varreduraErro) varreduraErro = (await res.text().catch(() => "")).slice(0, 200);
-            break;
-          }
-          const j = (await res.json()) as { results?: Record<string, unknown>[] };
-          const linhas = j.results ?? [];
-          lidas += linhas.length;
-          for (const r of linhas) {
-            const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
-            const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
-            // Sem inbound_id é venda/ajuste solto: não interessa aqui.
-            if (!remessa) continue;
-            const tipo = String(r.type ?? "");
-            const det = (r.detail ?? {}) as Record<string, unknown>;
-            const ruins = ((det.not_available_detail ?? []) as { quantity?: number }[])
-              .reduce((s, p) => s + Number(p?.quantity ?? 0), 0);
-            const chave = `${remessa}|${tipo}`;
-            const at = porTipo.get(chave) ?? { remessa, tipo, unidades: 0, linhas: 0 };
-            at.unidades += Number(det.available_quantity ?? 0) + ruins;
-            at.linhas += 1;
-            porTipo.set(chave, at);
-          }
-          if (linhas.length < 100) break;
-        }
-        if (varreduraStatus === 429) break;
-      }
-
-      return NextResponse.json({
-        auditoria: {
-          probes,
-          varreduraStatus,
-          varreduraErro,
-          lidas,
-          janela: { from, to },
-          porTipo: Array.from(porTipo.values()).sort(
-            (a, b) => a.remessa.localeCompare(b.remessa) || b.unidades - a.unidades,
-          ),
-        },
-      });
-    }
-
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
     let opStatus = 0;
     let opErro = ""; // corpo do erro do ML — sem isso o diagnóstico fica cego
@@ -232,15 +135,23 @@ export async function GET(req: Request) {
      */
     type Agg = {
       data: string; recebido: number; problema: number;
-      porInventory: Map<string, number>; saldoData: string; saldo: number;
+      porInventory: Map<string, number>; porTipo: Map<string, number>;
+      saldoData: string; saldo: number;
     };
     const porRemessaAgg = new Map<string, Agg>();
     let truncado = false;
-    // O tipo vem em MAIÚSCULA (a doc diz minúsculo — por isso era recusado).
-    // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
-    // somem: foi o que fez aparecerem só 3 de ~8 envios reais.
+    /**
+     * INBOUND_RECEPTION sozinho fecha abaixo do Seller Center (60 contra 80):
+     * ele só conta a unidade quando ela vira vendável. Quem passa por
+     * quarentena, ajuste ou transferência entra por outro tipo. Como já
+     * conhecemos os nomes exatos, consultamos um por um — filtrado na origem
+     * é muito mais barato que varrer tudo e jogar as vendas fora.
+     */
+    const TIPOS = ["INBOUND_RECEPTION", "QUARANTINE_RESTOCK", "ADJUSTMENT", "TRANSFER_DELIVERY"];
+    // O tipo vem em MAIÚSCULA — a doc diz minúsculo e o ML recusa.
     const LIMITE = 100;
     // O ML exige inventory_id, então mandamos todos os do Full de uma vez.
+    for (const tipoBusca of TIPOS)
     for (let i = 0; i < invArr.length; i += 20) {
       const chunk = invArr.slice(i, i + 20);
       // Teto baixo de propósito: 3000 estourou a cota do ML (HTTP 429).
@@ -251,7 +162,7 @@ export async function GET(req: Request) {
         try {
           const path =
             `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
-            `&inventory_id=${chunk.join(",")}&type=INBOUND_RECEPTION` +
+            `&inventory_id=${chunk.join(",")}&type=${tipoBusca}` +
             `&date_from=${from}&date_to=${to}&limit=${LIMITE}&offset=${offset}`;
           const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
           opStatus = res.status;
@@ -276,6 +187,9 @@ export async function GET(req: Request) {
 
             const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
             const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
+            // Ajuste/transferência sem remessa é movimento avulso do Full,
+            // nada a ver com envio nosso — não pode virar baixa de estoque.
+            if (!remessa) continue;
             const inventory = String(r.inventory_id ?? "");
             const quando = String(r.date_created ?? "");
             const data = quando.slice(0, 10);
@@ -288,10 +202,12 @@ export async function GET(req: Request) {
             const res2 = (r.result ?? {}) as Record<string, unknown>;
 
             const agg = porRemessaAgg.get(remessa) ?? {
-              data, recebido: 0, problema: 0, porInventory: new Map<string, number>(), saldoData: "", saldo: 0,
+              data, recebido: 0, problema: 0, porInventory: new Map<string, number>(),
+              porTipo: new Map<string, number>(), saldoData: "", saldo: 0,
             };
             agg.recebido += entrou;
             agg.problema += ruins;
+            agg.porTipo.set(tipo, (agg.porTipo.get(tipo) ?? 0) + entrou + ruins);
             if (inventory) agg.porInventory.set(inventory, (agg.porInventory.get(inventory) ?? 0) + entrou);
             if (data < agg.data) agg.data = data;
             // Ordenamos por date_created: o `id` do ML passa de 9e15 e o
@@ -330,6 +246,10 @@ export async function GET(req: Request) {
         recebido: a.recebido,
         problema: a.problema,
         saldoFull: a.saldo,
+        tipos: Array.from(a.porTipo.entries())
+          .filter(([, q]) => q > 0)
+          .sort((p, q) => q[1] - p[1])
+          .map(([tipo, qtd]) => ({ tipo, qtd })),
         // Produto sem cadastro aparece pelo inventory_id cru e marcado — é
         // exatamente o caso que fazia a remessa fechar a menos.
         produtos: Array.from(a.porInventory.entries())
