@@ -28,13 +28,28 @@ export async function GET(req: Request) {
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
     const db = getAdminDb();
 
-    // MLBs cadastrados
+    // MLBs cadastrados no Estoque — servem para saber o que já é rastreado.
     const prodSnap = await db.collection("estoque").get();
-    const ids = new Set<string>();
+    const cadastrados = new Set<string>();
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const list: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
-      for (const m of list) { const n = normId(m); if (n) ids.add(n); }
+      for (const m of list) { const n = normId(m); if (n) cadastrados.add(n); }
+    }
+
+    /**
+     * A busca de operações exige inventory_id ("The field inventory_id is
+     * required"), então precisamos de TODOS os anúncios da conta: usar só os
+     * cadastrados escondia unidades e a remessa fechava a menos.
+     */
+    const ids = new Set<string>(cadastrados);
+    for (let offset = 0; offset < 1000; offset += 100) {
+      const res = await fetch(`${ML_API}/users/${SELLER_ID}/items/search?limit=100&offset=${offset}`, { headers, cache: "no-store" });
+      if (!res.ok) break;
+      const j = (await res.json()) as { results?: string[] };
+      const lote = j.results ?? [];
+      for (const m of lote) { const n = normId(m); if (n) ids.add(n); }
+      if (lote.length < 100) break;
     }
     const arr = Array.from(ids);
 
@@ -105,13 +120,9 @@ export async function GET(req: Request) {
     // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
     // somem: foi o que fez aparecerem só 3 de ~8 envios reais.
     const LIMITE = 100;
-    /**
-     * Sem filtro de inventory_id de propósito: filtrando pelos produtos
-     * cadastrados, unidades de produto não cadastrado ficavam invisíveis e a
-     * remessa fechava a menos (60 contra 80). Buscar por seller_id ainda
-     * gasta menos cota, porque some o laço por bloco de inventory_id.
-     */
-    {
+    // O ML exige inventory_id, então mandamos todos os do Full de uma vez.
+    for (let i = 0; i < invArr.length; i += 20) {
+      const chunk = invArr.slice(i, i + 20);
       // Teto baixo de propósito: 3000 estourou a cota do ML (HTTP 429).
       for (let offset = 0; offset < 500; offset += LIMITE) {
         if (offset + LIMITE >= 500) truncado = true;
@@ -120,7 +131,7 @@ export async function GET(req: Request) {
         try {
           const path =
             `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
-            `&type=INBOUND_RECEPTION` +
+            `&inventory_id=${chunk.join(",")}&type=INBOUND_RECEPTION` +
             `&date_from=${from}&date_to=${to}&limit=${LIMITE}&offset=${offset}`;
           const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
           opStatus = res.status;
@@ -181,8 +192,16 @@ export async function GET(req: Request) {
 
     // Uma remessa (#71140809) pode conter vários produtos: somamos os
     // inventory_id dela para poder comparar com a tela do Seller Center.
-    const tituloPorInventory = new Map<string, string>();
-    for (const it of itens) if (it.inventory_id) tituloPorInventory.set(it.inventory_id, it.title);
+    const tituloPorInventory = new Map<string, { nome: string; cadastrado: boolean }>();
+    for (const it of itens) {
+      if (!it.inventory_id) continue;
+      const jaTem = tituloPorInventory.get(it.inventory_id);
+      const cad = cadastrados.has(it.mlb);
+      // Um inventory_id pode servir a mais de um anúncio: basta um cadastrado.
+      if (!jaTem || (cad && !jaTem.cadastrado)) {
+        tituloPorInventory.set(it.inventory_id, { nome: it.title, cadastrado: cad || (jaTem?.cadastrado ?? false) });
+      }
+    }
 
     const remessas = Array.from(porRemessaAgg.entries())
       .map(([remessa, a]) => ({
@@ -197,8 +216,8 @@ export async function GET(req: Request) {
           .sort((p, q) => q[1] - p[1])
           .map(([inv, qtd]) => ({
             inventory: inv,
-            nome: tituloPorInventory.get(inv) ?? "",
-            cadastrado: tituloPorInventory.has(inv),
+            nome: tituloPorInventory.get(inv)?.nome ?? "",
+            cadastrado: tituloPorInventory.get(inv)?.cadastrado ?? false,
             qtd,
           })),
       }))

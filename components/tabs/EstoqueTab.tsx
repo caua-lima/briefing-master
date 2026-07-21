@@ -866,7 +866,7 @@ function DiagnosticoInboundFull() {
                         <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>
                           {r.produtos.length === 0 ? "—" : r.produtos.map((p) => (
                             <div key={p.inventory} style={{ color: p.cadastrado ? "var(--muted)" : "var(--red)" }}>
-                              {p.qtd}× {p.cadastrado ? p.nome.slice(0, 30) : `${p.inventory} (sem cadastro)`}
+                              {p.qtd}× {(p.nome || p.inventory).slice(0, 30)}{p.cadastrado ? "" : " (sem cadastro)"}
                             </div>
                           ))}
                         </td>
