@@ -749,7 +749,7 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  */
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string } | null>(null);
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[] } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
 
@@ -793,7 +793,14 @@ function DiagnosticoInboundFull() {
             color: ok ? "var(--green)" : "#f7c948",
           }}>
             {ok
-              ? <><b>Disponível!</b> O ML respondeu os recebimentos do Full ({recebimentos.length} nos últimos 90 dias). Dá pra automatizar a baixa.</>
+              ? <>
+                  <b>Disponível!</b> O ML respondeu ({recebimentos.length} recebimento{recebimentos.length === 1 ? "" : "s"} nos últimos 90 dias).
+                  {!!dados.tiposVistos?.length && (
+                    <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
+                      Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
+                    </div>
+                  )}
+                </>
               : <>
                   <b>Indisponível (HTTP {String(dados.opStatus ?? "—")}).</b>{" "}
                   {dados.opStatus === 400

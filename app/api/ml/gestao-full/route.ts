@@ -77,14 +77,16 @@ export async function GET(req: Request) {
     let opStatus = 0;
     let opErro = ""; // corpo do erro do ML — sem isso o diagnóstico fica cego
     let opUrl = "";
+    // O ML recusou type=inbound_reception ("invalid value") mesmo estando na doc.
+    // Em vez de chutar o enum, pedimos sem filtro e olhamos os tipos que vierem.
+    const tiposVistos = new Set<string>();
     for (let i = 0; i < invArr.length; i += 20) {
       const chunk = invArr.slice(i, i + 20);
       try {
-        // seller_id é documentado e faltava aqui — provável causa do HTTP 400.
         const path =
           `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
-          `&inventory_id=${chunk.join(",")}&type=inbound_reception` +
-          `&date_from=${from}&date_to=${to}&limit=50`;
+          `&inventory_id=${chunk.join(",")}` +
+          `&date_from=${from}&date_to=${to}&limit=100`;
         const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
         opStatus = res.status;
         if (!res.ok) {
@@ -96,11 +98,15 @@ export async function GET(req: Request) {
         }
         const j = (await res.json()) as { results?: Record<string, unknown>[]; data?: Record<string, unknown>[] };
         for (const r of j.results ?? j.data ?? []) {
+          const tipo = String(r.type ?? r.operation_type ?? "");
+          tiposVistos.add(tipo);
+          // Filtramos aqui, com o vocabulário real do ML, em vez de no query.
+          if (!/inbound|reception|entrada/i.test(tipo)) continue;
           recebimentos.push({
             data: String(r.date_created ?? r.date ?? "").slice(0, 10),
             quantidade: Number(r.quantity ?? r.total ?? 0),
             inventory_id: String(r.inventory_id ?? ""),
-            tipo: String(r.type ?? "inbound_reception"),
+            tipo,
           });
         }
       } catch { /* ignora */ }
@@ -110,7 +116,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos) });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });
