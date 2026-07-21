@@ -756,6 +756,8 @@ function DiagnosticoInboundFull() {
   type PorTipo = { remessa: string; tipo: string; unidades: number; linhas: number };
   type Auditoria = { probes: Probe[]; varreduraStatus: number; varreduraErro: string; lidas: number; porTipo: PorTipo[] };
   const [auditoria, setAuditoria] = useState<Auditoria | null>(null);
+  // Sem isso, auditoria que falha não mostra nada e parece que o botão morreu.
+  const [auditoriaErro, setAuditoriaErro] = useState("");
   const [auditando, setAuditando] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
@@ -763,14 +765,21 @@ function DiagnosticoInboundFull() {
   async function auditar() {
     setAuditando(true);
     setAuditoria(null);
+    setAuditoriaErro("");
     try {
       // Passamos uma remessa real: as sondas por external_references precisam de alvo.
       const alvo = dados?.remessas?.[0]?.remessa ?? "1";
       const r = await authedFetch(`/api/ml/gestao-full?auditar=${encodeURIComponent(alvo)}`, { cache: "no-store" });
-      const j = r.ok ? await r.json() : null;
-      setAuditoria(j?.auditoria ?? null);
-    } catch {
-      setAuditoria(null);
+      const txt = await r.text();
+      if (!r.ok) {
+        setAuditoriaErro(`HTTP ${r.status} — ${txt.slice(0, 400)}`);
+      } else {
+        const j = JSON.parse(txt) as { auditoria?: Auditoria };
+        if (j.auditoria) setAuditoria(j.auditoria);
+        else setAuditoriaErro(`Resposta sem auditoria: ${txt.slice(0, 400)}`);
+      }
+    } catch (e) {
+      setAuditoriaErro(`Falhou antes de responder: ${String(e).slice(0, 300)}`);
     }
     setAuditando(false);
   }
@@ -912,8 +921,25 @@ function DiagnosticoInboundFull() {
                 </button>
               </div>
 
+              {auditoriaErro && (
+                <div style={{
+                  marginTop: 10, padding: 8, borderRadius: 6,
+                  background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.4)",
+                  color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".7rem",
+                  wordBreak: "break-word", whiteSpace: "pre-wrap",
+                }}>
+                  A auditoria falhou. {auditoriaErro}
+                </div>
+              )}
+
               {auditoria && (
                 <div style={{ marginTop: 10 }}>
+                  {auditoria.porTipo.length === 0 && auditoria.probes.length === 0 && (
+                    <div style={{ fontSize: ".78rem", color: "#f7c948", marginBottom: 8 }}>
+                      A auditoria rodou mas voltou vazia — {auditoria.lidas} linhas lidas,
+                      varredura HTTP {auditoria.varreduraStatus}.
+                    </div>
+                  )}
                   <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
                     <b>1.</b> Dá pra pedir a remessa inteira pelo número dela?
                   </div>

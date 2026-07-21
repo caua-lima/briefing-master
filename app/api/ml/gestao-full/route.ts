@@ -6,6 +6,10 @@ import { SELLER_ID } from "@/lib/ml/orders";
 
 const ML_API = "https://api.mercadolibre.com";
 
+// A auditoria varre várias páginas com pausa entre elas e estoura o limite
+// padrão da Vercel; sem isso ela morre no meio e o painel não mostra nada.
+export const maxDuration = 60;
+
 function normId(s: string) {
   const up = String(s).trim().toUpperCase();
   return up ? (up.startsWith("MLB") ? up : `MLB${up}`) : "";
