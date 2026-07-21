@@ -35,10 +35,17 @@ export async function GET(req: Request) {
     // MLBs cadastrados no Estoque — servem para saber o que já é rastreado.
     const prodSnap = await db.collection("estoque").get();
     const cadastrados = new Set<string>();
+    // MLB → produto do Estoque: sem isso a baixa não sabe de quem descontar.
+    const produtoPorMlb = new Map<string, { id: string; nome: string }>();
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const list: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
-      for (const m of list) { const n = normId(m); if (n) cadastrados.add(n); }
+      for (const m of list) {
+        const n = normId(m);
+        if (!n) continue;
+        cadastrados.add(n);
+        produtoPorMlb.set(n, { id: doc.id, nome: String(d.nome ?? d.titulo ?? doc.id) });
+      }
     }
 
     /**
@@ -234,14 +241,19 @@ export async function GET(req: Request) {
 
     // Uma remessa (#71140809) pode conter vários produtos: somamos os
     // inventory_id dela para poder comparar com a tela do Seller Center.
-    const tituloPorInventory = new Map<string, { nome: string; cadastrado: boolean }>();
+    const tituloPorInventory = new Map<string, { nome: string; cadastrado: boolean; productId: string }>();
     for (const it of itens) {
       if (!it.inventory_id) continue;
       const jaTem = tituloPorInventory.get(it.inventory_id);
-      const cad = cadastrados.has(it.mlb);
+      const prod = produtoPorMlb.get(it.mlb);
+      const cad = !!prod;
       // Um inventory_id pode servir a mais de um anúncio: basta um cadastrado.
       if (!jaTem || (cad && !jaTem.cadastrado)) {
-        tituloPorInventory.set(it.inventory_id, { nome: it.title, cadastrado: cad || (jaTem?.cadastrado ?? false) });
+        tituloPorInventory.set(it.inventory_id, {
+          nome: prod?.nome || it.title,
+          cadastrado: cad || (jaTem?.cadastrado ?? false),
+          productId: prod?.id ?? jaTem?.productId ?? "",
+        });
       }
     }
 
@@ -272,6 +284,7 @@ export async function GET(req: Request) {
             inventory: inv,
             nome: tituloPorInventory.get(inv)?.nome ?? "",
             cadastrado: tituloPorInventory.get(inv)?.cadastrado ?? false,
+            productId: tituloPorInventory.get(inv)?.productId ?? "",
             qtd,
           })),
       }))

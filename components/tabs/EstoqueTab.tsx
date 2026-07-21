@@ -266,7 +266,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
       <PrevisaoPanel products={filtered} estoqueML={estoqueML} forecast={forecast} />
 
-      {canEdit && <DiagnosticoInboundFull />}
+      {canEdit && <RemessasFull movimentos={movimentos} />}
 
       {editProduct && (
         <ProductModal
@@ -741,185 +741,184 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
   );
 }
 
-// ── Diagnóstico: o ML expõe os recebimentos do Full nesta conta? ──────────
-/**
- * Antes de automatizar a baixa por envio ao Full, precisamos saber se a API
- * /stock/fulfillment/operations/search (type=inbound_reception) responde para
- * esta conta — e qual o formato dos dados. É o que este painel mostra.
- */
-function DiagnosticoInboundFull() {
-  type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
-  type TipoRemessa = { tipo: string; qtd: number };
-  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[]; tipos: TipoRemessa[]; refs: string[]; ehTransferencia: boolean };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number; inventariosConsultados?: number; anunciosDaConta?: number } | null>(null);
+// ── Remessas pro Full: baixa a partir do que o ML recebeu ─────────────────
+type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; productId: string; qtd: number };
+type TipoRemessa = { tipo: string; qtd: number };
+type Remessa = {
+  remessa: string; data: string; recebido: number; problema: number; saldoFull: number;
+  produtos: ProdutoRemessa[]; tipos: TipoRemessa[]; refs: string[]; ehTransferencia: boolean;
+};
+
+/** id fixo por remessa+produto: reprocessar a mesma remessa nunca duplica baixa. */
+function movIdRemessa(remessa: string, productId: string) {
+  return `full-${remessa}-${productId}`;
+}
+
+function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
+  const [dados, setDados] = useState<{ opStatus?: number; opErro?: string; remessas?: Remessa[]; dias?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
+  const [qtds, setQtds] = useState<Record<string, string>>({});
+  const [salvando, setSalvando] = useState("");
+  const [erro, setErro] = useState("");
 
-  async function verificar() {
+  async function buscar() {
     setAberto(true);
     setCarregando(true);
+    setErro("");
     try {
       const r = await authedFetch("/api/ml/gestao-full", { cache: "no-store" });
-      setDados(r.ok ? await r.json() : { opStatus: r.status });
-    } catch {
-      setDados({ opStatus: -1 });
+      const txt = await r.text();
+      if (!r.ok) setErro(`HTTP ${r.status} — ${txt.slice(0, 300)}`);
+      else setDados(JSON.parse(txt));
+    } catch (e) {
+      setErro(`Falhou: ${String(e).slice(0, 200)}`);
     }
     setCarregando(false);
   }
 
-  const ok = dados?.opStatus === 200;
-  const recebimentos = dados?.recebimentos ?? [];
   const todas = dados?.remessas ?? [];
-  // Envio seu e transferência interna do ML são coisas diferentes: só o
-  // primeiro tira estoque de casa.
+  // Envio seu tira estoque de casa; transferência entre centros do ML, não.
   const remessas = todas.filter((r) => !r.ehTransferencia);
   const transferencias = todas.filter((r) => r.ehTransferencia);
+  const jaBaixada = (r: Remessa) =>
+    r.produtos.some((p) => p.productId && movimentos.some((m) => m.id === movIdRemessa(r.remessa, p.productId)));
+
+  async function darBaixa(r: Remessa) {
+    const alvos = r.produtos.filter((p) => p.productId);
+    if (!alvos.length) { alert("Nenhum produto desta remessa está cadastrado no Estoque."); return; }
+    setSalvando(r.remessa);
+    try {
+      for (const p of alvos) {
+        const chave = `${r.remessa}|${p.productId}`;
+        const qtd = Math.round(Number(qtds[chave] ?? p.qtd) || 0);
+        if (qtd <= 0) continue;
+        const dif = qtd - p.qtd;
+        await addMovimento({
+          id: movIdRemessa(r.remessa, p.productId),
+          productId: p.productId,
+          tipo: "saida_full",
+          quantidade: qtd,
+          data: r.data,
+          obs: `Remessa Full #${r.remessa} · ML recebeu ${p.qtd}${dif !== 0 ? ` · você informou ${qtd} (${dif > 0 ? "+" : ""}${dif})` : ""}`,
+        });
+      }
+    } catch (e) {
+      alert("Erro ao dar baixa: " + (e instanceof Error ? e.message : String(e)));
+    }
+    setSalvando("");
+  }
 
   return (
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 6 }}>
-        <span className="panel-title">Baixa automática por envio ao Full</span>
-        <span className="panel-sub">verificação — o Mercado Livre libera esses dados na sua conta?</span>
+        <span className="panel-title">Remessas pro Full</span>
+        <span className="panel-sub">baixa de estoque a partir do que o Mercado Livre recebeu</span>
       </div>
       <div style={{ fontSize: ".8rem", color: "var(--muted)", marginBottom: 10, lineHeight: 1.55 }}>
-        Hoje o envio pro Full é lançado à mão. Para dar baixa sozinho, o ML precisa nos
-        informar os <b>recebimentos no Full</b>. Clique para testar.
+        Busca as remessas que chegaram no Full e dá baixa no estoque de casa. A quantidade vem
+        preenchida com o que o ML recebeu — <b>ajuste para o que você enviou</b> se houver diferença.
+        Cada remessa só dá baixa uma vez.
       </div>
 
-      <button type="button" className="btn btn-ghost btn-sm" onClick={verificar} disabled={carregando}>
-        {carregando ? "Verificando…" : aberto ? "Verificar de novo" : "Verificar disponibilidade"}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={buscar} disabled={carregando}>
+        {carregando ? "Buscando…" : aberto ? "Buscar de novo" : "Buscar remessas"}
       </button>
 
-      {aberto && dados && !carregando && (
+      {erro && (
+        <div style={{
+          marginTop: 10, padding: 8, borderRadius: 6,
+          background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.4)",
+          fontFamily: "ui-monospace, monospace", fontSize: ".7rem", whiteSpace: "pre-wrap",
+        }}>{erro}</div>
+      )}
+
+      {aberto && !carregando && !erro && (
         <div style={{ marginTop: 12 }}>
-          <div style={{
-            padding: "10px 12px", borderRadius: 8, fontSize: ".8rem", lineHeight: 1.5,
-            background: ok ? "rgba(34,197,94,.1)" : "rgba(245,158,11,.1)",
-            border: `1px solid ${ok ? "var(--green)" : "rgba(245,158,11,.4)"}`,
-            color: ok ? "var(--green)" : "#f7c948",
-          }}>
-            {ok
-              ? <>
-                  <b>Disponível!</b> O ML respondeu {remessas.length} remessa{remessas.length === 1 ? "" : "s"} nos últimos {dados.dias ?? 25} dias.
-                  {!!dados.tiposVistos?.length && (
-                    <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
-                      Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
-                    </div>
-                  )}
-                  {!!dados.amostras?.length && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ color: "var(--muted)", fontSize: ".74rem", marginBottom: 4 }}>
-                        Primeiras {dados.amostras.length} linhas cruas do ML (referência):
-                      </div>
-                      {dados.amostras.map((linha, i) => (
-                        <div key={i} style={{
-                          padding: 6, marginBottom: 4, borderRadius: 6, background: "rgba(0,0,0,.25)",
-                          color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".67rem",
-                          wordBreak: "break-all", whiteSpace: "pre-wrap",
-                        }}>
-                          <b style={{ color: "var(--muted)" }}>{i + 1}.</b> {linha}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              : <>
-                  <b>
-                    {dados.opStatus === 429 ? "Cota do ML estourada" : "Indisponível"}
-                    {" "}(HTTP {String(dados.opStatus ?? "—")}).
-                  </b>{" "}
-                  {dados.opStatus === 429
-                    ? "Consultamos demais e o ML bloqueou temporariamente. Não é falta de acesso — espere alguns minutos e verifique de novo."
-                    : dados.opStatus === 400
-                      ? "A rota existe, mas o ML recusou os parâmetros. O motivo exato veio abaixo:"
-                      : "O ML não liberou os recebimentos do Full para esta conta."}
-                  {dados.opErro && (
-                    <div style={{
-                      marginTop: 8, padding: 8, borderRadius: 6, background: "rgba(0,0,0,.25)",
-                      color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".72rem",
-                      wordBreak: "break-word", whiteSpace: "pre-wrap",
-                    }}>
-                      {dados.opErro}
-                    </div>
-                  )}
-                </>}
-          </div>
-
-          {ok && !!remessas.length && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
-                Agrupado por remessa. <b>Recebido</b> é a soma dos eventos de entrada; <b>Saldo Full</b> é
-                quanto ficou no estoque do ML depois. Produto <span style={{ color: "var(--red)" }}>em vermelho</span> não
-                está cadastrado no Estoque — é o que fazia a conta fechar a menos. Compare o Recebido com a tela de envios:
-              </div>
-              <div className="table-wrapper" style={{ maxHeight: 320, overflow: "auto" }}>
-                <table className="tbl-modern">
-                  <thead><tr>
-                    <th style={{ textAlign: "left" }}>Remessa</th>
-                    <th>Data</th>
-                    <th style={{ textAlign: "left" }}>Produto</th>
-                    <th style={{ textAlign: "right" }}>Recebido</th>
-                    <th style={{ textAlign: "right" }}>Problema</th>
-                    <th style={{ textAlign: "right" }}>Saldo Full</th>
-                  </tr></thead>
-                  <tbody>
-                    {remessas.map((r) => (
-                      <tr key={r.remessa}>
-                        <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>#{r.remessa}</td>
-                        <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{r.data.split("-").reverse().join("/")}</td>
-                        <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>
-                          {r.produtos.length === 0 ? "—" : r.produtos.map((p) => (
-                            <div key={p.inventory} style={{ color: p.cadastrado ? "var(--muted)" : "var(--red)" }}>
-                              {p.qtd}× {(p.nome || p.inventory).slice(0, 30)}{p.cadastrado ? "" : " (sem cadastro)"}
-                            </div>
-                          ))}
-                        </td>
-                        <td style={{ textAlign: "right", fontWeight: 700 }}>
-                          {r.recebido}
-                          {!!r.tipos?.length && (
-                            <div style={{ fontWeight: 400, fontSize: ".66rem", color: "var(--muted)" }}>
-                              {r.tipos.map((t) => `${t.qtd} ${t.tipo.replace(/_/g, " ").toLowerCase()}`).join(" + ")}
-                            </div>
-                          )}
-                          {!!r.refs?.length && (
-                            <div style={{ fontWeight: 400, fontSize: ".66rem", color: "var(--green)" }}>
-                              ref: {r.refs.join(", ")}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ textAlign: "right", color: r.problema > 0 ? "var(--red)" : "var(--muted)", fontWeight: r.problema > 0 ? 700 : 400 }}>
-                          {r.problema || "—"}
-                        </td>
-                        <td style={{ textAlign: "right", color: "var(--muted)" }}>{r.saldoFull}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
-                {remessas.length} remessa{remessas.length === 1 ? "" : "s"} a partir de {dados.linhasBrutas ?? 0} linhas do ML
-                {" · "}{dados.inventariosConsultados ?? 0} inventários consultados em {dados.anunciosDaConta ?? 0} anúncios
-                {dados.truncado && " (limite de páginas atingido — pode faltar remessa antiga)"}
-              </div>
-
-              {!!transferencias.length && (
-                <div style={{ marginTop: 12, fontSize: ".76rem", color: "var(--muted)", lineHeight: 1.5 }}>
-                  <b style={{ color: "var(--text)" }}>
-                    +{transferencias.reduce((s, t) => s + t.recebido, 0)} unidades
-                  </b>{" "}
-                  chegaram em {transferencias.length} transferência{transferencias.length === 1 ? "" : "s"} entre
-                  centros do ML. São unidades de remessas anteriores que o ML redirecionou — já saíram
-                  da sua casa, então <b>não</b> geram baixa nova.
-                </div>
-              )}
-
+          {remessas.length === 0 && (
+            <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>
+              Nenhuma remessa nos últimos {dados?.dias ?? 25} dias.
             </div>
           )}
 
-          {ok && recebimentos.length === 0 && (
-            <div style={{ marginTop: 8, fontSize: ".78rem", color: "var(--muted)" }}>
-              A API respondeu, mas não há recebimentos nos últimos 15 dias. Faça um envio ao Full e verifique de novo.
+          {remessas.map((r) => {
+            const feita = jaBaixada(r);
+            const semCadastro = r.produtos.filter((p) => !p.productId);
+            return (
+              <div key={r.remessa} style={{
+                border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 10,
+                opacity: feita ? 0.65 : 1,
+              }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
+                  <b style={{ fontFamily: "monospace" }}>#{r.remessa}</b>
+                  <span style={{ color: "var(--muted)", fontSize: ".78rem" }}>
+                    {r.data.split("-").reverse().join("/")} · ML recebeu {r.recebido}
+                  </span>
+                  {feita && (
+                    <span style={{ color: "var(--green)", fontSize: ".76rem", fontWeight: 700 }}>baixa já dada</span>
+                  )}
+                </div>
+
+                {r.produtos.map((p) => {
+                  const chave = `${r.remessa}|${p.productId}`;
+                  const valor = qtds[chave] ?? String(p.qtd);
+                  const dif = Math.round(Number(valor) || 0) - p.qtd;
+                  return (
+                    <div key={p.inventory} style={{
+                      display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 6,
+                    }}>
+                      <span style={{ flex: "1 1 180px", fontSize: ".8rem" }}>
+                        {p.nome || p.inventory}
+                        {!p.productId && (
+                          <span style={{ color: "var(--red)", fontSize: ".72rem" }}> — sem cadastro, não dá baixa</span>
+                        )}
+                      </span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="input"
+                        style={{ width: 90, fontSize: 16 }}
+                        value={valor}
+                        disabled={feita || !p.productId}
+                        onChange={(e) => setQtds((s) => ({ ...s, [chave]: e.target.value }))}
+                      />
+                      {!feita && dif !== 0 && p.productId && (
+                        <span style={{ fontSize: ".72rem", color: "#f7c948", flex: "0 0 auto" }}>
+                          {dif > 0 ? `+${dif}` : dif} vs. recebido
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {!!semCadastro.length && (
+                  <div style={{ fontSize: ".74rem", color: "var(--red)", marginTop: 4 }}>
+                    Cadastre {semCadastro.length === 1 ? "esse produto" : "esses produtos"} no Estoque
+                    para a baixa cobrir a remessa inteira.
+                  </div>
+                )}
+
+                {!feita && (
+                  <button
+                    type="button"
+                    className="btn btn-success btn-sm"
+                    style={{ marginTop: 8 }}
+                    disabled={salvando === r.remessa}
+                    onClick={() => darBaixa(r)}
+                  >
+                    {salvando === r.remessa ? "Dando baixa…" : "Dar baixa no estoque"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {!!transferencias.length && (
+            <div style={{ marginTop: 6, fontSize: ".76rem", color: "var(--muted)", lineHeight: 1.5 }}>
+              <b style={{ color: "var(--text)" }}>+{transferencias.reduce((s, t) => s + t.recebido, 0)} unidades</b>{" "}
+              chegaram em {transferencias.length} transferência{transferencias.length === 1 ? "" : "s"} entre centros
+              do ML. São unidades de remessas anteriores que o ML redirecionou — já saíram da sua casa,
+              então não geram baixa.
             </div>
           )}
         </div>
