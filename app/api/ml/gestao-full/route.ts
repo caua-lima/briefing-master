@@ -71,9 +71,14 @@ export async function GET(req: Request) {
     // Recebimentos (inbound) por inventory_id — best-effort
     const invArr = Array.from(inventoryIds);
     const now = new Date(Date.now() - 3 * 3600 * 1000);
-    // O ML recusa janela > 60 dias nesta busca ("Date range can't be greater
-    // than 60 days"). 55 deixa folga para fuso/arredondamento de borda.
-    const from = new Date(now.getTime() - 55 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    /**
+     * O ML recusa janela > 60 dias aqui, mas o limite real é a cota: pedir 55
+     * dias estourou ("over quota"), porque vem uma linha por evento de
+     * recebimento. 15 dias cobre de sobra o uso real — a baixa roda
+     * periodicamente e só precisa das remessas novas.
+     */
+    const dias = Math.min(Number(new URL(req.url).searchParams.get("dias") ?? 15) || 15, 55);
+    const from = new Date(now.getTime() - dias * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const to = now.toISOString().slice(0, 10);
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
     let opStatus = 0;
@@ -95,10 +100,13 @@ export async function GET(req: Request) {
     // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
     // somem: foi o que fez aparecerem só 3 de ~8 envios reais.
     const LIMITE = 100;
-    for (let i = 0; i < invArr.length; i += 20) {
+    let cotaEstourada = false;
+    for (let i = 0; i < invArr.length && !cotaEstourada; i += 20) {
       const chunk = invArr.slice(i, i + 20);
-      for (let offset = 0; offset < 3000; offset += LIMITE) {
-        if (offset + LIMITE >= 3000) truncado = true;
+      // Teto baixo de propósito: 3000 estourou a cota do ML (HTTP 429).
+      for (let offset = 0; offset < 500; offset += LIMITE) {
+        if (offset + LIMITE >= 500) truncado = true;
+        if (offset > 0) await new Promise((r) => setTimeout(r, 200));
         let lote = 0;
         try {
           const path =
@@ -112,6 +120,8 @@ export async function GET(req: Request) {
               opErro = (await res.text().catch(() => "")).slice(0, 300);
               opUrl = path.slice(0, 200);
             }
+            // Insistir depois de estourar a cota só piora — para tudo.
+            if (res.status === 429) cotaEstourada = true;
             break;
           }
           const j = (await res.json()) as { results?: Record<string, unknown>[]; data?: Record<string, unknown>[] };

@@ -751,8 +751,6 @@ function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
   type Remessa = { remessa: string; data: string; total: number; disponivel: number; naoDisponivel: number; perdido: number; produtos: string[] };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number } | null>(null);
-  type Probe = { url: string; status: number; sample?: unknown };
-  const [probes, setProbes] = useState<Probe[] | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
 
@@ -764,15 +762,6 @@ function DiagnosticoInboundFull() {
       setDados(r.ok ? await r.json() : { opStatus: r.status });
     } catch {
       setDados({ opStatus: -1 });
-    }
-    // A baixa deve usar o que SAIU de casa, e isso vive na remessa, não no
-    // recebimento. Descobrimos aqui qual rota de inbound responde.
-    try {
-      const r = await authedFetch("/api/ml/debug-inbound", { cache: "no-store" });
-      const j = r.ok ? await r.json() : null;
-      setProbes(Array.isArray(j?.resultados) ? j.resultados : []);
-    } catch {
-      setProbes([]);
     }
     setCarregando(false);
   }
@@ -806,7 +795,7 @@ function DiagnosticoInboundFull() {
           }}>
             {ok
               ? <>
-                  <b>Disponível!</b> O ML respondeu {remessas.length} remessa{remessas.length === 1 ? "" : "s"} nos últimos 55 dias.
+                  <b>Disponível!</b> O ML respondeu {remessas.length} remessa{remessas.length === 1 ? "" : "s"} nos últimos 15 dias.
                   {!!dados.tiposVistos?.length && (
                     <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
                       Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
@@ -828,10 +817,15 @@ function DiagnosticoInboundFull() {
                   )}
                 </>
               : <>
-                  <b>Indisponível (HTTP {String(dados.opStatus ?? "—")}).</b>{" "}
-                  {dados.opStatus === 400
-                    ? "A rota existe, mas o ML recusou os parâmetros. O motivo exato veio abaixo:"
-                    : "O ML não liberou os recebimentos do Full para esta conta."}
+                  <b>
+                    {dados.opStatus === 429 ? "Cota do ML estourada" : "Indisponível"}
+                    {" "}(HTTP {String(dados.opStatus ?? "—")}).
+                  </b>{" "}
+                  {dados.opStatus === 429
+                    ? "Consultamos demais e o ML bloqueou temporariamente. Não é falta de acesso — espere alguns minutos e verifique de novo."
+                    : dados.opStatus === 400
+                      ? "A rota existe, mas o ML recusou os parâmetros. O motivo exato veio abaixo:"
+                      : "O ML não liberou os recebimentos do Full para esta conta."}
                   {dados.opErro && (
                     <div style={{
                       marginTop: 8, padding: 8, borderRadius: 6, background: "rgba(0,0,0,.25)",
@@ -884,54 +878,9 @@ function DiagnosticoInboundFull() {
             </div>
           )}
 
-          {!!probes?.length && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
-                Rotas de <b>remessa</b> (trazem o que saiu de casa, ex.: 80 enviadas / 76 recebidas):
-              </div>
-              <div className="table-wrapper" style={{ maxHeight: 260, overflow: "auto" }}>
-                <table className="tbl-modern">
-                  <thead><tr>
-                    <th style={{ textAlign: "left" }}>Rota</th>
-                    <th style={{ textAlign: "right" }}>HTTP</th>
-                  </tr></thead>
-                  <tbody>
-                    {probes.map((p) => (
-                      <tr key={p.url}>
-                        <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".68rem", wordBreak: "break-all" }}>
-                          {p.url.split("?")[0]}
-                        </td>
-                        <td style={{
-                          textAlign: "right", fontWeight: 700,
-                          color: p.status === 200 ? "var(--green)" : "var(--muted)",
-                        }}>
-                          {p.status === 200 ? `200 ✓` : p.status}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {probes.filter((p) => p.status === 200).map((p) => (
-                <div key={p.url} style={{ marginTop: 8 }}>
-                  <div style={{ color: "var(--muted)", fontSize: ".74rem", marginBottom: 4 }}>
-                    Resposta de <span style={{ fontFamily: "monospace" }}>{p.url.split("?")[0]}</span>:
-                  </div>
-                  <div style={{
-                    padding: 8, borderRadius: 6, background: "rgba(0,0,0,.25)",
-                    fontFamily: "ui-monospace, monospace", fontSize: ".7rem",
-                    wordBreak: "break-all", whiteSpace: "pre-wrap",
-                  }}>
-                    {JSON.stringify(p.sample).slice(0, 900)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {ok && recebimentos.length === 0 && (
             <div style={{ marginTop: 8, fontSize: ".78rem", color: "var(--muted)" }}>
-              A API respondeu, mas não há recebimentos nos últimos 55 dias. Faça um envio ao Full e verifique de novo.
+              A API respondeu, mas não há recebimentos nos últimos 15 dias. Faça um envio ao Full e verifique de novo.
             </div>
           )}
         </div>
