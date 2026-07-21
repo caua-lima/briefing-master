@@ -751,7 +751,7 @@ function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
   type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
   type TipoRemessa = { tipo: string; qtd: number };
-  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[]; tipos: TipoRemessa[]; refs: string[] };
+  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[]; tipos: TipoRemessa[]; refs: string[]; ehTransferencia: boolean };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number; inventariosConsultados?: number; anunciosDaConta?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
@@ -770,7 +770,11 @@ function DiagnosticoInboundFull() {
 
   const ok = dados?.opStatus === 200;
   const recebimentos = dados?.recebimentos ?? [];
-  const remessas = dados?.remessas ?? [];
+  const todas = dados?.remessas ?? [];
+  // Envio seu e transferência interna do ML são coisas diferentes: só o
+  // primeiro tira estoque de casa.
+  const remessas = todas.filter((r) => !r.ehTransferencia);
+  const transferencias = todas.filter((r) => r.ehTransferencia);
 
   return (
     <div className="panel">
@@ -898,6 +902,17 @@ function DiagnosticoInboundFull() {
                 {" · "}{dados.inventariosConsultados ?? 0} inventários consultados em {dados.anunciosDaConta ?? 0} anúncios
                 {dados.truncado && " (limite de páginas atingido — pode faltar remessa antiga)"}
               </div>
+
+              {!!transferencias.length && (
+                <div style={{ marginTop: 12, fontSize: ".76rem", color: "var(--muted)", lineHeight: 1.5 }}>
+                  <b style={{ color: "var(--text)" }}>
+                    +{transferencias.reduce((s, t) => s + t.recebido, 0)} unidades
+                  </b>{" "}
+                  chegaram em {transferencias.length} transferência{transferencias.length === 1 ? "" : "s"} entre
+                  centros do ML. São unidades de remessas anteriores que o ML redirecionou — já saíram
+                  da sua casa, então <b>não</b> geram baixa nova.
+                </div>
+              )}
 
             </div>
           )}

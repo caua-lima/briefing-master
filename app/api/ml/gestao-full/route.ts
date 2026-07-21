@@ -253,6 +253,13 @@ export async function GET(req: Request) {
         problema: a.problema,
         saldoFull: a.saldo,
         refs: Array.from(a.refs),
+        /**
+         * Remessa sua sempre tem INBOUND_RECEPTION. Só TRANSFER_DELIVERY é
+         * unidade vinda de outro centro do ML — ou seja, parte de uma remessa
+         * anterior que foi redirecionada, e não um envio novo. Tratar isso
+         * como envio faria a baixa acontecer duas vezes.
+         */
+        ehTransferencia: !a.porTipo.has("INBOUND_RECEPTION"),
         tipos: Array.from(a.porTipo.entries())
           .filter(([, q]) => q > 0)
           .sort((p, q) => q[1] - p[1])
