@@ -749,7 +749,7 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  */
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean } | null>(null);
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
 
@@ -794,7 +794,21 @@ function DiagnosticoInboundFull() {
           }}>
             {ok
               ? <><b>Disponível!</b> O ML respondeu os recebimentos do Full ({recebimentos.length} nos últimos 90 dias). Dá pra automatizar a baixa.</>
-              : <><b>Indisponível (HTTP {String(dados.opStatus ?? "—")}).</b> O ML não liberou os recebimentos do Full para esta conta — a baixa automática não é possível por esse caminho.</>}
+              : <>
+                  <b>Indisponível (HTTP {String(dados.opStatus ?? "—")}).</b>{" "}
+                  {dados.opStatus === 400
+                    ? "A rota existe, mas o ML recusou os parâmetros. O motivo exato veio abaixo:"
+                    : "O ML não liberou os recebimentos do Full para esta conta."}
+                  {dados.opErro && (
+                    <div style={{
+                      marginTop: 8, padding: 8, borderRadius: 6, background: "rgba(0,0,0,.25)",
+                      color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".72rem",
+                      wordBreak: "break-word", whiteSpace: "pre-wrap",
+                    }}>
+                      {dados.opErro}
+                    </div>
+                  )}
+                </>}
           </div>
 
           {ok && recebimentos.length > 0 && (

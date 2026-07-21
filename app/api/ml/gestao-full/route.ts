@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getMlAccessToken } from "../token";
+import { SELLER_ID } from "@/lib/ml/orders";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -74,15 +75,25 @@ export async function GET(req: Request) {
     const to = now.toISOString().slice(0, 10);
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
     let opStatus = 0;
+    let opErro = ""; // corpo do erro do ML — sem isso o diagnóstico fica cego
+    let opUrl = "";
     for (let i = 0; i < invArr.length; i += 20) {
       const chunk = invArr.slice(i, i + 20);
       try {
-        const res = await fetch(
-          `${ML_API}/stock/fulfillment/operations/search?inventory_id=${chunk.join(",")}&type=inbound_reception&date_from=${from}&date_to=${to}&limit=50`,
-          { headers, cache: "no-store" },
-        );
+        // seller_id é documentado e faltava aqui — provável causa do HTTP 400.
+        const path =
+          `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
+          `&inventory_id=${chunk.join(",")}&type=inbound_reception` +
+          `&date_from=${from}&date_to=${to}&limit=50`;
+        const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
         opStatus = res.status;
-        if (!res.ok) continue;
+        if (!res.ok) {
+          if (!opErro) {
+            opErro = (await res.text().catch(() => "")).slice(0, 300);
+            opUrl = path.slice(0, 200);
+          }
+          continue;
+        }
         const j = (await res.json()) as { results?: Record<string, unknown>[]; data?: Record<string, unknown>[] };
         for (const r of j.results ?? j.data ?? []) {
           recebimentos.push({
@@ -99,7 +110,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });
