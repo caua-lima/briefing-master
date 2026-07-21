@@ -83,39 +83,47 @@ export async function GET(req: Request) {
     // Em vez de chutar o enum, pedimos sem filtro e olhamos os tipos que vierem.
     const tiposVistos = new Set<string>();
     let amostra = "";
+    // O tipo vem em MAIÚSCULA (a doc diz minúsculo — por isso era recusado).
+    // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
+    // somem: foi o que fez aparecerem só 3 de ~8 envios reais.
+    const LIMITE = 50;
     for (let i = 0; i < invArr.length; i += 20) {
       const chunk = invArr.slice(i, i + 20);
-      try {
-        const path =
-          `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
-          `&inventory_id=${chunk.join(",")}` +
-          `&date_from=${from}&date_to=${to}&limit=100`;
-        const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
-        opStatus = res.status;
-        if (!res.ok) {
-          if (!opErro) {
-            opErro = (await res.text().catch(() => "")).slice(0, 300);
-            opUrl = path.slice(0, 200);
+      for (let offset = 0; offset < 500; offset += LIMITE) {
+        let lote = 0;
+        try {
+          const path =
+            `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
+            `&inventory_id=${chunk.join(",")}&type=INBOUND_RECEPTION` +
+            `&date_from=${from}&date_to=${to}&limit=${LIMITE}&offset=${offset}`;
+          const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
+          opStatus = res.status;
+          if (!res.ok) {
+            if (!opErro) {
+              opErro = (await res.text().catch(() => "")).slice(0, 300);
+              opUrl = path.slice(0, 200);
+            }
+            break;
           }
-          continue;
-        }
-        const j = (await res.json()) as { results?: Record<string, unknown>[]; data?: Record<string, unknown>[] };
-        for (const r of j.results ?? j.data ?? []) {
-          const tipo = String(r.type ?? r.operation_type ?? "");
-          tiposVistos.add(tipo);
-          // Filtramos aqui, com o vocabulário real do ML, em vez de no query.
-          if (!/inbound|reception|entrada/i.test(tipo)) continue;
-          // A quantidade veio 0: os campos reais ainda são desconhecidos.
-          // Guardamos uma linha crua para descobrir os nomes sem chutar.
-          if (!amostra) amostra = JSON.stringify(r).slice(0, 900);
-          recebimentos.push({
-            data: String(r.date_created ?? r.date ?? "").slice(0, 10),
-            quantidade: Number(r.quantity ?? r.total ?? 0),
-            inventory_id: String(r.inventory_id ?? ""),
-            tipo,
-          });
-        }
-      } catch { /* ignora */ }
+          const j = (await res.json()) as { results?: Record<string, unknown>[]; data?: Record<string, unknown>[] };
+          const linhas = j.results ?? j.data ?? [];
+          lote = linhas.length;
+          for (const r of linhas) {
+            const tipo = String(r.type ?? r.operation_type ?? "");
+            tiposVistos.add(tipo);
+            // A quantidade saiu 0: os campos reais ainda são desconhecidos.
+            // Guardamos uma linha crua para descobrir os nomes sem chutar.
+            if (!amostra) amostra = JSON.stringify(r).slice(0, 900);
+            recebimentos.push({
+              data: String(r.date_created ?? r.date ?? "").slice(0, 10),
+              quantidade: Number(r.quantity ?? r.total ?? 0),
+              inventory_id: String(r.inventory_id ?? ""),
+              tipo,
+            });
+          }
+        } catch { break; }
+        if (lote < LIMITE) break;
+      }
     }
     recebimentos.sort((a, b) => b.data.localeCompare(a.data));
 
