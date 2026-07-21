@@ -77,7 +77,7 @@ export async function GET(req: Request) {
      * recebimento. 15 dias cobre de sobra o uso real — a baixa roda
      * periodicamente e só precisa das remessas novas.
      */
-    const dias = Math.min(Number(new URL(req.url).searchParams.get("dias") ?? 15) || 15, 55);
+    const dias = Math.min(Number(new URL(req.url).searchParams.get("dias") ?? 25) || 25, 55);
     const from = new Date(now.getTime() - dias * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const to = now.toISOString().slice(0, 10);
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
@@ -86,6 +86,7 @@ export async function GET(req: Request) {
     let opUrl = "";
     const tiposVistos = new Set<string>();
     let amostra = "";
+    const amostras: string[] = [];
     /**
      * O ML emite uma linha por evento de recebimento (palete/caixa). Nela:
      *   detail = o que entrou NESTE evento  → é isso que forma a remessa
@@ -134,7 +135,10 @@ export async function GET(req: Request) {
           for (const r of linhas) {
             const tipo = String(r.type ?? r.operation_type ?? "");
             tiposVistos.add(tipo);
+            // 60 recebidas contra 80 na tela do ML: faltam 20 e não dá pra
+            // saber onde sem ver as linhas. São poucas — mostramos todas.
             if (!amostra) amostra = JSON.stringify(r).slice(0, 900);
+            if (amostras.length < 25) amostras.push(JSON.stringify(r).slice(0, 500));
 
             const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
             const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
@@ -191,7 +195,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, remessas, truncado, linhasBrutas: recebimentos.length });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });

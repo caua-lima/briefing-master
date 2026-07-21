@@ -750,7 +750,7 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
   type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: string[] };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number } | null>(null);
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
 
@@ -795,24 +795,26 @@ function DiagnosticoInboundFull() {
           }}>
             {ok
               ? <>
-                  <b>Disponível!</b> O ML respondeu {remessas.length} remessa{remessas.length === 1 ? "" : "s"} nos últimos 15 dias.
+                  <b>Disponível!</b> O ML respondeu {remessas.length} remessa{remessas.length === 1 ? "" : "s"} nos últimos {dados.dias ?? 25} dias.
                   {!!dados.tiposVistos?.length && (
                     <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
                       Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
                     </div>
                   )}
-                  {dados.amostra && (
+                  {!!dados.amostras?.length && (
                     <div style={{ marginTop: 8 }}>
                       <div style={{ color: "var(--muted)", fontSize: ".74rem", marginBottom: 4 }}>
-                        Linha crua de um recebimento (para achar o campo da quantidade):
+                        Todas as {dados.amostras.length} linhas cruas — as 20 unidades que faltam estão em alguma delas:
                       </div>
-                      <div style={{
-                        padding: 8, borderRadius: 6, background: "rgba(0,0,0,.25)",
-                        color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".7rem",
-                        wordBreak: "break-all", whiteSpace: "pre-wrap",
-                      }}>
-                        {dados.amostra}
-                      </div>
+                      {dados.amostras.map((linha, i) => (
+                        <div key={i} style={{
+                          padding: 6, marginBottom: 4, borderRadius: 6, background: "rgba(0,0,0,.25)",
+                          color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".67rem",
+                          wordBreak: "break-all", whiteSpace: "pre-wrap",
+                        }}>
+                          <b style={{ color: "var(--muted)" }}>{i + 1}.</b> {linha}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </>
