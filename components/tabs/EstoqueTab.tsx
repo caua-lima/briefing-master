@@ -749,7 +749,8 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  */
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: string[] };
+  type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
+  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[] };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
@@ -804,7 +805,7 @@ function DiagnosticoInboundFull() {
                   {!!dados.amostras?.length && (
                     <div style={{ marginTop: 8 }}>
                       <div style={{ color: "var(--muted)", fontSize: ".74rem", marginBottom: 4 }}>
-                        Todas as {dados.amostras.length} linhas cruas — as 20 unidades que faltam estão em alguma delas:
+                        Primeiras {dados.amostras.length} linhas cruas do ML (referência):
                       </div>
                       {dados.amostras.map((linha, i) => (
                         <div key={i} style={{
@@ -844,7 +845,8 @@ function DiagnosticoInboundFull() {
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
                 Agrupado por remessa. <b>Recebido</b> é a soma dos eventos de entrada; <b>Saldo Full</b> é
-                quanto ficou no estoque do ML depois. Compare o Recebido com a tela de envios:
+                quanto ficou no estoque do ML depois. Produto <span style={{ color: "var(--red)" }}>em vermelho</span> não
+                está cadastrado no Estoque — é o que fazia a conta fechar a menos. Compare o Recebido com a tela de envios:
               </div>
               <div className="table-wrapper" style={{ maxHeight: 320, overflow: "auto" }}>
                 <table className="tbl-modern">
@@ -862,7 +864,11 @@ function DiagnosticoInboundFull() {
                         <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>#{r.remessa}</td>
                         <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{r.data.split("-").reverse().join("/")}</td>
                         <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>
-                          {r.produtos.map((p) => p.slice(0, 28)).join(", ") || "—"}
+                          {r.produtos.length === 0 ? "—" : r.produtos.map((p) => (
+                            <div key={p.inventory} style={{ color: p.cadastrado ? "var(--muted)" : "var(--red)" }}>
+                              {p.qtd}× {p.cadastrado ? p.nome.slice(0, 30) : `${p.inventory} (sem cadastro)`}
+                            </div>
+                          ))}
                         </td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{r.recebido}</td>
                         <td style={{ textAlign: "right", color: r.problema > 0 ? "var(--red)" : "var(--muted)", fontWeight: r.problema > 0 ? 700 : 400 }}>

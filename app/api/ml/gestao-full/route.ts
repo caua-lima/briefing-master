@@ -97,7 +97,7 @@ export async function GET(req: Request) {
      */
     type Agg = {
       data: string; recebido: number; problema: number;
-      inventories: Set<string>; saldoData: string; saldo: number;
+      porInventory: Map<string, number>; saldoData: string; saldo: number;
     };
     const porRemessaAgg = new Map<string, Agg>();
     let truncado = false;
@@ -105,9 +105,13 @@ export async function GET(req: Request) {
     // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
     // somem: foi o que fez aparecerem só 3 de ~8 envios reais.
     const LIMITE = 100;
-    let cotaEstourada = false;
-    for (let i = 0; i < invArr.length && !cotaEstourada; i += 20) {
-      const chunk = invArr.slice(i, i + 20);
+    /**
+     * Sem filtro de inventory_id de propósito: filtrando pelos produtos
+     * cadastrados, unidades de produto não cadastrado ficavam invisíveis e a
+     * remessa fechava a menos (60 contra 80). Buscar por seller_id ainda
+     * gasta menos cota, porque some o laço por bloco de inventory_id.
+     */
+    {
       // Teto baixo de propósito: 3000 estourou a cota do ML (HTTP 429).
       for (let offset = 0; offset < 500; offset += LIMITE) {
         if (offset + LIMITE >= 500) truncado = true;
@@ -116,7 +120,7 @@ export async function GET(req: Request) {
         try {
           const path =
             `/stock/fulfillment/operations/search?seller_id=${SELLER_ID}` +
-            `&inventory_id=${chunk.join(",")}&type=INBOUND_RECEPTION` +
+            `&type=INBOUND_RECEPTION` +
             `&date_from=${from}&date_to=${to}&limit=${LIMITE}&offset=${offset}`;
           const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
           opStatus = res.status;
@@ -126,7 +130,6 @@ export async function GET(req: Request) {
               opUrl = path.slice(0, 200);
             }
             // Insistir depois de estourar a cota só piora — para tudo.
-            if (res.status === 429) cotaEstourada = true;
             break;
           }
           const j = (await res.json()) as { results?: Record<string, unknown>[]; data?: Record<string, unknown>[] };
@@ -154,11 +157,11 @@ export async function GET(req: Request) {
             const res2 = (r.result ?? {}) as Record<string, unknown>;
 
             const agg = porRemessaAgg.get(remessa) ?? {
-              data, recebido: 0, problema: 0, inventories: new Set<string>(), saldoData: "", saldo: 0,
+              data, recebido: 0, problema: 0, porInventory: new Map<string, number>(), saldoData: "", saldo: 0,
             };
             agg.recebido += entrou;
             agg.problema += ruins;
-            if (inventory) agg.inventories.add(inventory);
+            if (inventory) agg.porInventory.set(inventory, (agg.porInventory.get(inventory) ?? 0) + entrou);
             if (data < agg.data) agg.data = data;
             // Ordenamos por date_created: o `id` do ML passa de 9e15 e o
             // JSON.parse já o arredonda, então comparar id não é confiável.
@@ -188,7 +191,16 @@ export async function GET(req: Request) {
         recebido: a.recebido,
         problema: a.problema,
         saldoFull: a.saldo,
-        produtos: Array.from(a.inventories).map((inv) => tituloPorInventory.get(inv) ?? inv),
+        // Produto sem cadastro aparece pelo inventory_id cru e marcado — é
+        // exatamente o caso que fazia a remessa fechar a menos.
+        produtos: Array.from(a.porInventory.entries())
+          .sort((p, q) => q[1] - p[1])
+          .map(([inv, qtd]) => ({
+            inventory: inv,
+            nome: tituloPorInventory.get(inv) ?? "",
+            cadastrado: tituloPorInventory.has(inv),
+            qtd,
+          })),
       }))
       .sort((x, y) => y.data.localeCompare(x.data));
 
