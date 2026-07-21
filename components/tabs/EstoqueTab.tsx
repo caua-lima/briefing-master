@@ -749,7 +749,8 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  */
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string } | null>(null);
+  type Remessa = { remessa: string; data: string; total: number; disponivel: number; naoDisponivel: number; perdido: number; produtos: string[] };
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number } | null>(null);
   type Probe = { url: string; status: number; sample?: unknown };
   const [probes, setProbes] = useState<Probe[] | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -778,6 +779,7 @@ function DiagnosticoInboundFull() {
 
   const ok = dados?.opStatus === 200;
   const recebimentos = dados?.recebimentos ?? [];
+  const remessas = dados?.remessas ?? [];
 
   return (
     <div className="panel">
@@ -804,7 +806,7 @@ function DiagnosticoInboundFull() {
           }}>
             {ok
               ? <>
-                  <b>Disponível!</b> O ML respondeu ({recebimentos.length} recebimento{recebimentos.length === 1 ? "" : "s"} nos últimos 55 dias).
+                  <b>Disponível!</b> O ML respondeu {remessas.length} remessa{remessas.length === 1 ? "" : "s"} nos últimos 55 dias.
                   {!!dados.tiposVistos?.length && (
                     <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
                       Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
@@ -842,24 +844,43 @@ function DiagnosticoInboundFull() {
                 </>}
           </div>
 
-          {ok && recebimentos.length > 0 && (
-            <div className="table-wrapper" style={{ marginTop: 10, maxHeight: 240, overflow: "auto" }}>
-              <table className="tbl-modern">
-                <thead><tr>
-                  <th>Data</th><th style={{ textAlign: "left" }}>Inventory ID</th>
-                  <th style={{ textAlign: "right" }}>Qtd recebida</th><th style={{ textAlign: "left" }}>Tipo</th>
-                </tr></thead>
-                <tbody>
-                  {recebimentos.slice(0, 25).map((r, i) => (
-                    <tr key={`${r.inventory_id}-${r.data}-${i}`}>
-                      <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{r.data.split("-").reverse().join("/")}</td>
-                      <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".68rem", color: "var(--muted)" }}>{r.inventory_id || "—"}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700 }}>{r.quantidade}</td>
-                      <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>{r.tipo}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {ok && !!remessas.length && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
+                Agrupado por remessa — compare com a tela de envios do Mercado Livre:
+              </div>
+              <div className="table-wrapper" style={{ maxHeight: 320, overflow: "auto" }}>
+                <table className="tbl-modern">
+                  <thead><tr>
+                    <th style={{ textAlign: "left" }}>Remessa</th>
+                    <th>Data</th>
+                    <th style={{ textAlign: "left" }}>Produto</th>
+                    <th style={{ textAlign: "right" }}>Total</th>
+                    <th style={{ textAlign: "right" }}>OK</th>
+                    <th style={{ textAlign: "right" }}>Problema</th>
+                  </tr></thead>
+                  <tbody>
+                    {remessas.map((r) => (
+                      <tr key={r.remessa}>
+                        <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>#{r.remessa}</td>
+                        <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{r.data.split("-").reverse().join("/")}</td>
+                        <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>
+                          {r.produtos.map((p) => p.slice(0, 28)).join(", ") || "—"}
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{r.total}</td>
+                        <td style={{ textAlign: "right" }}>{r.disponivel}</td>
+                        <td style={{ textAlign: "right", color: r.naoDisponivel > 0 ? "var(--red)" : "var(--muted)", fontWeight: r.naoDisponivel > 0 ? 700 : 400 }}>
+                          {r.naoDisponivel || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
+                {remessas.length} remessa{remessas.length === 1 ? "" : "s"} a partir de {dados.linhasBrutas ?? 0} linhas do ML
+                {dados.truncado && " (limite de páginas atingido — pode faltar remessa antiga)"}
+              </div>
             </div>
           )}
 

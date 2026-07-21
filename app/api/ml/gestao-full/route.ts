@@ -79,17 +79,26 @@ export async function GET(req: Request) {
     let opStatus = 0;
     let opErro = ""; // corpo do erro do ML — sem isso o diagnóstico fica cego
     let opUrl = "";
-    // O ML recusou type=inbound_reception ("invalid value") mesmo estando na doc.
-    // Em vez de chutar o enum, pedimos sem filtro e olhamos os tipos que vierem.
     const tiposVistos = new Set<string>();
     let amostra = "";
+    /**
+     * O ML emite uma linha por evento de recebimento (palete/caixa), e repete
+     * em todas elas o bloco `result`, que é o acumulado da remessa inteira.
+     * Somar as linhas multiplicaria o estoque. Então guardamos, por
+     * (remessa + inventory_id), apenas a linha mais recente — nela `result`
+     * já está fechado.
+     */
+    type Linha = { id: number; data: string; inventory: string; total: number; disp: number; naoDisp: number; perdido: number };
+    const ultimaPorChave = new Map<string, Linha>();
+    let truncado = false;
     // O tipo vem em MAIÚSCULA (a doc diz minúsculo — por isso era recusado).
     // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
     // somem: foi o que fez aparecerem só 3 de ~8 envios reais.
-    const LIMITE = 50;
+    const LIMITE = 100;
     for (let i = 0; i < invArr.length; i += 20) {
       const chunk = invArr.slice(i, i + 20);
-      for (let offset = 0; offset < 500; offset += LIMITE) {
+      for (let offset = 0; offset < 3000; offset += LIMITE) {
+        if (offset + LIMITE >= 3000) truncado = true;
         let lote = 0;
         try {
           const path =
@@ -111,13 +120,30 @@ export async function GET(req: Request) {
           for (const r of linhas) {
             const tipo = String(r.type ?? r.operation_type ?? "");
             tiposVistos.add(tipo);
-            // A quantidade saiu 0: os campos reais ainda são desconhecidos.
-            // Guardamos uma linha crua para descobrir os nomes sem chutar.
             if (!amostra) amostra = JSON.stringify(r).slice(0, 900);
+
+            const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
+            const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
+            const inventory = String(r.inventory_id ?? "");
+            const res2 = (r.result ?? {}) as Record<string, unknown>;
+            const perdas = (res2.not_available_detail ?? []) as { status?: string; quantity?: number }[];
+            const linha: Linha = {
+              id: Number(r.id ?? 0),
+              data: String(r.date_created ?? "").slice(0, 10),
+              inventory,
+              total: Number(res2.total ?? 0),
+              disp: Number(res2.available_quantity ?? 0),
+              naoDisp: Number(res2.not_available_quantity ?? 0),
+              perdido: perdas.reduce((s, p) => s + Number(p?.quantity ?? 0), 0),
+            };
+            const chave = `${remessa}|${inventory}`;
+            const anterior = ultimaPorChave.get(chave);
+            if (!anterior || linha.id > anterior.id) ultimaPorChave.set(chave, linha);
+
             recebimentos.push({
-              data: String(r.date_created ?? r.date ?? "").slice(0, 10),
-              quantidade: Number(r.quantity ?? r.total ?? 0),
-              inventory_id: String(r.inventory_id ?? ""),
+              data: linha.data,
+              quantidade: Number((r.detail as Record<string, unknown>)?.available_quantity ?? 0),
+              inventory_id: inventory,
               tipo,
             });
           }
@@ -127,10 +153,33 @@ export async function GET(req: Request) {
     }
     recebimentos.sort((a, b) => b.data.localeCompare(a.data));
 
+    // Uma remessa (#71140809) pode conter vários produtos: somamos os
+    // inventory_id dela para poder comparar com a tela do Seller Center.
+    const tituloPorInventory = new Map<string, string>();
+    for (const it of itens) if (it.inventory_id) tituloPorInventory.set(it.inventory_id, it.title);
+
+    type Remessa = { remessa: string; data: string; total: number; disponivel: number; naoDisponivel: number; perdido: number; produtos: string[] };
+    const porRemessa = new Map<string, Remessa>();
+    for (const [chave, l] of ultimaPorChave) {
+      const remessa = chave.split("|")[0] || "—";
+      const atual = porRemessa.get(remessa) ?? {
+        remessa, data: l.data, total: 0, disponivel: 0, naoDisponivel: 0, perdido: 0, produtos: [],
+      };
+      atual.total += l.total;
+      atual.disponivel += l.disp;
+      atual.naoDisponivel += l.naoDisp;
+      atual.perdido += l.perdido;
+      if (l.data < atual.data) atual.data = l.data;
+      const nome = tituloPorInventory.get(l.inventory) ?? l.inventory;
+      if (nome && !atual.produtos.includes(nome)) atual.produtos.push(nome);
+      porRemessa.set(remessa, atual);
+    }
+    const remessas = Array.from(porRemessa.values()).sort((a, b) => b.data.localeCompare(a.data));
+
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, remessas, truncado, linhasBrutas: recebimentos.length });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });
