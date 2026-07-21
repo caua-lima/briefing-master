@@ -58,7 +58,7 @@ export async function GET(req: Request) {
     const inventoryIds = new Set<string>();
     for (let i = 0; i < arr.length; i += 20) {
       const chunk = arr.slice(i, i + 20);
-      const res = await fetch(`${ML_API}/items?ids=${chunk.join(",")}&attributes=id,title,available_quantity,sold_quantity,status,inventory_id,shipping`, { headers, cache: "no-store" });
+      const res = await fetch(`${ML_API}/items?ids=${chunk.join(",")}&attributes=id,title,available_quantity,sold_quantity,status,inventory_id,shipping,variations`, { headers, cache: "no-store" });
       if (!res.ok) continue;
       const rows = (await res.json()) as { body?: Record<string, unknown> }[];
       for (const row of rows) {
@@ -67,18 +67,36 @@ export async function GET(req: Request) {
         const shipping = (b.shipping as Record<string, unknown>) ?? {};
         const logistic = String(shipping.logistic_type ?? "");
         const inv = String(b.inventory_id ?? "");
+        /**
+         * Anúncio com variação (sabor, tamanho) não tem inventory_id na raiz:
+         * cada variação tem o seu. Lendo só a raiz, essas unidades ficavam
+         * invisíveis — é o que fazia duas remessas fecharem 20 a menos.
+         */
+        const variacoes = (b.variations ?? []) as Record<string, unknown>[];
+        const invsVariacao = variacoes
+          .map((v) => ({ inv: String(v.inventory_id ?? ""), qtd: Number(v.available_quantity ?? 0) }))
+          .filter((v) => v.inv);
+
         // Só anúncios no Full (fulfillment). Agência/Flex/self ficam de fora.
-        const isFull = logistic === "fulfillment" || (logistic === "" && inv !== "");
+        const temInv = inv !== "" || invsVariacao.length > 0;
+        const isFull = logistic === "fulfillment" || (logistic === "" && temInv);
         if (!isFull) continue;
-        if (inv) inventoryIds.add(inv);
-        itens.push({
-          mlb: String(b.id ?? "").toUpperCase(),
-          title: String(b.title ?? ""),
-          available: Number(b.available_quantity ?? 0),
-          sold: Number(b.sold_quantity ?? 0),
-          status: String(b.status ?? ""),
-          inventory_id: inv,
-        });
+
+        const mlb = String(b.id ?? "").toUpperCase();
+        const title = String(b.title ?? "");
+        const status = String(b.status ?? "");
+        if (inv) {
+          inventoryIds.add(inv);
+          itens.push({
+            mlb, title, status, inventory_id: inv,
+            available: Number(b.available_quantity ?? 0),
+            sold: Number(b.sold_quantity ?? 0),
+          });
+        }
+        for (const v of invsVariacao) {
+          inventoryIds.add(v.inv);
+          itens.push({ mlb, title, status, inventory_id: v.inv, available: v.qtd, sold: 0 });
+        }
       }
     }
     itens.sort((a, b) => b.available - a.available);
@@ -226,7 +244,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias, inventariosConsultados: invArr.length, anunciosDaConta: arr.length });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });

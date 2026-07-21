@@ -751,7 +751,7 @@ function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
   type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
   type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[] };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number } | null>(null);
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number; inventariosConsultados?: number; anunciosDaConta?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
 
@@ -882,6 +882,7 @@ function DiagnosticoInboundFull() {
               </div>
               <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
                 {remessas.length} remessa{remessas.length === 1 ? "" : "s"} a partir de {dados.linhasBrutas ?? 0} linhas do ML
+                {" · "}{dados.inventariosConsultados ?? 0} inventários consultados em {dados.anunciosDaConta ?? 0} anúncios
                 {dados.truncado && " (limite de páginas atingido — pode faltar remessa antiga)"}
               </div>
             </div>
