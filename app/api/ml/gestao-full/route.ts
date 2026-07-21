@@ -82,6 +82,7 @@ export async function GET(req: Request) {
     // O ML recusou type=inbound_reception ("invalid value") mesmo estando na doc.
     // Em vez de chutar o enum, pedimos sem filtro e olhamos os tipos que vierem.
     const tiposVistos = new Set<string>();
+    let amostra = "";
     for (let i = 0; i < invArr.length; i += 20) {
       const chunk = invArr.slice(i, i + 20);
       try {
@@ -104,6 +105,9 @@ export async function GET(req: Request) {
           tiposVistos.add(tipo);
           // Filtramos aqui, com o vocabulário real do ML, em vez de no query.
           if (!/inbound|reception|entrada/i.test(tipo)) continue;
+          // A quantidade veio 0: os campos reais ainda são desconhecidos.
+          // Guardamos uma linha crua para descobrir os nomes sem chutar.
+          if (!amostra) amostra = JSON.stringify(r).slice(0, 900);
           recebimentos.push({
             data: String(r.date_created ?? r.date ?? "").slice(0, 10),
             quantidade: Number(r.quantity ?? r.total ?? 0),
@@ -118,7 +122,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos) });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });

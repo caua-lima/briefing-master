@@ -749,7 +749,7 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  */
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[] } | null>(null);
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
 
@@ -798,6 +798,20 @@ function DiagnosticoInboundFull() {
                   {!!dados.tiposVistos?.length && (
                     <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".74rem" }}>
                       Tipos de operação que o ML devolveu: <b style={{ color: "var(--text)" }}>{dados.tiposVistos.join(", ")}</b>
+                    </div>
+                  )}
+                  {dados.amostra && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ color: "var(--muted)", fontSize: ".74rem", marginBottom: 4 }}>
+                        Linha crua de um recebimento (para achar o campo da quantidade):
+                      </div>
+                      <div style={{
+                        padding: 8, borderRadius: 6, background: "rgba(0,0,0,.25)",
+                        color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: ".7rem",
+                        wordBreak: "break-all", whiteSpace: "pre-wrap",
+                      }}>
+                        {dados.amostra}
+                      </div>
                     </div>
                   )}
                 </>
