@@ -41,6 +41,7 @@ type AnuncioResult = {
   lucro: number;
   margem: number;
   qty: number;
+  vendas: number; // nº de pedidos distintos que contêm este anúncio
   semVenda?: boolean;
 };
 
@@ -141,6 +142,9 @@ function computeAggregates(
   let pedidosSemVinculo = 0;
 
   const anunciosMap = new Map<string, AnuncioResult>();
+  // Um pedido pode ter várias unidades do mesmo anúncio: 'vendas' conta o
+  // PEDIDO uma vez só, enquanto 'qty' soma as unidades.
+  const pedidosPorAnuncio = new Map<string, Set<string>>();
   let ordersCount = 0;
 
   for (const o of orders) {
@@ -188,6 +192,9 @@ function computeAggregates(
         totalTaxasML += taxaML;
 
         const chave = mlbNumPedido || skuRaw;
+        const setPedidos = pedidosPorAnuncio.get(chave) ?? new Set<string>();
+        setPedidos.add(oid);
+        pedidosPorAnuncio.set(chave, setPedidos);
         const prev = anunciosMap.get(chave);
         if (prev) {
           prev.retorno += retorno;
@@ -210,6 +217,7 @@ function computeAggregates(
             lucro: 0,
             margem: 0,
             qty,
+            vendas: 0,
           });
         }
       }
@@ -229,6 +237,7 @@ function computeAggregates(
     a.lucroBruto = a.retorno - a.custoProduto - a.envioFull;
     a.lucro = a.lucroBruto - a.ads - a.imposto - a.taxaML;
     a.margem = a.retorno > 0 ? (a.lucro / a.retorno) * 100 : 0;
+    a.vendas = pedidosPorAnuncio.get(chave)?.size ?? 0;
   }
 
   // Anúncios com gasto de ADS mas SEM venda no período → viram linhas próprias
@@ -239,7 +248,7 @@ function computeAggregates(
       item_id: key,
       title: prod?.name || `Anúncio ${key}`,
       retorno: 0, custoProduto: 0, envioFull: 0, imposto: 0, taxaML: 0,
-      ads: cost, lucroBruto: 0, lucro: -cost, margem: 0, qty: 0,
+      ads: cost, lucroBruto: 0, lucro: -cost, margem: 0, qty: 0, vendas: 0,
       semVenda: true,
     });
   }

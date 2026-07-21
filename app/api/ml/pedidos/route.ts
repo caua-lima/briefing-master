@@ -77,25 +77,52 @@ export async function GET(req: Request) {
       let bruto = 0, cmv = 0, envio = 0, taxaML = 0, imposto = 0;
       let vinculado = true;
       const nomes: string[] = [];
+      // Detalhe por item: um pedido pode ter mais de um produto. Sem isto, o
+      // resumo "por produto" não teria como separar um pedido misto.
+      const itens: {
+        produto: string; mlb: string; qtd: number;
+        valor: number; retorno: number; cmv: number; envio: number;
+        taxaML: number; imposto: number; lucro: number; vinculado: boolean;
+      }[] = [];
 
       for (const item of items) {
         const qty = Number(item.quantity ?? 1);
         const skuRaw = String(item.sku ?? "").trim();
         const itemId = String(item.item_id ?? "").trim();
         const ret = Number(item.unit_price ?? 0) * qty;
+        const itTaxa = Number(item.sale_fee ?? 0) * qty;
+        const itEnvio = envioPerUnit * qty;
         bruto += ret;
-        taxaML += Number(item.sale_fee ?? 0) * qty;
-        envio += envioPerUnit * qty;
+        taxaML += itTaxa;
+        envio += itEnvio;
 
         const prod = porMlb.get(normalizeItemId(itemId)) ?? porSku.get(normalizeSku(skuRaw));
+        const nome = prod?.name || String(item.title ?? skuRaw);
+        const itCmv = prod ? prod.custo * qty : 0;
+        const itImposto = prod ? ret * (prod.imposto / 100) : 0;
         if (prod) {
-          cmv += prod.custo * qty;
-          imposto += ret * (prod.imposto / 100);
-          nomes.push(prod.name || String(item.title ?? skuRaw));
+          cmv += itCmv;
+          imposto += itImposto;
         } else {
           vinculado = false;
-          nomes.push(String(item.title ?? skuRaw));
         }
+        nomes.push(nome);
+
+        // Mesma fórmula do pedido, aplicada ao item.
+        const itRetorno = ret - itTaxa - itEnvio;
+        itens.push({
+          produto: nome,
+          mlb: itemId.toUpperCase(),
+          qtd: qty,
+          valor: ret,
+          retorno: itRetorno,
+          cmv: itCmv,
+          envio: itEnvio,
+          taxaML: itTaxa,
+          imposto: itImposto,
+          lucro: itRetorno - itCmv - itImposto,
+          vinculado: Boolean(prod),
+        });
       }
 
       // Retorno = o que volta pra você = valor − taxa ML − frete (igual ao ML e ao Dashboard).
@@ -113,7 +140,7 @@ export async function GET(req: Request) {
         qtd: totalUnits,
         valor: Number(o.total_amount ?? 0),
         bruto, retorno, cmv, envio, taxaML, imposto,
-        lucro, margem, vinculado,
+        lucro, margem, vinculado, itens,
       };
     });
 

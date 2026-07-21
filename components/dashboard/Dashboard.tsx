@@ -33,6 +33,7 @@ type AnuncioResult = {
   lucro:        number;
   margem:       number;
   qty:          number;
+  vendas:       number;
   semVenda?:    boolean;
 };
 
@@ -441,7 +442,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
       <table className="tbl-modern">
         <thead>
           <tr>
-            <th>Anúncio</th><th>Qtd</th><th>Retorno</th><th>CMV</th><th>Frete</th>
+            <th>Anúncio</th><th>Vendas</th><th>Un</th><th>Retorno</th><th>CMV</th><th>Frete</th>
             <th>Taxa ML</th><th>Imposto</th><th>ADS</th><th>ROAS</th><th>Lucro Bruto</th><th>Lucro Líq.</th><th>Margem</th>
           </tr>
         </thead>
@@ -455,6 +456,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
                   {a.semVenda && <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5 }}>SEM VENDA</span>}
                   {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
                 </td>
+                <td style={{ fontWeight: 700 }}>{a.vendas || "—"}</td>
                 <td style={{ color: "var(--muted)" }}>{a.qty}</td>
                 <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
                 <td style={{ color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
@@ -473,6 +475,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
         <tfoot>
           <tr>
             <td>Total</td>
+            <td style={{ fontWeight: 700 }}>{sum((a) => a.vendas)}</td>
             <td style={{ color: "var(--muted)" }}>{sum((a) => a.qty)}</td>
             <td style={{ color: "var(--green)" }}>{fmtBRL(totalRet)}</td>
             <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.custoProduto))}</td>

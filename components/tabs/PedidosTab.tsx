@@ -5,6 +5,20 @@ import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
 
+type ItemPedido = {
+  produto: string;
+  mlb: string;
+  qtd: number;
+  valor: number;
+  retorno: number;
+  cmv: number;
+  envio: number;
+  taxaML: number;
+  imposto: number;
+  lucro: number;
+  vinculado: boolean;
+};
+
 type Pedido = {
   order_id: string;
   data: string;
@@ -22,6 +36,7 @@ type Pedido = {
   lucro: number;
   margem: number;
   vinculado: boolean;
+  itens?: ItemPedido[];
 };
 
 function monthRange() {
@@ -37,6 +52,7 @@ export default function PedidosTab() {
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad">("todos");
+  const [modo, setModo] = useState<"pedido" | "produto">("pedido");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,6 +85,45 @@ export default function PedidosTab() {
       return true;
     });
   }, [pedidos, busca, filtro]);
+
+  /**
+   * Consolida por produto os pedidos que estão no filtro atual.
+   * Usa os ITENS (não o pedido inteiro): um pedido com 2 produtos precisa
+   * somar cada um na sua linha. 'vendas' conta o pedido uma vez por produto —
+   * 3 unidades num pedido só = 1 venda, 3 unidades.
+   */
+  const porProduto = useMemo(() => {
+    const map = new Map<string, {
+      produto: string; mlb: string; vendas: Set<string>; qtd: number;
+      valor: number; retorno: number; custos: number; lucro: number; semCadastro: boolean;
+    }>();
+    for (const p of filtrados) {
+      // Pedido antigo (sem detalhe por item): entra como uma linha só.
+      const itens: ItemPedido[] = p.itens?.length
+        ? p.itens
+        : [{ produto: p.produto || "—", mlb: "", qtd: p.qtd, valor: p.valor, retorno: p.retorno,
+             cmv: p.cmv, envio: p.envio, taxaML: p.taxaML, imposto: p.imposto, lucro: p.lucro,
+             vinculado: p.vinculado }];
+      for (const it of itens) {
+        const chave = it.mlb || it.produto || "—";
+        const cur = map.get(chave) ?? {
+          produto: it.produto || "—", mlb: it.mlb, vendas: new Set<string>(), qtd: 0,
+          valor: 0, retorno: 0, custos: 0, lucro: 0, semCadastro: false,
+        };
+        cur.vendas.add(p.order_id);
+        cur.qtd += it.qtd;
+        cur.valor += it.valor;
+        cur.retorno += it.retorno;
+        cur.custos += it.cmv + it.envio + it.taxaML + it.imposto;
+        cur.lucro += it.lucro;
+        if (!it.vinculado) cur.semCadastro = true;
+        map.set(chave, cur);
+      }
+    }
+    return Array.from(map.values())
+      .map((r) => ({ ...r, nVendas: r.vendas.size, margem: r.valor > 0 ? (r.lucro / r.valor) * 100 : 0 }))
+      .sort((a, b) => b.qtd - a.qtd);
+  }, [filtrados]);
 
   const prejuizoN = pedidos.filter((p) => p.lucro < 0).length;
   const semCadN = pedidos.filter((p) => !p.vinculado).length;
@@ -130,13 +185,72 @@ export default function PedidosTab() {
 
       {/* Tabela */}
       <div className="panel">
+        {/* Alterna entre a lista de pedidos e o consolidado por produto */}
+        <div className="seg" style={{ alignSelf: "flex-start", marginBottom: 12 }}>
+          <button type="button" className={`seg-btn ${modo === "pedido" ? "active" : ""}`} onClick={() => setModo("pedido")}>
+            Por pedido ({filtrados.length})
+          </button>
+          <button type="button" className={`seg-btn ${modo === "produto" ? "active" : ""}`} onClick={() => setModo("produto")}>
+            Por produto ({porProduto.length})
+          </button>
+        </div>
+
         <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 12 }}>
-          <b>Retorno</b> = Valor − Taxa ML − Frete · <b>Custos</b> = CMV + Frete + Taxa + Imposto (passe o mouse pra ver o detalhe) · <b>Lucro</b> = Valor − Custos
+          {modo === "produto"
+            ? <><b>Vendas</b> = nº de pedidos · <b>Un</b> = unidades vendidas · um pedido com 3 unidades conta como 1 venda e 3 unidades</>
+            : <><b>Retorno</b> = Valor − Taxa ML − Frete · <b>Custos</b> = CMV + Frete + Taxa + Imposto (passe o mouse pra ver o detalhe) · <b>Lucro</b> = Valor − Custos</>}
         </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando pedidos…</div>
         ) : filtrados.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Nenhum pedido no período.</div>
+        ) : modo === "produto" ? (
+          <div className="table-wrapper" style={{ border: "none" }}>
+            <table className="tbl-modern">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>Produto</th>
+                  <th style={{ textAlign: "right" }}>Vendas</th>
+                  <th style={{ textAlign: "right" }}>Un</th>
+                  <th style={{ textAlign: "right" }}>Faturamento</th>
+                  <th style={{ textAlign: "right" }}>Retorno</th>
+                  <th style={{ textAlign: "right" }}>Custos</th>
+                  <th style={{ textAlign: "right" }}>Lucro líq.</th>
+                  <th>Margem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porProduto.map((r) => (
+                  <tr key={r.mlb || r.produto} style={{ boxShadow: `inset 3px 0 0 ${r.lucro >= 0 ? "var(--green)" : "var(--red)"}` }}>
+                    <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ fontWeight: 600 }} title={r.produto}>{r.produto}</span>
+                      {r.semCadastro && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                      {r.mlb && <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{r.mlb}</span>}
+                    </td>
+                    <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{r.nVendas}</td>
+                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>{r.qtd}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{fmtBRL(r.valor)}</td>
+                    <td style={{ textAlign: "right", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(r.retorno)}</td>
+                    <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap" }}>−{fmtBRL(r.custos)}</td>
+                    <td style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap", color: r.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(r.lucro)}</td>
+                    <td><span className={`tag ${margemTag(r.margem)}`}>{r.margem.toFixed(1)}%</span></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td style={{ textAlign: "left", fontWeight: 800 }}>Total · {porProduto.length} produto(s)</td>
+                  <td style={{ textAlign: "right", fontWeight: 800 }}>{porProduto.reduce((s, r) => s + r.nVendas, 0)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 800, color: "var(--accent)" }}>{porProduto.reduce((s, r) => s + r.qtd, 0)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>{fmtBRL(porProduto.reduce((s, r) => s + r.valor, 0))}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>{fmtBRL(porProduto.reduce((s, r) => s + r.retorno, 0))}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700, color: "var(--red)" }}>−{fmtBRL(porProduto.reduce((s, r) => s + r.custos, 0))}</td>
+                  <td style={{ textAlign: "right", fontWeight: 800, color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(porProduto.reduce((s, r) => s + r.lucro, 0))}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         ) : (
           <div className="table-wrapper" style={{ border: "none" }}>
             <table className="tbl-modern">
