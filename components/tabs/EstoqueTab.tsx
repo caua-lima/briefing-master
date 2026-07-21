@@ -266,6 +266,8 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
       <PrevisaoPanel products={filtered} estoqueML={estoqueML} forecast={forecast} />
 
+      {canEdit && <DiagnosticoInboundFull />}
+
       {editProduct && (
         <ProductModal
           product={editProduct}
@@ -736,5 +738,93 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
         <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
       </div>
     </Modal>
+  );
+}
+
+// ── Diagnóstico: o ML expõe os recebimentos do Full nesta conta? ──────────
+/**
+ * Antes de automatizar a baixa por envio ao Full, precisamos saber se a API
+ * /stock/fulfillment/operations/search (type=inbound_reception) responde para
+ * esta conta — e qual o formato dos dados. É o que este painel mostra.
+ */
+function DiagnosticoInboundFull() {
+  type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
+  const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean } | null>(null);
+  const [carregando, setCarregando] = useState(false);
+  const [aberto, setAberto] = useState(false);
+
+  async function verificar() {
+    setAberto(true);
+    setCarregando(true);
+    try {
+      const r = await authedFetch("/api/ml/gestao-full", { cache: "no-store" });
+      setDados(r.ok ? await r.json() : { opStatus: r.status });
+    } catch {
+      setDados({ opStatus: -1 });
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  const ok = dados?.opStatus === 200;
+  const recebimentos = dados?.recebimentos ?? [];
+
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 6 }}>
+        <span className="panel-title">Baixa automática por envio ao Full</span>
+        <span className="panel-sub">verificação — o Mercado Livre libera esses dados na sua conta?</span>
+      </div>
+      <div style={{ fontSize: ".8rem", color: "var(--muted)", marginBottom: 10, lineHeight: 1.55 }}>
+        Hoje o envio pro Full é lançado à mão. Para dar baixa sozinho, o ML precisa nos
+        informar os <b>recebimentos no Full</b>. Clique para testar.
+      </div>
+
+      <button type="button" className="btn btn-ghost btn-sm" onClick={verificar} disabled={carregando}>
+        {carregando ? "Verificando…" : aberto ? "Verificar de novo" : "Verificar disponibilidade"}
+      </button>
+
+      {aberto && dados && !carregando && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{
+            padding: "10px 12px", borderRadius: 8, fontSize: ".8rem", lineHeight: 1.5,
+            background: ok ? "rgba(34,197,94,.1)" : "rgba(245,158,11,.1)",
+            border: `1px solid ${ok ? "var(--green)" : "rgba(245,158,11,.4)"}`,
+            color: ok ? "var(--green)" : "#f7c948",
+          }}>
+            {ok
+              ? <><b>Disponível!</b> O ML respondeu os recebimentos do Full ({recebimentos.length} nos últimos 90 dias). Dá pra automatizar a baixa.</>
+              : <><b>Indisponível (HTTP {String(dados.opStatus ?? "—")}).</b> O ML não liberou os recebimentos do Full para esta conta — a baixa automática não é possível por esse caminho.</>}
+          </div>
+
+          {ok && recebimentos.length > 0 && (
+            <div className="table-wrapper" style={{ marginTop: 10, maxHeight: 240, overflow: "auto" }}>
+              <table className="tbl-modern">
+                <thead><tr>
+                  <th>Data</th><th style={{ textAlign: "left" }}>Inventory ID</th>
+                  <th style={{ textAlign: "right" }}>Qtd recebida</th><th style={{ textAlign: "left" }}>Tipo</th>
+                </tr></thead>
+                <tbody>
+                  {recebimentos.slice(0, 25).map((r, i) => (
+                    <tr key={`${r.inventory_id}-${r.data}-${i}`}>
+                      <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{r.data.split("-").reverse().join("/")}</td>
+                      <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".68rem", color: "var(--muted)" }}>{r.inventory_id || "—"}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700 }}>{r.quantidade}</td>
+                      <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>{r.tipo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {ok && recebimentos.length === 0 && (
+            <div style={{ marginTop: 8, fontSize: ".78rem", color: "var(--muted)" }}>
+              A API respondeu, mas não há recebimentos nos últimos 90 dias. Faça um envio ao Full e verifique de novo.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
