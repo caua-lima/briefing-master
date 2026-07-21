@@ -87,14 +87,18 @@ export async function GET(req: Request) {
     const tiposVistos = new Set<string>();
     let amostra = "";
     /**
-     * O ML emite uma linha por evento de recebimento (palete/caixa), e repete
-     * em todas elas o bloco `result`, que é o acumulado da remessa inteira.
-     * Somar as linhas multiplicaria o estoque. Então guardamos, por
-     * (remessa + inventory_id), apenas a linha mais recente — nela `result`
-     * já está fechado.
+     * O ML emite uma linha por evento de recebimento (palete/caixa). Nela:
+     *   detail = o que entrou NESTE evento  → é isso que forma a remessa
+     *   result = o saldo do produto no Full DEPOIS da operação (não somar!)
+     * Somar `result` daria 152 numa remessa de 80, porque 152 é o estoque.
+     * Então acumulamos `detail` por remessa e guardamos `result` só como
+     * informação do saldo, tirado do evento mais recente.
      */
-    type Linha = { id: number; data: string; inventory: string; total: number; disp: number; naoDisp: number; perdido: number };
-    const ultimaPorChave = new Map<string, Linha>();
+    type Agg = {
+      data: string; recebido: number; problema: number;
+      inventories: Set<string>; saldoData: string; saldo: number;
+    };
+    const porRemessaAgg = new Map<string, Agg>();
     let truncado = false;
     // O tipo vem em MAIÚSCULA (a doc diz minúsculo — por isso era recusado).
     // Sem esse filtro a página enche de SALE_CONFIRMATION e os recebimentos
@@ -135,27 +139,32 @@ export async function GET(req: Request) {
             const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
             const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
             const inventory = String(r.inventory_id ?? "");
-            const res2 = (r.result ?? {}) as Record<string, unknown>;
-            const perdas = (res2.not_available_detail ?? []) as { status?: string; quantity?: number }[];
-            const linha: Linha = {
-              id: Number(r.id ?? 0),
-              data: String(r.date_created ?? "").slice(0, 10),
-              inventory,
-              total: Number(res2.total ?? 0),
-              disp: Number(res2.available_quantity ?? 0),
-              naoDisp: Number(res2.not_available_quantity ?? 0),
-              perdido: perdas.reduce((s, p) => s + Number(p?.quantity ?? 0), 0),
-            };
-            const chave = `${remessa}|${inventory}`;
-            const anterior = ultimaPorChave.get(chave);
-            if (!anterior || linha.id > anterior.id) ultimaPorChave.set(chave, linha);
+            const quando = String(r.date_created ?? "");
+            const data = quando.slice(0, 10);
 
-            recebimentos.push({
-              data: linha.data,
-              quantidade: Number((r.detail as Record<string, unknown>)?.available_quantity ?? 0),
-              inventory_id: inventory,
-              tipo,
-            });
+            const det = (r.detail ?? {}) as Record<string, unknown>;
+            const detProblemas = (det.not_available_detail ?? []) as { status?: string; quantity?: number }[];
+            const entrou = Number(det.available_quantity ?? 0);
+            const ruins = detProblemas.reduce((s, p) => s + Number(p?.quantity ?? 0), 0);
+
+            const res2 = (r.result ?? {}) as Record<string, unknown>;
+
+            const agg = porRemessaAgg.get(remessa) ?? {
+              data, recebido: 0, problema: 0, inventories: new Set<string>(), saldoData: "", saldo: 0,
+            };
+            agg.recebido += entrou;
+            agg.problema += ruins;
+            if (inventory) agg.inventories.add(inventory);
+            if (data < agg.data) agg.data = data;
+            // Ordenamos por date_created: o `id` do ML passa de 9e15 e o
+            // JSON.parse já o arredonda, então comparar id não é confiável.
+            if (quando > agg.saldoData) {
+              agg.saldoData = quando;
+              agg.saldo = Number(res2.total ?? 0);
+            }
+            porRemessaAgg.set(remessa, agg);
+
+            recebimentos.push({ data, quantidade: entrou, inventory_id: inventory, tipo });
           }
         } catch { break; }
         if (lote < LIMITE) break;
@@ -168,23 +177,16 @@ export async function GET(req: Request) {
     const tituloPorInventory = new Map<string, string>();
     for (const it of itens) if (it.inventory_id) tituloPorInventory.set(it.inventory_id, it.title);
 
-    type Remessa = { remessa: string; data: string; total: number; disponivel: number; naoDisponivel: number; perdido: number; produtos: string[] };
-    const porRemessa = new Map<string, Remessa>();
-    for (const [chave, l] of ultimaPorChave) {
-      const remessa = chave.split("|")[0] || "—";
-      const atual = porRemessa.get(remessa) ?? {
-        remessa, data: l.data, total: 0, disponivel: 0, naoDisponivel: 0, perdido: 0, produtos: [],
-      };
-      atual.total += l.total;
-      atual.disponivel += l.disp;
-      atual.naoDisponivel += l.naoDisp;
-      atual.perdido += l.perdido;
-      if (l.data < atual.data) atual.data = l.data;
-      const nome = tituloPorInventory.get(l.inventory) ?? l.inventory;
-      if (nome && !atual.produtos.includes(nome)) atual.produtos.push(nome);
-      porRemessa.set(remessa, atual);
-    }
-    const remessas = Array.from(porRemessa.values()).sort((a, b) => b.data.localeCompare(a.data));
+    const remessas = Array.from(porRemessaAgg.entries())
+      .map(([remessa, a]) => ({
+        remessa: remessa || "—",
+        data: a.data,
+        recebido: a.recebido,
+        problema: a.problema,
+        saldoFull: a.saldo,
+        produtos: Array.from(a.inventories).map((inv) => tituloPorInventory.get(inv) ?? inv),
+      }))
+      .sort((x, y) => y.data.localeCompare(x.data));
 
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);

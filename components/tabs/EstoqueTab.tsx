@@ -749,7 +749,7 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  */
 function DiagnosticoInboundFull() {
   type Recebimento = { data: string; quantidade: number; inventory_id: string; tipo: string };
-  type Remessa = { remessa: string; data: string; total: number; disponivel: number; naoDisponivel: number; perdido: number; produtos: string[] };
+  type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: string[] };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
@@ -841,7 +841,8 @@ function DiagnosticoInboundFull() {
           {ok && !!remessas.length && (
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
-                Agrupado por remessa — compare com a tela de envios do Mercado Livre:
+                Agrupado por remessa. <b>Recebido</b> é a soma dos eventos de entrada; <b>Saldo Full</b> é
+                quanto ficou no estoque do ML depois. Compare o Recebido com a tela de envios:
               </div>
               <div className="table-wrapper" style={{ maxHeight: 320, overflow: "auto" }}>
                 <table className="tbl-modern">
@@ -849,9 +850,9 @@ function DiagnosticoInboundFull() {
                     <th style={{ textAlign: "left" }}>Remessa</th>
                     <th>Data</th>
                     <th style={{ textAlign: "left" }}>Produto</th>
-                    <th style={{ textAlign: "right" }}>Total</th>
-                    <th style={{ textAlign: "right" }}>OK</th>
+                    <th style={{ textAlign: "right" }}>Recebido</th>
                     <th style={{ textAlign: "right" }}>Problema</th>
+                    <th style={{ textAlign: "right" }}>Saldo Full</th>
                   </tr></thead>
                   <tbody>
                     {remessas.map((r) => (
@@ -861,11 +862,11 @@ function DiagnosticoInboundFull() {
                         <td style={{ textAlign: "left", fontSize: ".72rem", color: "var(--muted)" }}>
                           {r.produtos.map((p) => p.slice(0, 28)).join(", ") || "—"}
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: 700 }}>{r.total}</td>
-                        <td style={{ textAlign: "right" }}>{r.disponivel}</td>
-                        <td style={{ textAlign: "right", color: r.naoDisponivel > 0 ? "var(--red)" : "var(--muted)", fontWeight: r.naoDisponivel > 0 ? 700 : 400 }}>
-                          {r.naoDisponivel || "—"}
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{r.recebido}</td>
+                        <td style={{ textAlign: "right", color: r.problema > 0 ? "var(--red)" : "var(--muted)", fontWeight: r.problema > 0 ? 700 : 400 }}>
+                          {r.problema || "—"}
                         </td>
+                        <td style={{ textAlign: "right", color: "var(--muted)" }}>{r.saldoFull}</td>
                       </tr>
                     ))}
                   </tbody>
