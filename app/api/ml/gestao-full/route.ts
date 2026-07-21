@@ -113,6 +113,104 @@ export async function GET(req: Request) {
     const dias = Math.min(Number(new URL(req.url).searchParams.get("dias") ?? 25) || 25, 55);
     const from = new Date(now.getTime() - dias * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const to = now.toISOString().slice(0, 10);
+
+    /**
+     * Modo auditoria: a soma por INBOUND_RECEPTION fecha abaixo do que o
+     * Seller Center mostra (60 contra 80). Aqui testamos as duas hipóteses
+     * que sobraram, de uma vez:
+     *   1. filtrar por external_references traria a remessa inteira, inclusive
+     *      de inventory_id que não conhecemos;
+     *   2. outros tipos (QUARANTINE_RESTOCK, ADJUSTMENT…) completam a conta.
+     * Fica atrás de um parâmetro porque é mais pesado em cota.
+     */
+    const auditar = new URL(req.url).searchParams.get("auditar");
+    if (auditar) {
+      const alvo = auditar === "1" ? "" : auditar;
+      const q = `seller_id=${SELLER_ID}`;
+      const inv20 = invArr.slice(0, 20).join(",");
+      const formas = alvo
+        ? [
+            `/stock/fulfillment/operations/search?${q}&external_references.inbound_id=${alvo}&limit=5`,
+            `/stock/fulfillment/operations/search?${q}&external_references=${alvo}&limit=5`,
+            `/stock/fulfillment/operations/search?${q}&inbound_id=${alvo}&limit=5`,
+            `/stock/fulfillment/operations/search?${q}&inventory_id=${inv20}&external_references.inbound_id=${alvo}&date_from=${from}&date_to=${to}&limit=5`,
+          ]
+        : [];
+      const probes: { forma: string; status: number; linhas: number; corpo: string }[] = [];
+      for (const path of formas) {
+        try {
+          const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
+          const txt = await res.text().catch(() => "");
+          let linhas = -1;
+          try {
+            const j = JSON.parse(txt) as { results?: unknown[] };
+            linhas = Array.isArray(j.results) ? j.results.length : -1;
+          } catch { /* corpo não-JSON */ }
+          probes.push({
+            forma: (path.split("?")[1] ?? "").replace(`seller_id=${SELLER_ID}&`, "").slice(0, 120),
+            status: res.status, linhas, corpo: txt.slice(0, 160),
+          });
+        } catch (e) {
+          probes.push({ forma: path.slice(0, 120), status: -1, linhas: -1, corpo: String(e).slice(0, 120) });
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      // Varredura sem filtro de tipo, agregando por remessa × tipo.
+      const porTipo = new Map<string, { remessa: string; tipo: string; unidades: number; linhas: number }>();
+      let varreduraStatus = 0;
+      let varreduraErro = "";
+      let lidas = 0;
+      for (let i = 0; i < invArr.length; i += 20) {
+        const chunk = invArr.slice(i, i + 20);
+        for (let offset = 0; offset < 600; offset += 100) {
+          if (offset > 0) await new Promise((r) => setTimeout(r, 250));
+          const path =
+            `/stock/fulfillment/operations/search?${q}&inventory_id=${chunk.join(",")}` +
+            `&date_from=${from}&date_to=${to}&limit=100&offset=${offset}`;
+          const res = await fetch(`${ML_API}${path}`, { headers, cache: "no-store" });
+          varreduraStatus = res.status;
+          if (!res.ok) {
+            if (!varreduraErro) varreduraErro = (await res.text().catch(() => "")).slice(0, 200);
+            break;
+          }
+          const j = (await res.json()) as { results?: Record<string, unknown>[] };
+          const linhas = j.results ?? [];
+          lidas += linhas.length;
+          for (const r of linhas) {
+            const refs = (r.external_references ?? []) as { type?: string; value?: string }[];
+            const remessa = String(refs.find((x) => x?.type === "inbound_id")?.value ?? "");
+            // Sem inbound_id é venda/ajuste solto: não interessa aqui.
+            if (!remessa) continue;
+            const tipo = String(r.type ?? "");
+            const det = (r.detail ?? {}) as Record<string, unknown>;
+            const ruins = ((det.not_available_detail ?? []) as { quantity?: number }[])
+              .reduce((s, p) => s + Number(p?.quantity ?? 0), 0);
+            const chave = `${remessa}|${tipo}`;
+            const at = porTipo.get(chave) ?? { remessa, tipo, unidades: 0, linhas: 0 };
+            at.unidades += Number(det.available_quantity ?? 0) + ruins;
+            at.linhas += 1;
+            porTipo.set(chave, at);
+          }
+          if (linhas.length < 100) break;
+        }
+        if (varreduraStatus === 429) break;
+      }
+
+      return NextResponse.json({
+        auditoria: {
+          probes,
+          varreduraStatus,
+          varreduraErro,
+          lidas,
+          janela: { from, to },
+          porTipo: Array.from(porTipo.values()).sort(
+            (a, b) => a.remessa.localeCompare(b.remessa) || b.unidades - a.unidades,
+          ),
+        },
+      });
+    }
+
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
     let opStatus = 0;
     let opErro = ""; // corpo do erro do ML — sem isso o diagnóstico fica cego

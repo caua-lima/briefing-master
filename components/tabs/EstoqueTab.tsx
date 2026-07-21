@@ -752,8 +752,28 @@ function DiagnosticoInboundFull() {
   type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; qtd: number };
   type Remessa = { remessa: string; data: string; recebido: number; problema: number; saldoFull: number; produtos: ProdutoRemessa[] };
   const [dados, setDados] = useState<{ opStatus?: number; recebimentos?: Recebimento[]; temInventory?: boolean; opErro?: string; opUrl?: string; tiposVistos?: string[]; amostra?: string; amostras?: string[]; remessas?: Remessa[]; truncado?: boolean; linhasBrutas?: number; dias?: number; inventariosConsultados?: number; anunciosDaConta?: number } | null>(null);
+  type Probe = { forma: string; status: number; linhas: number; corpo: string };
+  type PorTipo = { remessa: string; tipo: string; unidades: number; linhas: number };
+  type Auditoria = { probes: Probe[]; varreduraStatus: number; varreduraErro: string; lidas: number; porTipo: PorTipo[] };
+  const [auditoria, setAuditoria] = useState<Auditoria | null>(null);
+  const [auditando, setAuditando] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
+
+  async function auditar() {
+    setAuditando(true);
+    setAuditoria(null);
+    try {
+      // Passamos uma remessa real: as sondas por external_references precisam de alvo.
+      const alvo = dados?.remessas?.[0]?.remessa ?? "1";
+      const r = await authedFetch(`/api/ml/gestao-full?auditar=${encodeURIComponent(alvo)}`, { cache: "no-store" });
+      const j = r.ok ? await r.json() : null;
+      setAuditoria(j?.auditoria ?? null);
+    } catch {
+      setAuditoria(null);
+    }
+    setAuditando(false);
+  }
 
   async function verificar() {
     setAberto(true);
@@ -885,6 +905,65 @@ function DiagnosticoInboundFull() {
                 {" · "}{dados.inventariosConsultados ?? 0} inventários consultados em {dados.anunciosDaConta ?? 0} anúncios
                 {dados.truncado && " (limite de páginas atingido — pode faltar remessa antiga)"}
               </div>
+
+              <div style={{ marginTop: 12 }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={auditar} disabled={auditando}>
+                  {auditando ? "Auditando…" : "Auditar remessa (por que falta unidade)"}
+                </button>
+              </div>
+
+              {auditoria && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 6 }}>
+                    <b>1.</b> Dá pra pedir a remessa inteira pelo número dela?
+                  </div>
+                  <div className="table-wrapper" style={{ maxHeight: 200, overflow: "auto" }}>
+                    <table className="tbl-modern">
+                      <thead><tr>
+                        <th style={{ textAlign: "left" }}>Filtro testado</th>
+                        <th style={{ textAlign: "right" }}>HTTP</th>
+                        <th style={{ textAlign: "right" }}>Linhas</th>
+                      </tr></thead>
+                      <tbody>
+                        {auditoria.probes.map((p) => (
+                          <tr key={p.forma}>
+                            <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".66rem", wordBreak: "break-all" }}>{p.forma}</td>
+                            <td style={{ textAlign: "right", fontWeight: 700, color: p.status === 200 ? "var(--green)" : "var(--muted)" }}>{p.status}</td>
+                            <td style={{ textAlign: "right" }}>{p.linhas >= 0 ? p.linhas : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ fontSize: ".78rem", color: "var(--muted)", margin: "12px 0 6px" }}>
+                    <b>2.</b> Outros tipos de operação alimentam a mesma remessa?
+                    {auditoria.varreduraStatus !== 200 && ` (varredura falhou: HTTP ${auditoria.varreduraStatus})`}
+                  </div>
+                  <div className="table-wrapper" style={{ maxHeight: 300, overflow: "auto" }}>
+                    <table className="tbl-modern">
+                      <thead><tr>
+                        <th style={{ textAlign: "left" }}>Remessa</th>
+                        <th style={{ textAlign: "left" }}>Tipo</th>
+                        <th style={{ textAlign: "right" }}>Unidades</th>
+                      </tr></thead>
+                      <tbody>
+                        {auditoria.porTipo.map((t) => (
+                          <tr key={`${t.remessa}-${t.tipo}`}>
+                            <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>#{t.remessa}</td>
+                            <td style={{ textAlign: "left", fontSize: ".72rem", color: t.tipo === "INBOUND_RECEPTION" ? "var(--muted)" : "var(--green)" }}>{t.tipo}</td>
+                            <td style={{ textAlign: "right", fontWeight: 700 }}>{t.unidades}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
+                    {auditoria.lidas} linhas lidas na varredura
+                    {auditoria.varreduraErro && ` · ${auditoria.varreduraErro}`}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
