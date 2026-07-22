@@ -123,7 +123,13 @@ export async function GET(req: Request) {
      */
     const dias = Math.min(Number(new URL(req.url).searchParams.get("dias") ?? 25) || 25, 55);
     const from = new Date(now.getTime() - dias * 24 * 3600 * 1000).toISOString().slice(0, 10);
-    const to = now.toISOString().slice(0, 10);
+    /**
+     * O fim da janela vai 2 dias à frente de propósito. O evento de
+     * recebimento sai dias depois da data reservada da remessa, e `date_to`
+     * no dia de hoje corta justamente a remessa mais recente — que é a que
+     * interessa para dar baixa.
+     */
+    const to = new Date(now.getTime() + 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
 
     const recebimentos: { data: string; quantidade: number; inventory_id: string; tipo: string }[] = [];
     let opStatus = 0;
@@ -293,7 +299,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias, inventariosConsultados: invArr.length, anunciosDaConta: arr.length });
+    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });

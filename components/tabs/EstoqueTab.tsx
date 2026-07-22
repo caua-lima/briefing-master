@@ -896,7 +896,7 @@ function movIdRemessa(remessa: string, productId: string) {
 }
 
 function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
-  const [dados, setDados] = useState<{ opStatus?: number; opErro?: string; remessas?: Remessa[]; dias?: number } | null>(null);
+  const [dados, setDados] = useState<{ opStatus?: number; opErro?: string; remessas?: Remessa[]; dias?: number; janela?: { from: string; to: string } } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
   const [qtds, setQtds] = useState<Record<string, string>>({});
@@ -985,6 +985,14 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
           {remessas.length === 0 && (
             <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>
               Nenhuma remessa nos últimos {dados?.dias ?? 25} dias.
+            </div>
+          )}
+
+          {!!dados?.janela && (
+            <div style={{ fontSize: ".74rem", color: "var(--muted)", marginBottom: 10 }}>
+              Buscando de {dados.janela.from.split("-").reverse().join("/")} a{" "}
+              {dados.janela.to.split("-").reverse().join("/")}. Uma remessa só aparece
+              depois que o ML processa o recebimento — o que leva alguns dias depois da coleta.
             </div>
           )}
 
