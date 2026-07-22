@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
+import { movIdRemessa, remessaTemBaixa, type Remessa } from "@/lib/domain/remessas";
 import { addMovimento, deleteMovimento, deleteProduct, ignorarRemessaFull, reabrirRemessaFull, upsertProduct, watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import Modal from "@/components/Modal";
@@ -883,18 +884,6 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
 }
 
 // ── Remessas pro Full: baixa a partir do que o ML recebeu ─────────────────
-type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; productId: string; qtd: number };
-type TipoRemessa = { tipo: string; qtd: number };
-type Remessa = {
-  remessa: string; data: string; recebido: number; problema: number; saldoFull: number;
-  produtos: ProdutoRemessa[]; tipos: TipoRemessa[]; refs: string[]; ehTransferencia: boolean;
-};
-
-/** id fixo por remessa+produto: reprocessar a mesma remessa nunca duplica baixa. */
-function movIdRemessa(remessa: string, productId: string) {
-  return `full-${remessa}-${productId}`;
-}
-
 function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
   const [dados, setDados] = useState<{ opStatus?: number; opErro?: string; remessas?: Remessa[]; dias?: number; janela?: { from: string; to: string } } | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -944,8 +933,7 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
       if (!p.productId) return s;
       return s + Math.max(Math.round(Number(qtds[`${r.remessa}|${p.productId}`] ?? p.qtd) || 0), 0);
     }, 0);
-  const jaBaixada = (r: Remessa) =>
-    r.produtos.some((p) => p.productId && movimentos.some((m) => m.id === movIdRemessa(r.remessa, p.productId)));
+  const jaBaixada = (r: Remessa) => remessaTemBaixa(r, movimentos);
   // Resolvida = deu baixa por aqui, ou foi marcada como lançada à mão.
   const resolvida = (r: Remessa) => jaBaixada(r) || ignoradas.has(r.remessa);
   const pendentes = remessas.filter((r) => !resolvida(r));

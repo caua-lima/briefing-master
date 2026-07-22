@@ -369,7 +369,7 @@ function AppShell() {
                     Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
                   </div>
                 )}
-                {activeTab === "dashboard" && <Dashboard data={data} />}
+                {activeTab === "dashboard" && <Dashboard data={data} onVerEstoque={() => setTab("estoque")} />}
                 {activeTab === "pedidos" && <PedidosTab />}
                 {activeTab === "ads" && <AdsTab />}
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}

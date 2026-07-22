@@ -10,6 +10,14 @@ const ML_API = "https://api.mercadolibre.com";
 // padrão da Vercel; sem isso ela morre no meio e o painel não mostra nada.
 export const maxDuration = 60;
 
+/**
+ * Cache por lambda quente: o Dashboard consulta esta rota para avisar de
+ * remessa pendente, e ela faz mais de dez chamadas ao ML. Sem cache, abrir o
+ * painel várias vezes ao dia derrubaria a cota (já aconteceu, HTTP 429).
+ */
+const cache = new Map<string, { at: number; body: Record<string, unknown> }>();
+const CACHE_TTL = 5 * 60 * 1000;
+
 function normId(s: string) {
   const up = String(s).trim().toUpperCase();
   return up ? (up.startsWith("MLB") ? up : `MLB${up}`) : "";
@@ -25,6 +33,15 @@ type Item = { mlb: string; title: string; available: number; sold: number; statu
 export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
+
+  const params = new URL(req.url).searchParams;
+  const chaveCache = params.get("dias") ?? "padrao";
+  if (!params.has("forcar")) {
+    const hit = cache.get(chaveCache);
+    if (hit && Date.now() - hit.at < CACHE_TTL) {
+      return NextResponse.json({ ...hit.body, doCache: true });
+    }
+  }
 
   try {
     const token = await getMlAccessToken();
@@ -299,7 +316,10 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    return NextResponse.json({ itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length });
+    const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
+    // Só guarda resposta boa: cachear erro esconderia o problema por 5 minutos.
+    if (opStatus === 200) cache.set(chaveCache, { at: Date.now(), body });
+    return NextResponse.json(body);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "gestao_full_failed", details: msg }, { status: 500 });

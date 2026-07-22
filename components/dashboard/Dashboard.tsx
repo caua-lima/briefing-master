@@ -16,9 +16,10 @@ import ExpensesDoughnut from "./ExpensesDoughnut";
 import MetasGauge from "./MetasGauge";
 import Gauge from "./Gauge";
 import DateRangePicker from "./DateRangePicker";
+import AvisoRemessasFull from "./AvisoRemessasFull";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
-type Props = { data: UserData };
+type Props = { data: UserData; onVerEstoque?: () => void };
 
 type AnuncioResult = {
   item_id:      string;
@@ -537,7 +538,7 @@ function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; fro
 }
 
 // ── Dashboard principal ────────────────────────────────────────
-export default function Dashboard({ data }: Props) {
+export default function Dashboard({ data, onVerEstoque }: Props) {
   const mes = mesAtual();
 
   const [range, setRange] = useState<{ from: string; to: string }>(() => monthRange(mes));
@@ -770,6 +771,8 @@ export default function Dashboard({ data }: Props) {
           {diag}
         </pre>
       )}
+
+      <AvisoRemessasFull onVerEstoque={onVerEstoque} />
 
       {adsFalhou && (
         <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.45)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
