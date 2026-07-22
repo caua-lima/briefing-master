@@ -44,7 +44,7 @@ export async function GET(req: Request) {
         const n = normId(m);
         if (!n) continue;
         cadastrados.add(n);
-        produtoPorMlb.set(n, { id: doc.id, nome: String(d.nome ?? d.titulo ?? doc.id) });
+        produtoPorMlb.set(n, { id: doc.id, nome: String(d.name ?? "") });
       }
     }
 

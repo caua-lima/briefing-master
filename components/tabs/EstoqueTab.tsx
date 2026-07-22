@@ -127,6 +127,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [impostoMassa, setImpostoMassa] = useState(false);
 
   const carregarEstoque = useCallback(async () => {
     setLoadingML(true);
@@ -196,7 +197,14 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
             {loadingML ? "Atualizando..." : "⟳ Atualizar Full (ML)"}
           </button>
         </div>
-        {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>}
+        {canEdit && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setImpostoMassa(true)}>
+              Imposto em massa
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={onAdd}>＋ Novo Produto</button>
+          </div>
+        )}
       </div>
 
       {/* Resumo */}
@@ -267,6 +275,15 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       <PrevisaoPanel products={filtered} estoqueML={estoqueML} forecast={forecast} />
 
       {canEdit && <RemessasFull movimentos={movimentos} />}
+
+      {impostoMassa && (
+        <ImpostoMassaModal
+          uid={uid}
+          produtos={filtered}
+          escopoBusca={search.trim()}
+          onClose={() => setImpostoMassa(false)}
+        />
+      )}
 
       {editProduct && (
         <ProductModal
@@ -741,6 +758,88 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
   );
 }
 
+// ── Imposto em massa ──────────────────────────────────────────────────────
+/**
+ * O imposto fica no cadastro do produto e o lucro o aplica na hora de ler.
+ * Ou seja, mudar aqui muda também o lucro dos meses já fechados — por isso o
+ * aviso é explícito antes de gravar.
+ */
+function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
+  uid: string; produtos: Product[]; escopoBusca: string; onClose: () => void;
+}) {
+  const [valor, setValor] = useState("4");
+  const [salvando, setSalvando] = useState(false);
+  const [feito, setFeito] = useState(0);
+
+  const pct = parseNum(valor);
+  const jaTem = produtos.filter((p) => parseNum(p.imposto ?? "0") > 0);
+
+  async function aplicar() {
+    if (!Number.isFinite(pct) || pct < 0) { alert("Informe um percentual válido."); return; }
+    setSalvando(true);
+    try {
+      let n = 0;
+      for (const p of produtos) {
+        await upsertProduct(uid, { ...p, imposto: String(pct) });
+        n += 1;
+        setFeito(n);
+      }
+      onClose();
+    } catch (e) {
+      alert("Erro ao aplicar imposto: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose}>
+      <div className="modal-title">Imposto em massa</div>
+      <div className="modal-sub">aplica o mesmo percentual em vários produtos de uma vez</div>
+
+      <div className="config-field">
+        <label>Imposto (%)</label>
+        <input
+          type="number" min="0" step="0.01" value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 16, outline: "none" }}
+        />
+      </div>
+
+      <div style={{
+        marginTop: 12, padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
+        background: "var(--surface2)", border: "1px solid var(--border)",
+      }}>
+        Vai aplicar <b>{pct}%</b> em <b>{produtos.length} produto{produtos.length === 1 ? "" : "s"}</b>
+        {escopoBusca ? <> — só os que aparecem na busca “{escopoBusca}”.</> : <> — todos os da lista.</>}
+        {jaTem.length > 0 && (
+          <div style={{ marginTop: 6, color: "#f7c948" }}>
+            {jaTem.length} já {jaTem.length === 1 ? "tem" : "têm"} imposto e será{jaTem.length === 1 ? "" : "ão"} sobrescrito
+            {jaTem.length === 1 ? "" : "s"}.
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
+        background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.4)", color: "#f7c948",
+      }}>
+        <b>Atenção:</b> o lucro aplica o imposto do cadastro na hora de calcular, então
+        os meses <b>já fechados também vão passar a descontar</b> esse percentual — não só as vendas
+        daqui pra frente. Se você quiser que valha só a partir de hoje, me avise que eu coloco data
+        de vigência no campo.
+      </div>
+
+      <div className="modal-btns">
+        <button type="button" className="btn btn-success" onClick={aplicar} disabled={salvando}>
+          {salvando ? `Aplicando… ${feito}/${produtos.length}` : `Aplicar em ${produtos.length}`}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={salvando}>Cancelar</button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Remessas pro Full: baixa a partir do que o ML recebeu ─────────────────
 type ProdutoRemessa = { inventory: string; nome: string; cadastrado: boolean; productId: string; qtd: number };
 type TipoRemessa = { tipo: string; qtd: number };
@@ -781,6 +880,12 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
   // Envio seu tira estoque de casa; transferência entre centros do ML, não.
   const remessas = todas.filter((r) => !r.ehTransferencia);
   const transferencias = todas.filter((r) => r.ehTransferencia);
+  // Total que será baixado — já com as correções que o usuário digitou.
+  const totalDaRemessa = (r: Remessa) =>
+    r.produtos.reduce((s, p) => {
+      if (!p.productId) return s;
+      return s + Math.max(Math.round(Number(qtds[`${r.remessa}|${p.productId}`] ?? p.qtd) || 0), 0);
+    }, 0);
   const jaBaixada = (r: Remessa) =>
     r.produtos.some((p) => p.productId && movimentos.some((m) => m.id === movIdRemessa(r.remessa, p.productId)));
 
@@ -846,55 +951,91 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
             const semCadastro = r.produtos.filter((p) => !p.productId);
             return (
               <div key={r.remessa} style={{
-                border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 10,
-                opacity: feita ? 0.65 : 1,
+                background: "var(--surface2)", border: `1px solid ${feita ? "var(--border)" : "rgba(59,130,246,.35)"}`,
+                borderRadius: 12, padding: 14, marginBottom: 12,
               }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
-                  <b style={{ fontFamily: "monospace" }}>#{r.remessa}</b>
-                  <span style={{ color: "var(--muted)", fontSize: ".78rem" }}>
-                    {r.data.split("-").reverse().join("/")} · ML recebeu {r.recebido}
-                  </span>
-                  {feita && (
-                    <span style={{ color: "var(--green)", fontSize: ".76rem", fontWeight: 700 }}>baixa já dada</span>
+                {/* Cabeçalho da remessa */}
+                <div style={{
+                  display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center",
+                  justifyContent: "space-between", paddingBottom: 10, marginBottom: 10,
+                  borderBottom: "1px solid var(--border)",
+                }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                    <span style={{
+                      fontFamily: "ui-monospace, monospace", fontSize: ".82rem", fontWeight: 700,
+                      background: "var(--surface)", border: "1px solid var(--border)",
+                      borderRadius: 6, padding: "3px 8px",
+                    }}>#{r.remessa}</span>
+                    <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>
+                      {r.data.split("-").reverse().join("/")}
+                    </span>
+                    <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>
+                      {r.produtos.length} produto{r.produtos.length === 1 ? "" : "s"} · {r.recebido} un recebidas
+                    </span>
+                  </div>
+                  {feita ? (
+                    <span style={{
+                      color: "var(--green)", fontSize: ".75rem", fontWeight: 700,
+                      background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.35)",
+                      borderRadius: 999, padding: "3px 10px",
+                    }}>✓ baixa dada</span>
+                  ) : (
+                    <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
+                      dar baixa de <b style={{ color: "var(--text)" }}>{totalDaRemessa(r)} un</b>
+                    </span>
                   )}
                 </div>
 
+                {/* Produtos */}
                 {r.produtos.map((p) => {
                   const chave = `${r.remessa}|${p.productId}`;
                   const valor = qtds[chave] ?? String(p.qtd);
                   const dif = Math.round(Number(valor) || 0) - p.qtd;
                   return (
                     <div key={p.inventory} style={{
-                      display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 6,
+                      display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px",
+                      alignItems: "center", padding: "7px 0",
+                      borderTop: "1px solid rgba(255,255,255,.04)",
                     }}>
-                      <span style={{ flex: "1 1 180px", fontSize: ".8rem" }}>
-                        {p.nome || p.inventory}
-                        {!p.productId && (
-                          <span style={{ color: "var(--red)", fontSize: ".72rem" }}> — sem cadastro, não dá baixa</span>
-                        )}
-                      </span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: ".84rem", fontWeight: 500 }}>
+                          {p.nome || p.inventory}
+                        </div>
+                        <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>
+                          {p.productId
+                            ? <>ML recebeu {p.qtd} un{dif !== 0 && !feita && (
+                                <span style={{ color: "#f7c948", fontWeight: 600 }}>
+                                  {" · "}{dif > 0 ? `+${dif}` : dif} a mais que o recebido
+                                </span>
+                              )}</>
+                            : <span style={{ color: "var(--red)" }}>sem cadastro no Estoque — não dá baixa</span>}
+                        </div>
+                      </div>
                       <input
                         type="number"
                         inputMode="numeric"
-                        className="input"
-                        style={{ width: 90, fontSize: 16 }}
+                        aria-label={`Unidades de ${p.nome || p.inventory}`}
+                        style={{
+                          width: 84, fontSize: 16, textAlign: "right", padding: "7px 9px",
+                          background: p.productId ? "var(--surface)" : "transparent",
+                          border: `1px solid ${dif !== 0 && !feita && p.productId ? "rgba(245,158,11,.5)" : "var(--border)"}`,
+                          borderRadius: 8, color: "var(--text)", outline: "none",
+                        }}
                         value={valor}
                         disabled={feita || !p.productId}
                         onChange={(e) => setQtds((s) => ({ ...s, [chave]: e.target.value }))}
                       />
-                      {!feita && dif !== 0 && p.productId && (
-                        <span style={{ fontSize: ".72rem", color: "#f7c948", flex: "0 0 auto" }}>
-                          {dif > 0 ? `+${dif}` : dif} vs. recebido
-                        </span>
-                      )}
                     </div>
                   );
                 })}
 
                 {!!semCadastro.length && (
-                  <div style={{ fontSize: ".74rem", color: "var(--red)", marginTop: 4 }}>
-                    Cadastre {semCadastro.length === 1 ? "esse produto" : "esses produtos"} no Estoque
-                    para a baixa cobrir a remessa inteira.
+                  <div style={{
+                    fontSize: ".75rem", color: "#f7c948", marginTop: 10, padding: "7px 10px",
+                    background: "rgba(245,158,11,.1)", borderRadius: 8, lineHeight: 1.5,
+                  }}>
+                    {semCadastro.length === 1 ? "Um produto desta remessa não está" : `${semCadastro.length} produtos desta remessa não estão`}
+                    {" "}no Estoque. A baixa vai cobrir só o resto.
                   </div>
                 )}
 
@@ -902,11 +1043,11 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
                   <button
                     type="button"
                     className="btn btn-success btn-sm"
-                    style={{ marginTop: 8 }}
+                    style={{ marginTop: 12, width: "100%" }}
                     disabled={salvando === r.remessa}
                     onClick={() => darBaixa(r)}
                   >
-                    {salvando === r.remessa ? "Dando baixa…" : "Dar baixa no estoque"}
+                    {salvando === r.remessa ? "Dando baixa…" : `Dar baixa de ${totalDaRemessa(r)} unidades`}
                   </button>
                 )}
               </div>
