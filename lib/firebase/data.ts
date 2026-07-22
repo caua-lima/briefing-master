@@ -245,6 +245,31 @@ export function watchMovimentos(
   });
 }
 
+// ── Remessas do Full já resolvidas ─────────────────────────────
+const REMESSA_COL = "full_remessas";
+
+/**
+ * Marca uma remessa como resolvida sem mexer no estoque. Serve para as que
+ * já foram lançadas à mão antes desta tela existir: sem isso, elas ficariam
+ * para sempre pedindo uma baixa que geraria contagem dobrada.
+ */
+export async function ignorarRemessaFull(remessa: string, motivo = "baixa já lançada à mão"): Promise<void> {
+  await setDoc(sDoc(REMESSA_COL, remessa), {
+    remessa, ignorada: true, motivo,
+    createdBy: getCurrentUserEmail(), createdAt: Date.now(),
+  });
+}
+
+export async function reabrirRemessaFull(remessa: string): Promise<void> {
+  await deleteDoc(sDoc(REMESSA_COL, remessa));
+}
+
+export function watchRemessasIgnoradas(cb: (ids: Set<string>) => void): () => void {
+  return onSnapshot(sCol(REMESSA_COL), (snap) => {
+    cb(new Set(snap.docs.map((d) => d.id)));
+  });
+}
+
 export async function addMovimento(
   mov: Omit<EstoqueMovimento, "createdBy" | "createdAt">,
   custoMedio?: number,

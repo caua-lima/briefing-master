@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
-import { addMovimento, deleteMovimento, deleteProduct, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
+import { addMovimento, deleteMovimento, deleteProduct, ignorarRemessaFull, reabrirRemessaFull, upsertProduct, watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
@@ -902,6 +902,22 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
   const [qtds, setQtds] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState("");
   const [erro, setErro] = useState("");
+  const [ignoradas, setIgnoradas] = useState<Set<string>>(new Set());
+  const [mostrarResolvidas, setMostrarResolvidas] = useState(false);
+
+  useEffect(() => watchRemessasIgnoradas(setIgnoradas), []);
+
+  async function marcarResolvida(remessa: string) {
+    try {
+      await ignorarRemessaFull(remessa);
+    } catch (e) {
+      alert(
+        "Não consegui marcar como resolvida. Se o erro fala em permissão, " +
+        "as regras do Firestore precisam ser republicadas com a coleção full_remessas.\n\n" +
+        (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
 
   async function buscar() {
     setAberto(true);
@@ -930,6 +946,10 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
     }, 0);
   const jaBaixada = (r: Remessa) =>
     r.produtos.some((p) => p.productId && movimentos.some((m) => m.id === movIdRemessa(r.remessa, p.productId)));
+  // Resolvida = deu baixa por aqui, ou foi marcada como lançada à mão.
+  const resolvida = (r: Remessa) => jaBaixada(r) || ignoradas.has(r.remessa);
+  const pendentes = remessas.filter((r) => !resolvida(r));
+  const resolvidas = remessas.filter(resolvida);
 
   async function darBaixa(r: Remessa) {
     const alvos = r.produtos.filter((p) => p.productId);
@@ -988,6 +1008,12 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
             </div>
           )}
 
+          {remessas.length > 0 && pendentes.length === 0 && (
+            <div style={{ fontSize: ".82rem", color: "var(--green)", marginBottom: 10 }}>
+              Nenhuma remessa pendente — tudo que chegou já foi resolvido.
+            </div>
+          )}
+
           {!!dados?.janela && (
             <div style={{ fontSize: ".74rem", color: "var(--muted)", marginBottom: 10 }}>
               Buscando de {dados.janela.from.split("-").reverse().join("/")} a{" "}
@@ -996,7 +1022,21 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
             </div>
           )}
 
-          {remessas.map((r) => {
+          {pendentes.length > 1 && (
+            <div style={{ marginBottom: 10 }}>
+              <button
+                type="button" className="btn btn-ghost btn-sm"
+                onClick={async () => {
+                  if (!confirm(`Marcar ${pendentes.length} remessas como já resolvidas? Não mexe no estoque.`)) return;
+                  for (const r of pendentes) await marcarResolvida(r.remessa);
+                }}
+              >
+                Marcar as {pendentes.length} como já lançadas
+              </button>
+            </div>
+          )}
+
+          {pendentes.map((r) => {
             const feita = jaBaixada(r);
             const semCadastro = r.produtos.filter((p) => !p.productId);
             return (
@@ -1089,20 +1129,64 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
                   </div>
                 )}
 
-                {!feita && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button
                     type="button"
                     className="btn btn-success btn-sm"
-                    style={{ marginTop: 12, width: "100%" }}
+                    style={{ flex: "1 1 200px" }}
                     disabled={salvando === r.remessa}
                     onClick={() => darBaixa(r)}
                   >
                     {salvando === r.remessa ? "Dando baixa…" : `Dar baixa de ${totalDaRemessa(r)} unidades`}
                   </button>
-                )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    title="Some da lista sem mexer no estoque — para remessa que você já lançou à mão"
+                    onClick={() => marcarResolvida(r.remessa)}
+                  >
+                    Já lancei
+                  </button>
+                </div>
               </div>
             );
           })}
+
+          {resolvidas.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setMostrarResolvidas((v) => !v)}
+              >
+                {mostrarResolvidas ? "Ocultar" : "Ver"} {resolvidas.length} remessa
+                {resolvidas.length === 1 ? "" : "s"} já resolvida{resolvidas.length === 1 ? "" : "s"}
+              </button>
+
+              {mostrarResolvidas && resolvidas.map((r) => (
+                <div key={r.remessa} style={{
+                  display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center",
+                  padding: "8px 12px", marginTop: 8, borderRadius: 8,
+                  background: "var(--surface2)", border: "1px solid var(--border)",
+                  fontSize: ".78rem", color: "var(--muted)",
+                }}>
+                  <b style={{ fontFamily: "monospace", color: "var(--text)" }}>#{r.remessa}</b>
+                  <span>{r.data.split("-").reverse().join("/")} · {r.recebido} un</span>
+                  <span style={{ color: "var(--green)" }}>
+                    {jaBaixada(r) ? "✓ baixa dada aqui" : "✓ lançada à mão"}
+                  </span>
+                  {!jaBaixada(r) && (
+                    <button
+                      type="button" className="btn btn-ghost btn-xs" style={{ marginLeft: "auto" }}
+                      onClick={() => reabrirRemessaFull(r.remessa)}
+                    >
+                      reabrir
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {!!transferencias.length && (
             <div style={{ marginTop: 6, fontSize: ".76rem", color: "var(--muted)", lineHeight: 1.5 }}>

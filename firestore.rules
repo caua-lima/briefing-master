@@ -81,6 +81,12 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    // Remessas do Full marcadas como resolvidas (sem gerar baixa)
+    match /full_remessas/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isOwner();
+    }
+
     // Legacy: Allow authorized users read old data, writes only own uid
     match /usuarios/{uid}/{document=**} {
       allow read: if isAuthorized();
