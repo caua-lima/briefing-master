@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
@@ -46,6 +46,85 @@ function monthRange() {
   return { from: `${d.getFullYear()}-${mm}-01`, to: `${d.getFullYear()}-${mm}-${String(last).padStart(2, "0")}` };
 }
 
+/**
+ * Cascata do pedido, na ordem em que o dinheiro sai: o cliente paga, o ML
+ * retém taxa e frete (isso é o retorno), e do retorno saem custo, imposto e
+ * o que sobra. Fora da tabela porque o celular não comporta 12 colunas.
+ */
+function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
+  const linha = (
+    rotulo: string, valor: number,
+    opts: { sinal?: "menos"; forte?: boolean; cor?: string; nota?: string } = {},
+  ) => (
+    <div style={{
+      display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline",
+      padding: "5px 0", borderTop: opts.forte ? "1px solid var(--border)" : undefined,
+      marginTop: opts.forte ? 4 : 0,
+    }}>
+      <span style={{ fontSize: ".8rem", color: opts.forte ? "var(--text)" : "var(--muted)", fontWeight: opts.forte ? 700 : 400 }}>
+        {rotulo}
+        {opts.nota && <span style={{ display: "block", fontSize: ".68rem", color: "var(--muted)", fontWeight: 400 }}>{opts.nota}</span>}
+      </span>
+      <span style={{
+        fontSize: ".84rem", whiteSpace: "nowrap", fontWeight: opts.forte ? 800 : 600,
+        color: opts.cor ?? (opts.sinal === "menos" ? "var(--red)" : "var(--text)"),
+      }}>
+        {opts.sinal === "menos" ? "−" : ""}{fmtBRL(Math.abs(valor))}
+      </span>
+    </div>
+  );
+
+  const itens = p.itens ?? [];
+
+  return (
+    <div style={{ padding: "12px 16px", display: "grid", gap: 18, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+      <div>
+        <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)", marginBottom: 4 }}>
+          Da venda até o seu bolso
+        </div>
+        {linha("Valor da venda", p.valor)}
+        {linha("Taxa do Mercado Livre", p.taxaML, { sinal: "menos" })}
+        {linha("Frete", p.envio, { sinal: "menos", nota: "custo de envio do pedido" })}
+        {linha("Retorno", p.retorno, { forte: true, nota: "o que o ML te repassa" })}
+        {linha("Custo do produto", p.cmv, { sinal: "menos", nota: "custo médio × unidades" })}
+        {linha("Imposto", p.imposto, { sinal: "menos" })}
+        {linha("Lucro líquido", p.lucro, {
+          forte: true, cor: p.lucro >= 0 ? "var(--green)" : "var(--red)",
+          nota: `margem de ${p.margem.toFixed(1)}% sobre a venda`,
+        })}
+        {!p.vinculado && (
+          <div style={{ marginTop: 8, fontSize: ".74rem", color: "#f7c948", lineHeight: 1.5 }}>
+            Produto sem cadastro no Estoque: o custo entra como zero, então esse
+            lucro está <b>maior do que o real</b>.
+          </div>
+        )}
+      </div>
+
+      {itens.length > 1 && (
+        <div>
+          <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)", marginBottom: 4 }}>
+            {itens.length} produtos neste pedido
+          </div>
+          {itens.map((it, i) => (
+            <div key={`${it.mlb}-${i}`} style={{ padding: "6px 0", borderTop: i ? "1px solid var(--border)" : undefined }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: ".8rem", fontWeight: 600 }}>{it.qtd}× {it.produto || it.mlb}</span>
+                <span style={{ fontSize: ".8rem", fontWeight: 700, whiteSpace: "nowrap", color: it.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {fmtBRL(it.lucro)}
+                </span>
+              </div>
+              <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>
+                venda {fmtBRL(it.valor)} · taxa {fmtBRL(it.taxaML)} · frete {fmtBRL(it.envio)} ·
+                custo {fmtBRL(it.cmv)} · imposto {fmtBRL(it.imposto)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PedidosTab() {
   const [range, setRange] = useState(() => monthRange());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -53,6 +132,7 @@ export default function PedidosTab() {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad">("todos");
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
+  const [detalhe, setDetalhe] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -198,7 +278,7 @@ export default function PedidosTab() {
         <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 12 }}>
           {modo === "produto"
             ? <><b>Vendas</b> = nº de pedidos · <b>Un</b> = unidades vendidas · um pedido com 3 unidades conta como 1 venda e 3 unidades</>
-            : <><b>Retorno</b> = Valor − Taxa ML − Frete · <b>Custos</b> = CMV + Frete + Taxa + Imposto (passe o mouse pra ver o detalhe) · <b>Lucro</b> = Valor − Custos</>}
+            : <><b>Retorno</b> = Valor − Taxa ML − Frete · <b>Custos</b> = CMV + Frete + Taxa + Imposto · <b>Lucro</b> = Valor − Custos · <b style={{ color: "var(--text)" }}>clique num pedido</b> para ver a conta completa</>}
         </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando pedidos…</div>
@@ -270,25 +350,43 @@ export default function PedidosTab() {
                 {filtrados.map((p) => {
                   const custos = p.cmv + p.envio + p.taxaML + p.imposto;
                   const prej = p.lucro < 0;
+                  const aberto = detalhe === p.order_id;
                   return (
-                    <tr key={p.order_id} style={{ background: prej ? "rgba(239,68,68,.05)" : undefined, boxShadow: `inset 3px 0 0 ${prej ? "var(--red)" : "var(--green)"}` }}>
-                      <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap", fontSize: ".82rem" }}>
-                        {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".68rem", display: "block", opacity: .7 }}>{p.hora}</span>
-                      </td>
-                      <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
-                        {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
-                        <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
-                      </td>
-                      <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
-                      <td style={{ textAlign: "right", color: "var(--text)", whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</td>
-                      <td style={{ textAlign: "right", color: "var(--text)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
-                      <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap", cursor: "help" }} title={`CMV ${fmtBRL(p.cmv)}  ·  Frete ${fmtBRL(p.envio)}  ·  Taxa ML ${fmtBRL(p.taxaML)}  ·  Imposto ${fmtBRL(p.imposto)}`}>
-                        −{fmtBRL(custos)}
-                      </td>
-                      <td style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap", color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</td>
-                      <td><span className={`tag ${margemTag(p.margem)}`}>{p.margem.toFixed(1)}%</span></td>
-                    </tr>
+                    <Fragment key={p.order_id}>
+                      <tr
+                        onClick={() => setDetalhe(aberto ? null : p.order_id)}
+                        style={{
+                          background: aberto ? "var(--surface2)" : prej ? "rgba(239,68,68,.05)" : undefined,
+                          boxShadow: `inset 3px 0 0 ${prej ? "var(--red)" : "var(--green)"}`,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap", fontSize: ".82rem" }}>
+                          {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".68rem", display: "block", opacity: .7 }}>{p.hora}</span>
+                        </td>
+                        <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
+                          {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                          <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
+                        </td>
+                        <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
+                        <td style={{ textAlign: "right", color: "var(--text)", whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</td>
+                        <td style={{ textAlign: "right", color: "var(--text)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
+                        <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap" }}>
+                          −{fmtBRL(custos)}
+                          <span style={{ marginLeft: 5, color: "var(--muted)", fontSize: ".7rem" }}>{aberto ? "▴" : "▾"}</span>
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap", color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</td>
+                        <td><span className={`tag ${margemTag(p.margem)}`}>{p.margem.toFixed(1)}%</span></td>
+                      </tr>
+                      {aberto && (
+                        <tr>
+                          <td colSpan={8} style={{ padding: 0, background: "var(--surface2)" }}>
+                            <DetalhePedido pedido={p} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
