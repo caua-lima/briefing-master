@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
+import { impostoNaData, type ImpostoFaixa } from "@/lib/domain/types";
 
-type ProdutoData = { custo: number; imposto: number; name: string };
+type ProdutoData = { custo: number; imposto: number; impostoFaixas?: ImpostoFaixa[]; name: string };
 type OrderItem = { sku?: string; item_id?: string; quantity?: number; unit_price?: number; sale_fee?: number; title?: string };
 
 function normalizeSku(s: string) {
@@ -58,7 +59,12 @@ export async function GET(req: Request) {
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {
       const d = doc.data();
-      const entry: ProdutoData = { custo: Number(d.custo ?? 0), imposto: Number(d.imposto ?? 0), name: String(d.name ?? "") };
+      const entry: ProdutoData = {
+        custo: Number(d.custo ?? 0),
+        imposto: Number(d.imposto ?? 0),
+        impostoFaixas: Array.isArray(d.impostoFaixas) ? (d.impostoFaixas as ImpostoFaixa[]) : undefined,
+        name: String(d.name ?? ""),
+      };
       const mlbList: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
       for (const m of mlbList) {
         const n = normalizeItemId(String(m));
@@ -69,6 +75,9 @@ export async function GET(req: Request) {
     }
 
     const pedidos = orders.map((o) => {
+      // Alíquota da data da venda — mudar o imposto hoje não reescreve o
+      // lucro de meses já fechados.
+      const diaPedido = String(o.date_created ?? "").slice(0, 10);
       const items = (o.items as OrderItem[]) ?? [];
       const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
       const orderShipping = Number(o.shipping_cost ?? 0);
@@ -99,7 +108,7 @@ export async function GET(req: Request) {
         const prod = porMlb.get(normalizeItemId(itemId)) ?? porSku.get(normalizeSku(skuRaw));
         const nome = prod?.name || String(item.title ?? skuRaw);
         const itCmv = prod ? prod.custo * qty : 0;
-        const itImposto = prod ? ret * (prod.imposto / 100) : 0;
+        const itImposto = prod ? ret * (impostoNaData(prod, diaPedido) / 100) : 0;
         if (prod) {
           cmv += itCmv;
           imposto += itImposto;

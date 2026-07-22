@@ -4,6 +4,7 @@ import { requireAccess } from "@/lib/api-auth";
 import { getAdsSpendByItem, probeAds } from "@/lib/ml/ads";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 import { getMlAccessToken } from "../token";
+import { impostoNaData, type ImpostoFaixa } from "@/lib/domain/types";
 
 export const maxDuration = 30;
 
@@ -13,7 +14,8 @@ const CACHE_TTL = 60 * 1000;
 
 type ProdutoData = {
   custo: number;
-  imposto: number; // % sobre a venda
+  imposto: number; // % sobre a venda — alíquota atual (compat)
+  impostoFaixas?: ImpostoFaixa[]; // vigência: a venda usa a alíquota da data dela
   mlb: string;
   name: string;
   sku: string;
@@ -160,6 +162,9 @@ function computeAggregates(
     if (devolIds.has(oid)) { vendasDevolvidas += totalAmt; continue; }
 
     ordersCount++;
+    // A alíquota é a que valia no dia da venda: mudar o imposto hoje não pode
+    // reescrever o lucro de meses já fechados.
+    const diaPedido = String(o.date_created ?? "").slice(0, 10);
     const items = (o.items as OrderItem[]) ?? [];
 
     // Frete Full do pedido distribuído por unidade (envio é por pedido)
@@ -184,7 +189,7 @@ function computeAggregates(
       if (produto) {
         vinculado = true;
         const cmv = produto.custo * qty;
-        const imposto = retorno * (produto.imposto / 100);
+        const imposto = retorno * (impostoNaData(produto, diaPedido) / 100);
         totalRetorno += retorno;
         totalCMV += cmv;
         totalEnvio += envio;
@@ -312,6 +317,7 @@ export async function GET(req: Request) {
         // Custo médio (livro de movimentações) tem prioridade; cai pro manual se ainda não houver entradas.
         custo: Number(d.custoMedio ?? d.custo ?? d.cost ?? 0),
         imposto: Number(d.imposto ?? d.tax ?? 0),
+        impostoFaixas: Array.isArray(d.impostoFaixas) ? (d.impostoFaixas as ImpostoFaixa[]) : undefined,
         mlb: String(d.mlb ?? "").trim(),
         name: String(d.name ?? ""),
         sku: String(d.sku ?? "").trim(),

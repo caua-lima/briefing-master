@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { EstoqueMovimento, MovimentoTipo, Product } from "@/lib/domain/types";
+import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
 import { addMovimento, deleteMovimento, deleteProduct, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import Modal from "@/components/Modal";
@@ -683,6 +683,20 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
     const saveObj: Product = { ...p, mlbs: cleaned, mlb: cleaned[0] ?? "", custo: custoStr };
     if (custoStr.trim()) saveObj.custoMedio = parseNum(custoStr);
     else delete saveObj.custoMedio;
+
+    /**
+     * O cálculo do lucro dá prioridade às faixas de vigência. Se o produto já
+     * tem faixas, mexer só no campo `imposto` não teria efeito nenhum — então
+     * a alteração vira uma faixa valendo de hoje, sem tocar no passado.
+     */
+    const pctNovo = parseNum(p.imposto ?? "0");
+    const faixasAtuais = p.impostoFaixas ?? [];
+    if (faixasAtuais.length && pctNovo !== impostoNaData({ impostoFaixas: faixasAtuais }, todayISO())) {
+      const faixas = faixasAtuais.filter((f) => f.desde !== todayISO());
+      faixas.push({ desde: todayISO(), pct: pctNovo });
+      faixas.sort((a, b) => a.desde.localeCompare(b.desde));
+      saveObj.impostoFaixas = faixas;
+    }
     setSaving(true);
     try {
       await onSave(saveObj);
@@ -731,7 +745,15 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
       <div className="config-field">
         <label>Imposto sobre a venda (%)</label>
         <input type="number" min="0" step="0.01" placeholder="Ex: 8" value={p.imposto ?? ""} onChange={(e) => set({ imposto: e.target.value })} />
-        <div className="hint">Percentual de imposto pago sobre o valor da venda.</div>
+        <div className="hint">
+          Percentual de imposto pago sobre o valor da venda.
+          {!!p.impostoFaixas?.length && (
+            <> Vigências: {[...p.impostoFaixas]
+              .sort((a, b) => a.desde.localeCompare(b.desde))
+              .map((f) => `${f.pct}% desde ${f.desde.split("-").reverse().join("/")}`)
+              .join(" · ")}. Alterar aqui cria uma vigência a partir de hoje, sem mexer no passado.</>
+          )}
+        </div>
       </div>
 
       <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(79,142,247,.08)", border: "1px solid rgba(79,142,247,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
@@ -768,6 +790,7 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
   uid: string; produtos: Product[]; escopoBusca: string; onClose: () => void;
 }) {
   const [valor, setValor] = useState("4");
+  const [desde, setDesde] = useState(todayISO());
   const [salvando, setSalvando] = useState(false);
   const [feito, setFeito] = useState(0);
 
@@ -776,11 +799,24 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
 
   async function aplicar() {
     if (!Number.isFinite(pct) || pct < 0) { alert("Informe um percentual válido."); return; }
+    if (!desde) { alert("Informe a data de início."); return; }
     setSalvando(true);
     try {
       let n = 0;
       for (const p of produtos) {
-        await upsertProduct(uid, { ...p, imposto: String(pct) });
+        /**
+         * Substitui a faixa da mesma data e mantém as demais: assim dá pra
+         * corrigir a alíquota sem perder o histórico de vigências.
+         */
+        const faixas = (p.impostoFaixas ?? []).filter((f) => f.desde !== desde);
+        faixas.push({ desde, pct });
+        faixas.sort((a, b) => a.desde.localeCompare(b.desde));
+        await upsertProduct(uid, {
+          ...p,
+          impostoFaixas: faixas,
+          // `imposto` segue como a alíquota vigente hoje (compat e exibição).
+          imposto: String(impostoNaData({ imposto: p.imposto, impostoFaixas: faixas }, todayISO())),
+        });
         n += 1;
         setFeito(n);
       }
@@ -806,6 +842,14 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
         />
       </div>
 
+      <div className="config-field">
+        <label>Vale a partir de</label>
+        <input
+          type="date" value={desde} onChange={(e) => setDesde(e.target.value)}
+          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 16, outline: "none" }}
+        />
+      </div>
+
       <div style={{
         marginTop: 12, padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
         background: "var(--surface2)", border: "1px solid var(--border)",
@@ -822,12 +866,10 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
 
       <div style={{
         marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
-        background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.4)", color: "#f7c948",
+        background: "rgba(34,197,94,.1)", border: "1px solid rgba(34,197,94,.35)", color: "var(--green)",
       }}>
-        <b>Atenção:</b> o lucro aplica o imposto do cadastro na hora de calcular, então
-        os meses <b>já fechados também vão passar a descontar</b> esse percentual — não só as vendas
-        daqui pra frente. Se você quiser que valha só a partir de hoje, me avise que eu coloco data
-        de vigência no campo.
+        Vendas <b>antes de {desde.split("-").reverse().join("/")}</b> continuam sem esse imposto —
+        o lucro dos meses já fechados não muda.
       </div>
 
       <div className="modal-btns">

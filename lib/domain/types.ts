@@ -82,12 +82,43 @@ export type DraftToday = {
   updatedAt?: number;
 };
 
+export type ImpostoFaixa = {
+  desde: string;             // yyyy-mm-dd — primeira data em que a alíquota vale
+  pct: number;               // ex.: 4 = 4%
+};
+
+/**
+ * Alíquota que vale na data da venda. Sem faixas, cai no campo antigo, que
+ * valia para todo o histórico. Antes da primeira faixa, 0.
+ */
+export function impostoNaData(
+  prod: { imposto?: string | number; impostoFaixas?: ImpostoFaixa[] },
+  dataISO: string,
+): number {
+  const faixas = prod.impostoFaixas;
+  if (!faixas?.length) return Number(prod.imposto ?? 0) || 0;
+  const dia = String(dataISO).slice(0, 10);
+  let melhor: ImpostoFaixa | null = null;
+  for (const f of faixas) {
+    if (!f?.desde || f.desde > dia) continue;
+    if (!melhor || f.desde > melhor.desde) melhor = f;
+  }
+  return melhor ? Number(melhor.pct) || 0 : 0;
+}
+
 export type Product = {
   id: string;
   name: string;
   custo: string;             // custo manual (fallback / compat)
   sku?: string;              // bate com items[].sku dos pedidos ML
   imposto?: string;          // % de imposto sobre a venda (ex: "8" = 8%)
+  /**
+   * Faixas de vigência do imposto, em ordem qualquer. A alíquota de uma venda
+   * é a da faixa mais recente cujo `desde` <= data da venda. Venda anterior à
+   * primeira faixa paga 0 — foi o caso da virada de MEI (isento) para ME.
+   * Sem faixas, `imposto` vale para todo o histórico (comportamento antigo).
+   */
+  impostoFaixas?: ImpostoFaixa[];
   mlb?: string;              // 1º código MLB (compat); ver mlbs
   mlbs?: string[];           // vários anúncios (MLB) do mesmo produto
   ativo: boolean;
