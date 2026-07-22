@@ -72,6 +72,12 @@ export type Cost = {
   valor: string;
   freq: "diario" | "mensal" | "avulso";
   data: string;
+  /**
+   * "dash" (padrão) desconta no lucro líquido do Dashboard — é o custo da
+   * operação de venda. "dre" só aparece na DRE: pró-labore, contador,
+   * retirada e afins, que não devem sujar o número que se olha todo dia.
+   */
+  escopo?: "dash" | "dre";
   createdBy?: string;
 };
 

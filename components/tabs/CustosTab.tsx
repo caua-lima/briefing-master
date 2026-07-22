@@ -23,12 +23,16 @@ function impactoMes(c: Cost, dias: number): number {
 export default function CustosTab({ uid, data }: { uid: string; data: UserData }) {
   const { canEdit } = useAccess();
   const dias = diasNoMes(mesAtual());
-  const totalDia = data.costs.filter((c) => c.freq === "diario").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
-  const totalMensais = data.costs.filter((c) => c.freq === "mensal").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
-  const totalMes = totalCustosMes(data.costs, mesAtual());
-  const nDiario = data.costs.filter((c) => c.freq === "diario").length;
-  const nMensal = data.costs.filter((c) => c.freq === "mensal").length;
-  const nAvulso = data.costs.filter((c) => c.freq === "avulso").length;
+  // Os totais aqui são os que batem no Dashboard. Custo marcado "só na DRE"
+  // fica de fora, senão o número desta tela não explicaria o de lá.
+  const doDash = data.costs.filter((c) => (c.escopo ?? "dash") === "dash");
+  const soDre = data.costs.filter((c) => c.escopo === "dre");
+  const totalDia = doDash.filter((c) => c.freq === "diario").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
+  const totalMensais = doDash.filter((c) => c.freq === "mensal").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
+  const totalMes = totalCustosMes(doDash, mesAtual());
+  const totalMesDre = totalCustosMes(soDre, mesAtual());
+  const nDiario = doDash.filter((c) => c.freq === "diario").length;
+  const nMensal = doDash.filter((c) => c.freq === "mensal").length;
 
   function onAdd() {
     upsertCost(uid, { id: newId(), nome: "", valor: "", freq: "diario", data: todayStr() }).catch(() => {});
@@ -45,11 +49,15 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
         <div className="kpi k-neg"><div className="k-lbl">Custo fixo / dia</div><div className="k-val" style={{ color: "var(--red)" }}>{fmtBRL(totalDia)}</div><div className="k-sub">{nDiario} diário(s) · desconta todo dia</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Mensais fixos</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(totalMensais)}</div><div className="k-sub">{nMensal} custo(s) · 1×/mês</div></div>
         <div className="kpi k-neg"><div className="k-lbl">Impacto no mês</div><div className="k-val" style={{ color: "var(--red)" }}>{fmtBRL(totalMes)}</div><div className="k-sub">fixos × {dias}d + mensais + avulsos</div></div>
-        <div className="kpi k-acc"><div className="k-lbl">Custos cadastrados</div><div className="k-val">{data.costs.length}</div><div className="k-sub">{nAvulso} avulso(s)</div></div>
+        <div className="kpi k-acc"><div className="k-lbl">Só na DRE</div><div className="k-val" style={{ color: soDre.length ? "var(--purple)" : "var(--muted)" }}>{fmtBRL(totalMesDre)}</div><div className="k-sub">{soDre.length} custo(s) · fora do Dashboard</div></div>
       </div>
 
-      <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(79,142,247,.06)", border: "1px solid rgba(79,142,247,.18)", borderRadius: 8, padding: "10px 14px" }}>
+      <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(79,142,247,.06)", border: "1px solid rgba(79,142,247,.18)", borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }}>
         <strong>Diário</strong> = desconta todo dia · <strong>Mensal</strong> = só no lucro do mês · <strong>Avulso</strong> = apenas na data informada
+        <div style={{ marginTop: 4 }}>
+          <strong>Desconta no Dashboard</strong> = custo da operação de venda, entra no lucro líquido ·
+          {" "}<strong>Só na DRE</strong> = despesa da empresa (pró-labore, contador, retirada), aparece apenas na aba DRE
+        </div>
       </div>
 
       <div className="panel">
@@ -83,20 +91,23 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
   const [valor, setValor] = useState(cost.valor);
   const [freq, setFreq] = useState<Cost["freq"]>(cost.freq);
   const [dataAvulso, setDataAvulso] = useState(cost.data || todayStr());
+  const [escopo, setEscopo] = useState<NonNullable<Cost["escopo"]>>(cost.escopo ?? "dash");
 
   useEffect(() => {
     setNome(cost.nome); setValor(cost.valor); setFreq(cost.freq); setDataAvulso(cost.data || todayStr());
-  }, [cost.nome, cost.valor, cost.freq, cost.data]);
+    setEscopo(cost.escopo ?? "dash");
+  }, [cost.nome, cost.valor, cost.freq, cost.data, cost.escopo]);
 
   useEffect(() => {
     if (!canEdit) return;
     const handle = setTimeout(() => {
-      const next: Cost = { id: cost.id, nome, valor, freq, data: dataAvulso };
-      if (next.nome === cost.nome && next.valor === cost.valor && next.freq === cost.freq && next.data === cost.data) return;
+      const next: Cost = { id: cost.id, nome, valor, freq, data: dataAvulso, escopo };
+      if (next.nome === cost.nome && next.valor === cost.valor && next.freq === cost.freq
+        && next.data === cost.data && next.escopo === (cost.escopo ?? "dash")) return;
       upsertCost(uid, next).catch(() => {});
     }, 350);
     return () => clearTimeout(handle);
-  }, [nome, valor, freq, dataAvulso, cost, uid, canEdit]);
+  }, [nome, valor, freq, dataAvulso, escopo, cost, uid, canEdit]);
 
   const meta = FREQ_META[freq];
   const ro = !canEdit;
@@ -116,6 +127,16 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
       {freq === "avulso" && (
         <input type="date" value={dataAvulso} onChange={(e) => setDataAvulso(e.target.value)} readOnly={ro} style={{ ...inputStyle, flex: "1 1 140px", opacity: ro ? .8 : 1 }} />
       )}
+      <select
+        value={escopo}
+        onChange={(e) => setEscopo(e.target.value as NonNullable<Cost["escopo"]>)}
+        disabled={ro}
+        title="Onde este custo é descontado"
+        style={{ ...inputStyle, flex: "1 1 150px", fontSize: ".8rem", opacity: ro ? .8 : 1 }}
+      >
+        <option value="dash">Desconta no Dashboard</option>
+        <option value="dre">Só na DRE</option>
+      </select>
       <div style={{ flexShrink: 0, textAlign: "right", minWidth: 96 }}>
         <div style={{ fontSize: ".62rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>no mês</div>
         <div style={{ fontWeight: 700, color: "var(--red)", whiteSpace: "nowrap" }}>{fmtBRL(impacto)}</div>

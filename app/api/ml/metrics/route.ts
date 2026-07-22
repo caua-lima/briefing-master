@@ -443,19 +443,35 @@ export async function GET(req: Request) {
 
     const custosSnap = await db.collection("custos").get();
     let custosOp = 0;
+    // Custo marcado como "dre" fica fora do lucro do Dashboard de propósito:
+    // é despesa da empresa (pró-labore, contador), não da operação de venda.
+    let custosDre = 0;
+    const custosDreDetalhe: { nome: string; valor: number; freq: string }[] = [];
     for (const doc of custosSnap.docs) {
       const d = doc.data();
       const valor = Number(d.valor ?? d.amount ?? 0);
       const data = String(d.data ?? d.date ?? "");
       const freq = String(d.freq ?? d.frequency ?? "avulso");
+      const soDre = String(d.escopo ?? "dash") === "dre";
+
+      let noPeriodo = 0;
       if (freq === "diario" || freq === "daily") {
-        custosOp += valor * daysInPeriod;                 // desconta todo dia
+        noPeriodo = valor * daysInPeriod;                     // desconta todo dia
       } else if (freq === "mensal" || freq === "monthly") {
-        if (isFullMonth) custosOp += valor * monthsInPeriod; // só no mês completo
+        if (isFullMonth) noPeriodo = valor * monthsInPeriod;  // só no mês completo
       } else if (data >= fromStr && data <= toStr) {
-        custosOp += valor;                                 // avulso: só na data
+        noPeriodo = valor;                                    // avulso: só na data
+      }
+      if (noPeriodo === 0) continue;
+
+      if (soDre) {
+        custosDre += noPeriodo;
+        custosDreDetalhe.push({ nome: String(d.nome ?? "—"), valor: noPeriodo, freq });
+      } else {
+        custosOp += noPeriodo;
       }
     }
+    custosDreDetalhe.sort((a, b) => b.valor - a.valor);
 
     // ── 7. Lucro líquido do dia (retorno − cmv − full − ads − taxas − imposto) ──
     const lucroLiquidoHoje =
@@ -492,6 +508,9 @@ export async function GET(req: Request) {
       totalImposto: agg.totalImposto,
       totalTaxasML: agg.totalTaxasML,
       custosOperacionais: custosOp,
+      // Só a DRE usa: o Dashboard ignora para não mudar o número do dia a dia.
+      custosDre,
+      custosDreDetalhe,
       lucroSemCustos,
       lucroComCustos,
       margemSemCustos,
