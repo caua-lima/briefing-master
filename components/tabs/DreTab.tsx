@@ -33,55 +33,113 @@ function monthRange() {
   return { from: `${d.getFullYear()}-${mm}-01`, to: `${d.getFullYear()}-${mm}-${String(last).padStart(2, "0")}` };
 }
 
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/** "julho de 2026" quando o período é um mês inteiro; senão "01/07 – 22/07". */
+function fmtPeriodo(from: string, to: string): string {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const ultimoDia = new Date(fy, fm, 0).getDate();
+  if (fy === ty && fm === tm && fd === 1 && td === ultimoDia) {
+    return `${MESES[fm - 1]} de ${fy}`;
+  }
+  const br = (s: string) => s.slice(8, 10) + "/" + s.slice(5, 7);
+  return `${br(from)} – ${br(to)}`;
+}
+
 type LinhaProps = {
   rotulo: string;
   valor: number;
   nota?: string;
-  /** deducao = sai do resultado; subtotal = linha de fechamento */
+  /** deducao = sai do resultado; subtotal = fechamento; resultado = linha final */
   tipo?: "deducao" | "subtotal" | "resultado";
   base?: number;
 };
 
 function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
-  const ehSub = tipo === "subtotal" || tipo === "resultado";
-  const cor = tipo === "resultado"
+  const ehResultado = tipo === "resultado";
+  const ehSub = tipo === "subtotal" || ehResultado;
+  const ehDed = tipo === "deducao";
+  const cor = ehResultado
     ? (valor >= 0 ? "var(--green)" : "var(--red)")
-    : tipo === "deducao" ? "var(--red)" : "var(--text)";
+    : ehDed ? "var(--red)" : "var(--text)";
   // % sobre a receita: é o que torna a DRE comparável entre meses de tamanhos
   // diferentes — R$ 3 mil de taxa significa coisas distintas em 20k e em 60k.
   const pct = base && base !== 0 ? (valor / base) * 100 : null;
+  const larguraBarra = pct === null ? 0 : Math.min(Math.abs(pct), 100);
 
   return (
-    <div style={{
-      display: "grid", gridTemplateColumns: "1fr auto auto", gap: "0 14px", alignItems: "baseline",
-      padding: ehSub ? "10px 0 4px" : "5px 0",
-      borderTop: ehSub ? "1px solid var(--border)" : undefined,
-      marginTop: ehSub ? 6 : 0,
-    }}>
-      <div>
-        <span style={{
-          fontSize: ehSub ? ".88rem" : ".82rem",
-          fontWeight: ehSub ? 800 : 400,
-          color: ehSub ? "var(--text)" : "var(--muted)",
-          textTransform: tipo === "resultado" ? "uppercase" : undefined,
-          letterSpacing: tipo === "resultado" ? ".03em" : undefined,
-        }}>
-          {rotulo}
-        </span>
-        {nota && <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>{nota}</div>}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto 118px",
+        gap: "0 16px",
+        alignItems: "center",
+        padding: ehSub ? "11px 12px" : "7px 12px 7px 26px",
+        borderRadius: 8,
+        marginTop: ehSub ? 4 : 0,
+        background: ehResultado
+          ? (valor >= 0 ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.1)")
+          : tipo === "subtotal" ? "var(--surface2)" : undefined,
+        border: ehResultado
+          ? `1px solid ${valor >= 0 ? "rgba(34,197,94,.4)" : "rgba(239,68,68,.4)"}`
+          : undefined,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+        {ehDed && <span style={{ color: "var(--muted)", fontSize: ".8rem", flexShrink: 0 }}>−</span>}
+        <div style={{ minWidth: 0 }}>
+          <span style={{
+            fontSize: ehSub ? ".9rem" : ".84rem",
+            fontWeight: ehResultado ? 800 : ehSub ? 700 : 500,
+            color: ehSub ? "var(--text)" : "var(--muted)",
+            textTransform: ehResultado ? "uppercase" : undefined,
+            letterSpacing: ehResultado ? ".04em" : undefined,
+          }}>
+            {rotulo}
+          </span>
+          {nota && <div style={{ fontSize: ".7rem", color: "var(--muted)", marginTop: 1 }}>{nota}</div>}
+        </div>
       </div>
+
       <span style={{
-        fontSize: ehSub ? ".95rem" : ".85rem", fontWeight: ehSub ? 800 : 600,
+        fontSize: ehResultado ? "1.05rem" : ehSub ? ".95rem" : ".86rem",
+        fontWeight: ehSub ? 800 : 600,
         whiteSpace: "nowrap", color: cor, fontVariantNumeric: "tabular-nums",
       }}>
-        {tipo === "deducao" ? "−" : ""}{fmtBRL(Math.abs(valor))}
+        {ehDed ? "−" : ""}{fmtBRL(Math.abs(valor))}
       </span>
-      <span style={{
-        fontSize: ".72rem", color: "var(--muted)", whiteSpace: "nowrap",
-        minWidth: 52, textAlign: "right", fontVariantNumeric: "tabular-nums",
-      }}>
-        {pct === null ? "" : `${pct.toFixed(1)}%`}
-      </span>
+
+      {/* % sobre a receita, com mini-barra para leitura rápida */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+        <span style={{
+          fontSize: ".72rem", color: ehSub ? "var(--text)" : "var(--muted)",
+          whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums",
+          fontWeight: ehSub ? 700 : 400,
+        }}>
+          {pct === null ? "" : `${pct.toFixed(1)}%`}
+        </span>
+        {pct !== null && !ehResultado && (
+          <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+            <div style={{
+              width: `${larguraBarra}%`, height: "100%", borderRadius: 2,
+              background: ehDed ? "var(--red)" : "var(--green)", opacity: ehDed ? .55 : .7,
+            }} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Cabeçalho de grupo dentro do demonstrativo, para separar os blocos. */
+function GrupoDre({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontSize: ".68rem", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase",
+      color: "var(--muted)", padding: "16px 12px 4px",
+    }}>
+      {children}
     </div>
   );
 }
@@ -128,8 +186,8 @@ export default function DreTab() {
       <div className="dash-top">
         <div className="dash-top-left">
           <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>DRE</h2>
-          <span style={{ fontSize: ".78rem", color: "var(--muted)" }}>
-            demonstrativo de resultado · {m.ordersCount} pedido(s)
+          <span style={{ fontSize: ".78rem", color: "var(--muted)", textTransform: "capitalize" }}>
+            {fmtPeriodo(range.from, range.to)} · {m.ordersCount} pedido(s)
           </span>
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
@@ -166,29 +224,48 @@ export default function DreTab() {
       </div>
 
       <div className="panel">
-        <div className="panel-head" style={{ marginBottom: 4 }}>
-          <span className="panel-title">Demonstrativo</span>
-          <span className="panel-sub">% sobre a receita líquida</span>
+        <div className="panel-head" style={{ marginBottom: 2 }}>
+          <span className="panel-title">Demonstrativo de resultado</span>
+          <span className="panel-sub">{fmtPeriodo(range.from, range.to)}</span>
         </div>
 
+        {/* Cabeçalho das colunas de valor */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr auto 118px", gap: "0 16px",
+          padding: "0 12px 6px", borderBottom: "1px solid var(--border)",
+          fontSize: ".66rem", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
+          color: "var(--muted)",
+        }}>
+          <span />
+          <span style={{ textAlign: "right" }}>Valor</span>
+          <span style={{ textAlign: "right" }}>% receita</span>
+        </div>
+
+        <GrupoDre>Receita</GrupoDre>
         <Linha rotulo="Receita bruta de vendas" valor={receitaBruta} nota="tudo que entrou, inclusive o que caiu depois" />
         <Linha rotulo="Cancelamentos e devoluções" valor={canceladas} tipo="deducao" base={base} />
         <Linha rotulo="Receita líquida" valor={receitaLiquida} tipo="subtotal" />
 
+        <GrupoDre>Custos de venda no Mercado Livre</GrupoDre>
         <Linha rotulo="Taxas do Mercado Livre" valor={m.totalTaxasML} tipo="deducao" base={base} />
         <Linha rotulo="Frete" valor={m.totalEnvio} tipo="deducao" base={base} />
         <Linha rotulo="Receita operacional líquida" valor={receitaOperacional} tipo="subtotal" nota="o que o ML de fato te repassa" />
 
+        <GrupoDre>Mercadoria</GrupoDre>
         <Linha rotulo="Custo da mercadoria vendida" valor={m.totalCMV} tipo="deducao" base={base} nota="custo médio × unidades vendidas" />
         <Linha rotulo="Lucro bruto" valor={lucroBruto} tipo="subtotal" />
 
+        <GrupoDre>Impostos e despesas operacionais</GrupoDre>
         <Linha rotulo="Impostos sobre vendas" valor={m.totalImposto} tipo="deducao" base={base} />
         <Linha rotulo="Marketing (ADS)" valor={m.totalAds} tipo="deducao" base={base} />
         <Linha rotulo="Despesas operacionais" valor={m.custosOperacionais} tipo="deducao" base={base} nota="custos da aba Custos que descontam no Dashboard" />
         <Linha rotulo="Resultado operacional" valor={resultadoOperacional} tipo="subtotal" nota="daqui pra cima é exatamente o lucro líquido do Dashboard" />
 
-        <Linha rotulo="Despesas da empresa" valor={m.custosDre} tipo="deducao" base={base} nota="pró-labore, contador, retirada — só aparecem aqui" />
-        <Linha rotulo="Resultado líquido" valor={resultadoLiquido} tipo="resultado" base={base} />
+        <GrupoDre>Despesas da empresa</GrupoDre>
+        <Linha rotulo="Pró-labore, contador, retirada" valor={m.custosDre} tipo="deducao" base={base} nota="só aparecem aqui, fora do lucro do Dashboard" />
+        <div style={{ marginTop: 10 }}>
+          <Linha rotulo="Resultado líquido" valor={resultadoLiquido} tipo="resultado" base={base} />
+        </div>
       </div>
 
       <div className="panel">
