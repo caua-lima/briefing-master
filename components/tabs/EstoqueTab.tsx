@@ -600,10 +600,18 @@ function coberturaFmt(dias: number): { txt: string; cor: string } {
 }
 
 function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[]; estoqueML: EstoqueML; forecast: Forecast }) {
+  /**
+   * Sem filtro: produto recém-criado não tem estoque, venda nem preço, e
+   * sumir da lista dava a impressão de que o cadastro não funcionou. Quem
+   * ainda não tem dado cai no fim e diz o que está faltando.
+   */
   const linhas = products
     .map((p) => ({ p, f: previsaoDe(p, estoqueML, forecast) }))
-    .filter(({ f }) => f.total > 0 || f.mediaDiaria > 0 || f.precoMax > 0)
-    .sort((a, b) => b.f.valorPotencial - a.f.valorPotencial);
+    .sort((a, b) =>
+      b.f.valorPotencial - a.f.valorPotencial
+      || b.f.total - a.f.total
+      || (a.p.name || "").localeCompare(b.p.name || ""),
+    );
 
   return (
     <div className="panel">
@@ -612,7 +620,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
         <span className="panel-sub">preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias</span>
       </div>
       {linhas.length === 0 ? (
-        <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>Sem dados de estoque/vendas ainda. Lance entradas e aguarde vendas para a previsão aparecer.</div>
+        <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>Nenhum produto cadastrado ainda.</div>
       ) : (
         <div className="table-wrapper" style={{ border: "none" }}>
           <table className="tbl-modern">
@@ -633,7 +641,18 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                 const emCasa = Math.min(f.reporQtd, f.casa);
                 return (
                   <tr key={p.id}>
-                    <td style={{ textAlign: "left", fontWeight: 600 }}>{p.name || "Sem nome"}</td>
+                    <td style={{ textAlign: "left", fontWeight: 600 }}>
+                      {p.name || "Sem nome"}
+                      {mlbsDe(p).length === 0 ? (
+                        <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "#f7c948" }}>
+                          sem anúncio vinculado — use “Vincular por SKU”
+                        </span>
+                      ) : f.total === 0 && f.mediaDiaria === 0 ? (
+                        <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}>
+                          sem estoque nem venda ainda
+                        </span>
+                      ) : null}
+                    </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{f.precoMax > 0 ? (f.precoMin === f.precoMax ? fmtBRL(f.precoMax) : `${fmtBRL(f.precoMin)}–${fmtBRL(f.precoMax)}`) : "—"}</td>
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{f.total} un</td>
                     <td style={{ textAlign: "right", color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
