@@ -15,6 +15,21 @@ function normSku(s: string) {
   return String(s).trim().toLowerCase();
 }
 
+/**
+ * Chave frouxa para casar SKU escrito de formas diferentes nos dois lados.
+ * No ML é comum o valor vir com o próprio prefixo ("SKU MentaCereja"), e
+ * acento/espaço/hífen variam ("Limão Caipira" × "LimaoCaipira"). Só é usada
+ * como sugestão marcada como aproximada — nunca como certeza.
+ */
+function chaveSku(s: string) {
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")    // tira acento
+    .replace(/^sku[\s:_.-]*/, "")                        // tira prefixo "SKU "
+    .replace(/[^a-z0-9]/g, "");                          // tira separadores
+}
+
 /** SKUs de um anúncio: raiz, atributo SELLER_SKU e cada variação. */
 function skusDoItem(b: Record<string, unknown>): string[] {
   const out = new Set<string>();
@@ -70,8 +85,11 @@ export async function GET(req: Request) {
       if (lote.length < 100) break;
     }
 
-    // SKU → anúncios que o expõem (raiz ou variação).
+    // SKU → anúncios que o expõem (raiz ou variação), no valor exato e na
+    // chave frouxa. Guardamos o SKU cru do anúncio para mostrar na conferência.
     const mlbsPorSku = new Map<string, Set<string>>();
+    const mlbsPorChave = new Map<string, Set<string>>();
+    const skuDoMlb = new Map<string, string>();
     const tituloPorMlb = new Map<string, string>();
     let anunciosLidos = 0;
     for (let i = 0; i < todosMlb.length; i += 20) {
@@ -93,22 +111,59 @@ export async function GET(req: Request) {
           const set = mlbsPorSku.get(sku) ?? new Set<string>();
           set.add(mlb);
           mlbsPorSku.set(sku, set);
+
+          const chave = chaveSku(sku);
+          if (chave) {
+            const setC = mlbsPorChave.get(chave) ?? new Set<string>();
+            setC.add(mlb);
+            mlbsPorChave.set(chave, setC);
+          }
+          if (!skuDoMlb.has(mlb)) skuDoMlb.set(mlb, sku);
         }
       }
     }
 
-    // Plano: por produto com SKU, os anúncios que casam e ainda não estão nele.
-    const plano: { productId: string; name: string; sku: string; novos: { mlb: string; titulo: string }[] }[] = [];
+    /**
+     * Plano por produto. O casamento exato é confiável; o aproximado sai
+     * marcado, porque prefixo/acento removidos podem aproximar SKUs que na
+     * verdade são de produtos distintos — quem decide é quem confere.
+     */
+    type Novo = { mlb: string; titulo: string; skuAnuncio: string; exato: boolean };
+    const plano: {
+      productId: string; name: string; sku: string;
+      atuais: { mlb: string; titulo: string }[];
+      novos: Novo[];
+    }[] = [];
     let semSku = 0;
     let semMatch = 0;
+    let aproximados = 0;
+
     for (const p of produtos) {
       if (!p.sku) { semSku += 1; continue; }
-      const casam = mlbsPorSku.get(p.sku);
-      if (!casam || casam.size === 0) { semMatch += 1; continue; }
-      const novos = Array.from(casam)
-        .filter((mlb) => !p.mlbs.has(mlb))
-        .map((mlb) => ({ mlb, titulo: tituloPorMlb.get(mlb) ?? "" }));
-      if (novos.length) plano.push({ productId: p.id, name: p.name, sku: p.sku, novos });
+
+      const exatos = mlbsPorSku.get(p.sku) ?? new Set<string>();
+      const frouxos = mlbsPorChave.get(chaveSku(p.sku)) ?? new Set<string>();
+      if (exatos.size === 0 && frouxos.size === 0) { semMatch += 1; continue; }
+
+      const novos: Novo[] = [];
+      for (const mlb of new Set([...exatos, ...frouxos])) {
+        if (p.mlbs.has(mlb)) continue;
+        const exato = exatos.has(mlb);
+        if (!exato) aproximados += 1;
+        novos.push({ mlb, titulo: tituloPorMlb.get(mlb) ?? "", skuAnuncio: skuDoMlb.get(mlb) ?? "", exato });
+      }
+      if (!novos.length) continue;
+
+      novos.sort((a, b) => Number(b.exato) - Number(a.exato));
+      plano.push({
+        productId: p.id,
+        name: p.name,
+        sku: p.sku,
+        // Mostrar o que já está vinculado é o que permite julgar se o
+        // anúncio sugerido é outro de verdade ou duplicata.
+        atuais: Array.from(p.mlbs).map((mlb) => ({ mlb, titulo: tituloPorMlb.get(mlb) ?? "" })),
+        novos,
+      });
     }
     plano.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -120,6 +175,7 @@ export async function GET(req: Request) {
         anunciosLidos,
         semSku,
         semMatch,
+        aproximados,
         aVincular: plano.reduce((s, p) => s + p.novos.length, 0),
       },
     });

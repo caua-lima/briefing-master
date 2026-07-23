@@ -801,8 +801,13 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  * Só sugere; a gravação acontece aqui no cliente, com a confirmação do dono,
  * porque é ele quem tem permissão de escrever no Estoque.
  */
-type PlanoSku = { productId: string; name: string; sku: string; novos: { mlb: string; titulo: string }[] };
-type ResumoSku = { produtos: number; anunciosDaConta: number; anunciosLidos: number; semSku: number; semMatch: number; aVincular: number };
+type NovoSku = { mlb: string; titulo: string; skuAnuncio: string; exato: boolean };
+type PlanoSku = {
+  productId: string; name: string; sku: string;
+  atuais: { mlb: string; titulo: string }[];
+  novos: NovoSku[];
+};
+type ResumoSku = { produtos: number; anunciosDaConta: number; anunciosLidos: number; semSku: number; semMatch: number; aproximados: number; aVincular: number };
 
 function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: Product[]; onClose: () => void }) {
   const [carregando, setCarregando] = useState(true);
@@ -812,6 +817,9 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
   const [aplicando, setAplicando] = useState(false);
   const [feito, setFeito] = useState(0);
   const [concluido, setConcluido] = useState(false);
+  // Cada anúncio sugerido é escolhido individualmente: match aproximado pode
+  // aproximar SKUs de produtos diferentes, e vincular errado bagunça o lucro.
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let vivo = true;
@@ -823,8 +831,15 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
         if (!r.ok) { setErro(`HTTP ${r.status} — ${txt.slice(0, 300)}`); }
         else {
           const j = JSON.parse(txt) as { plano?: PlanoSku[]; resumo?: ResumoSku };
-          setPlano(j.plano ?? []);
+          const lista = j.plano ?? [];
+          setPlano(lista);
           setResumo(j.resumo ?? null);
+          // Exato já vem marcado; aproximado exige o seu aval.
+          const iniciais = new Set<string>();
+          for (const item of lista) {
+            for (const n of item.novos) if (n.exato) iniciais.add(`${item.productId}|${n.mlb}`);
+          }
+          setMarcados(iniciais);
         }
       } catch (e) {
         if (vivo) setErro(`Falhou: ${String(e).slice(0, 200)}`);
@@ -832,21 +847,30 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
         if (vivo) setCarregando(false);
       }
     })();
-    return () => { vivo = false; };
   }, []);
+
+  const alterna = (chave: string) => setMarcados((s) => {
+    const novo = new Set(s);
+    if (novo.has(chave)) novo.delete(chave); else novo.add(chave);
+    return novo;
+  });
+
+  const totalMarcado = marcados.size;
 
   async function aplicar() {
     setAplicando(true);
     try {
       let n = 0;
       for (const item of plano) {
+        const escolhidos = item.novos.filter((x) => marcados.has(`${item.productId}|${x.mlb}`));
+        if (!escolhidos.length) continue;
         const prod = produtos.find((p) => p.id === item.productId);
         if (!prod) continue;
-        // Une os anúncios atuais com os novos, sem duplicar.
+        // Une os anúncios atuais com os escolhidos, sem duplicar.
         const atuais = mlbsDe(prod).map(normMlb).filter(Boolean);
-        const merged = Array.from(new Set([...atuais, ...item.novos.map((x) => x.mlb)]));
+        const merged = Array.from(new Set([...atuais, ...escolhidos.map((x) => x.mlb)]));
         await upsertProduct(uid, { ...prod, mlbs: merged, mlb: merged[0] ?? "" });
-        n += 1;
+        n += escolhidos.length;
         setFeito(n);
       }
       setConcluido(true);
@@ -904,6 +928,11 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
                   {resumo.semMatch} sem anúncio de mesmo SKU
                 </span>
               )}
+              {resumo.aproximados > 0 && (
+                <span style={{ background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.4)", borderRadius: 6, padding: "4px 9px", color: "#f7c948" }}>
+                  {resumo.aproximados} aproximado(s) — confira antes
+                </span>
+              )}
             </div>
           )}
 
@@ -915,20 +944,49 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
           ) : (
             <div style={{ maxHeight: 340, overflow: "auto", margin: "4px 0 12px" }}>
               {plano.map((item) => (
-                <div key={item.productId} style={{
-                  padding: "9px 0", borderTop: "1px solid var(--border)",
-                }}>
+                <div key={item.productId} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                     <span style={{ fontWeight: 600, fontSize: ".86rem" }}>{item.name || "—"}</span>
                     <span style={{ fontSize: ".72rem", color: "var(--muted)", fontFamily: "monospace" }}>SKU {item.sku}</span>
                   </div>
-                  {item.novos.map((n) => (
-                    <div key={n.mlb} style={{ fontSize: ".76rem", color: "var(--muted)", marginTop: 2 }}>
-                      <span style={{ color: "var(--green)" }}>+</span>{" "}
-                      <span style={{ fontFamily: "monospace", color: "var(--text)" }}>{n.mlb}</span>
-                      {n.titulo && <span> — {n.titulo.slice(0, 46)}</span>}
+
+                  {item.atuais.length > 0 && (
+                    <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 3 }}>
+                      já vinculado: {item.atuais.map((a) => a.mlb).join(", ")}
                     </div>
-                  ))}
+                  )}
+
+                  {item.novos.map((n) => {
+                    const chave = `${item.productId}|${n.mlb}`;
+                    const on = marcados.has(chave);
+                    return (
+                      <label key={n.mlb} style={{
+                        display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6,
+                        padding: "6px 8px", borderRadius: 6, cursor: "pointer",
+                        background: on ? "rgba(34,197,94,.08)" : "var(--surface2)",
+                        border: `1px solid ${on ? "rgba(34,197,94,.35)" : "var(--border)"}`,
+                      }}>
+                        <input
+                          type="checkbox" checked={on} onChange={() => alterna(chave)}
+                          style={{ marginTop: 3, flexShrink: 0 }}
+                        />
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ fontFamily: "monospace", fontSize: ".76rem", color: "var(--text)" }}>{n.mlb}</span>
+                          {!n.exato && (
+                            <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 5px", borderRadius: 4 }}>
+                              APROXIMADO
+                            </span>
+                          )}
+                          {n.titulo && (
+                            <span style={{ display: "block", fontSize: ".73rem", color: "var(--muted)" }}>{n.titulo.slice(0, 52)}</span>
+                          )}
+                          <span style={{ display: "block", fontSize: ".68rem", color: "var(--muted)", fontFamily: "monospace" }}>
+                            SKU no ML: {n.skuAnuncio || "—"}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -938,8 +996,8 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
 
       <div className="modal-btns">
         {!concluido && plano.length > 0 && !erro && (
-          <button type="button" className="btn btn-success" onClick={aplicar} disabled={aplicando || carregando}>
-            {aplicando ? `Vinculando… ${feito}/${plano.length}` : `Vincular ${resumo?.aVincular ?? plano.length} anúncio(s)`}
+          <button type="button" className="btn btn-success" onClick={aplicar} disabled={aplicando || carregando || totalMarcado === 0}>
+            {aplicando ? `Vinculando… ${feito}` : `Vincular ${totalMarcado} anúncio(s)`}
           </button>
         )}
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={aplicando}>
