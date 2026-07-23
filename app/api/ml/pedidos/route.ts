@@ -51,7 +51,36 @@ export async function GET(req: Request) {
         const d = doc.data();
         ordersMap.set(d.order_id ?? doc.id, d);
       }
-    const orders = Array.from(ordersMap.values());
+
+    /**
+     * Compra com produtos diferentes vira um pacote: o comprador fez UMA venda,
+     * mas a API devolve um pedido por produto. Sem juntar, cada linha mostrava
+     * só parte da compra e o lucro real da venda não aparecia em lugar nenhum.
+     */
+    const porPacote = new Map<string, FirebaseFirestore.DocumentData[]>();
+    for (const d of ordersMap.values()) {
+      const chave = String(d.pack_id ?? "") || String(d.order_id ?? "");
+      const arr = porPacote.get(chave) ?? [];
+      arr.push(d);
+      porPacote.set(chave, arr);
+    }
+
+    const orders = Array.from(porPacote.values()).map((grupo) => {
+      if (grupo.length === 1) return grupo[0];
+      // Mais antigo primeiro: a venda herda a data e o id do primeiro pedido.
+      grupo.sort((a, b) => String(a.date_created ?? "").localeCompare(String(b.date_created ?? "")));
+      const base = grupo[0];
+      return {
+        ...base,
+        order_id: String(base.pack_id ?? base.order_id ?? ""),
+        // O frete é do pacote inteiro; somar o de cada pedido contaria duplicado
+        // quando o ML repete o valor. Usamos o maior informado no grupo.
+        shipping_cost: grupo.reduce((s, o) => Math.max(s, Number(o.shipping_cost ?? 0)), 0),
+        total_amount: grupo.reduce((s, o) => s + Number(o.total_amount ?? 0), 0),
+        items: grupo.flatMap((o) => (o.items ?? []) as Record<string, unknown>[]),
+        pedidosNoPacote: grupo.length,
+      };
+    });
 
     // Índice de produtos
     const prodSnap = await db.collection("estoque").get();
@@ -145,11 +174,13 @@ export async function GET(req: Request) {
         data: String(o.date_created ?? "").slice(0, 10),
         hora: String(o.date_created ?? "").slice(11, 16),
         status: String(o.status ?? ""),
-        produto: nomes.join(", "),
+        // Sem repetir nome quando o mesmo produto vem em mais de uma linha.
+        produto: Array.from(new Set(nomes)).join(", "),
         qtd: totalUnits,
         valor: Number(o.total_amount ?? 0),
         bruto, retorno, cmv, envio, taxaML, imposto,
         lucro, margem, vinculado, itens,
+        pedidosNoPacote: Number(o.pedidosNoPacote ?? 1),
       };
     });
 

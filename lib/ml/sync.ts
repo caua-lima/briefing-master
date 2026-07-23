@@ -296,6 +296,12 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
           ? String((o.buyer as Record<string, unknown>).id)
           : null,
         items: mapOrderItems(o),
+        /**
+         * Compra de produtos diferentes vira um pacote no ML: uma venda para o
+         * comprador, mas vários pedidos na API. Sem o pack_id não dá para
+         * remontar a venda inteira nem saber o lucro real dela.
+         */
+        pack_id: o.pack_id ? String(o.pack_id) : null,
         updatedAt: new Date().toISOString(),
       };
       if (moneyRelease) doc.money_release_date = moneyRelease;

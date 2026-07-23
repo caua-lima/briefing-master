@@ -37,6 +37,8 @@ type Pedido = {
   margem: number;
   vinculado: boolean;
   itens?: ItemPedido[];
+  /** >1 quando a venda é um pacote: vários pedidos do ML na mesma compra. */
+  pedidosNoPacote?: number;
 };
 
 function monthRange() {
@@ -103,7 +105,8 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
       {itens.length > 1 && (
         <div>
           <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)", marginBottom: 4 }}>
-            {itens.length} produtos neste pedido
+            {itens.length} produtos nesta venda
+            {(p.pedidosNoPacote ?? 1) > 1 && ` · pacote de ${p.pedidosNoPacote} pedidos do ML`}
           </div>
           {itens.map((it, i) => (
             <div key={`${it.mlb}-${i}`} style={{ padding: "6px 0", borderTop: i ? "1px solid var(--border)" : undefined }}>
@@ -367,6 +370,11 @@ export default function PedidosTab() {
                         <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
                           {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                          {(p.itens?.length ?? 0) > 1 && (
+                            <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--accent)", background: "rgba(79,142,247,.14)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
+                              {p.itens?.length} PRODUTOS
+                            </span>
+                          )}
                           <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
                         </td>
                         <td style={{ color: "var(--muted)" }}>{p.qtd}</td>

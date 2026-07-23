@@ -19,6 +19,8 @@ export type OrderDoc = {
   total_amount: number;
   shipping_id?: string;
   shipping_cost?: number | null;
+  /** Pacote: agrupa os pedidos de uma mesma compra com produtos diferentes. */
+  pack_id?: string | null;
   items: OrderItemDoc[];
 };
 
@@ -74,6 +76,7 @@ export async function fetchOrdersLive(
           date_created: String(o.date_created ?? ""),
           total_amount: Number(o.total_amount ?? 0),
           shipping_id: String((o.shipping as Record<string, unknown>)?.id ?? ""),
+          pack_id: o.pack_id ? String(o.pack_id) : null,
           items: rawItems.map((it) => {
             const itemObj = (it.item as Record<string, unknown>) ?? {};
             const itemId = String(itemObj.id ?? "").trim();
