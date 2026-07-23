@@ -1034,17 +1034,28 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
   const [desde, setDesde] = useState(todayISO());
   const [salvando, setSalvando] = useState(false);
   const [feito, setFeito] = useState(0);
+  // Todos marcados de início: o caso comum é aplicar em tudo, e desmarcar é
+  // mais rápido do que marcar produto por produto.
+  const [marcados, setMarcados] = useState<Set<string>>(() => new Set(produtos.map((p) => p.id)));
 
   const pct = parseNum(valor);
-  const jaTem = produtos.filter((p) => parseNum(p.imposto ?? "0") > 0);
+  const alvos = produtos.filter((p) => marcados.has(p.id));
+  const jaTem = alvos.filter((p) => parseNum(p.imposto ?? "0") > 0);
+
+  const alterna = (id: string) => setMarcados((s) => {
+    const novo = new Set(s);
+    if (novo.has(id)) novo.delete(id); else novo.add(id);
+    return novo;
+  });
 
   async function aplicar() {
     if (!Number.isFinite(pct) || pct < 0) { alert("Informe um percentual válido."); return; }
     if (!desde) { alert("Informe a data de início."); return; }
+    if (!alvos.length) { alert("Selecione ao menos um produto."); return; }
     setSalvando(true);
     try {
       let n = 0;
-      for (const p of produtos) {
+      for (const p of alvos) {
         /**
          * Substitui a faixa da mesma data e mantém as demais: assim dá pra
          * corrigir a alíquota sem perder o histórico de vigências.
@@ -1091,16 +1102,57 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
         />
       </div>
 
+      <div className="config-field" style={{ marginTop: 4 }}>
+        <label style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <span>Produtos ({alvos.length} de {produtos.length})</span>
+          <span style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button" className="btn btn-ghost btn-xs"
+              onClick={() => setMarcados(new Set(produtos.map((p) => p.id)))}
+            >
+              todos
+            </button>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMarcados(new Set())}>
+              nenhum
+            </button>
+          </span>
+        </label>
+        <div style={{
+          maxHeight: 220, overflow: "auto", borderRadius: 8,
+          border: "1px solid var(--border)", background: "var(--surface2)", padding: 6,
+        }}>
+          {produtos.map((p) => {
+            const on = marcados.has(p.id);
+            const atual = parseNum(p.imposto ?? "0");
+            return (
+              <label key={p.id} style={{
+                display: "flex", gap: 8, alignItems: "center", padding: "6px 8px",
+                borderRadius: 6, cursor: "pointer", background: on ? "rgba(79,142,247,.1)" : undefined,
+              }}>
+                <input type="checkbox" checked={on} onChange={() => alterna(p.id)} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: ".84rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.name || "Sem nome"}
+                </span>
+                <span style={{ fontSize: ".74rem", color: atual > 0 ? "#f7c948" : "var(--muted)", whiteSpace: "nowrap" }}>
+                  {atual > 0 ? `hoje ${atual}%` : "sem imposto"}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
       <div style={{
         marginTop: 12, padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
         background: "var(--surface2)", border: "1px solid var(--border)",
       }}>
-        Vai aplicar <b>{pct}%</b> em <b>{produtos.length} produto{produtos.length === 1 ? "" : "s"}</b>
-        {escopoBusca ? <> — só os que aparecem na busca “{escopoBusca}”.</> : <> — todos os da lista.</>}
+        Vai aplicar <b>{pct}%</b> em <b>{alvos.length} produto{alvos.length === 1 ? "" : "s"}</b>
+        {escopoBusca ? <> — a lista mostra só os da busca “{escopoBusca}”.</> : <>.</>}
         {jaTem.length > 0 && (
           <div style={{ marginTop: 6, color: "#f7c948" }}>
-            {jaTem.length} já {jaTem.length === 1 ? "tem" : "têm"} imposto e será{jaTem.length === 1 ? "" : "ão"} sobrescrito
-            {jaTem.length === 1 ? "" : "s"}.
+            {jaTem.length === 1
+              ? "1 deles já tem imposto e será sobrescrito."
+              : `${jaTem.length} deles já têm imposto e serão sobrescritos.`}
           </div>
         )}
       </div>
@@ -1114,8 +1166,8 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
       </div>
 
       <div className="modal-btns">
-        <button type="button" className="btn btn-success" onClick={aplicar} disabled={salvando}>
-          {salvando ? `Aplicando… ${feito}/${produtos.length}` : `Aplicar em ${produtos.length}`}
+        <button type="button" className="btn btn-success" onClick={aplicar} disabled={salvando || alvos.length === 0}>
+          {salvando ? `Aplicando… ${feito}/${alvos.length}` : `Aplicar em ${alvos.length}`}
         </button>
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={salvando}>Cancelar</button>
       </div>
