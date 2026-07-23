@@ -129,6 +129,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [impostoMassa, setImpostoMassa] = useState(false);
+  const [vincularSku, setVincularSku] = useState(false);
 
   const carregarEstoque = useCallback(async () => {
     setLoadingML(true);
@@ -200,6 +201,9 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         </div>
         {canEdit && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVincularSku(true)}>
+              Vincular por SKU
+            </button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setImpostoMassa(true)}>
               Imposto em massa
             </button>
@@ -284,6 +288,10 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           escopoBusca={search.trim()}
           onClose={() => setImpostoMassa(false)}
         />
+      )}
+
+      {vincularSku && (
+        <VincularSkuModal uid={uid} produtos={data.products} onClose={() => setVincularSku(false)} />
       )}
 
       {editProduct && (
@@ -787,6 +795,161 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
  * Ou seja, mudar aqui muda também o lucro dos meses já fechados — por isso o
  * aviso é explícito antes de gravar.
  */
+// ── Vincular anúncio ao produto pelo SKU ──────────────────────────────────
+/**
+ * Puxa do ML o SKU de cada anúncio e sugere vincular ao produto de mesmo SKU.
+ * Só sugere; a gravação acontece aqui no cliente, com a confirmação do dono,
+ * porque é ele quem tem permissão de escrever no Estoque.
+ */
+type PlanoSku = { productId: string; name: string; sku: string; novos: { mlb: string; titulo: string }[] };
+type ResumoSku = { produtos: number; anunciosDaConta: number; anunciosLidos: number; semSku: number; semMatch: number; aVincular: number };
+
+function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: Product[]; onClose: () => void }) {
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [plano, setPlano] = useState<PlanoSku[]>([]);
+  const [resumo, setResumo] = useState<ResumoSku | null>(null);
+  const [aplicando, setAplicando] = useState(false);
+  const [feito, setFeito] = useState(0);
+  const [concluido, setConcluido] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const r = await authedFetch("/api/ml/vincular-sku", { cache: "no-store" });
+        const txt = await r.text();
+        if (!vivo) return;
+        if (!r.ok) { setErro(`HTTP ${r.status} — ${txt.slice(0, 300)}`); }
+        else {
+          const j = JSON.parse(txt) as { plano?: PlanoSku[]; resumo?: ResumoSku };
+          setPlano(j.plano ?? []);
+          setResumo(j.resumo ?? null);
+        }
+      } catch (e) {
+        if (vivo) setErro(`Falhou: ${String(e).slice(0, 200)}`);
+      } finally {
+        if (vivo) setCarregando(false);
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  async function aplicar() {
+    setAplicando(true);
+    try {
+      let n = 0;
+      for (const item of plano) {
+        const prod = produtos.find((p) => p.id === item.productId);
+        if (!prod) continue;
+        // Une os anúncios atuais com os novos, sem duplicar.
+        const atuais = mlbsDe(prod).map(normMlb).filter(Boolean);
+        const merged = Array.from(new Set([...atuais, ...item.novos.map((x) => x.mlb)]));
+        await upsertProduct(uid, { ...prod, mlbs: merged, mlb: merged[0] ?? "" });
+        n += 1;
+        setFeito(n);
+      }
+      setConcluido(true);
+    } catch (e) {
+      alert("Erro ao vincular: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose}>
+      <div className="modal-title">Vincular anúncios por SKU</div>
+      <div className="modal-sub">liga cada produto ao anúncio do ML que tem o mesmo SKU</div>
+
+      {carregando ? (
+        <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>
+          Lendo os anúncios do Mercado Livre…
+        </div>
+      ) : erro ? (
+        <div style={{
+          margin: "12px 0", padding: 10, borderRadius: 8,
+          background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.4)",
+          fontFamily: "ui-monospace, monospace", fontSize: ".72rem", whiteSpace: "pre-wrap",
+        }}>{erro}</div>
+      ) : concluido ? (
+        <div style={{
+          margin: "12px 0", padding: "12px 14px", borderRadius: 8,
+          background: "rgba(34,197,94,.1)", border: "1px solid rgba(34,197,94,.4)",
+          color: "var(--green)", fontSize: ".86rem",
+        }}>
+          <b>{feito} produto{feito === 1 ? "" : "s"} vinculado{feito === 1 ? "" : "s"}.</b> Os dados do ML
+          já passam a bater com esses anúncios.
+        </div>
+      ) : (
+        <>
+          {resumo && (
+            <div style={{
+              display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0",
+              fontSize: ".76rem", color: "var(--muted)",
+            }}>
+              <span style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 9px" }}>
+                {resumo.anunciosLidos} anúncios lidos
+              </span>
+              <span style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 9px" }}>
+                <b style={{ color: "var(--green)" }}>{resumo.aVincular}</b> vínculo(s) a criar
+              </span>
+              {resumo.semSku > 0 && (
+                <span style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 9px" }}>
+                  {resumo.semSku} produto(s) sem SKU
+                </span>
+              )}
+              {resumo.semMatch > 0 && (
+                <span style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 9px" }}>
+                  {resumo.semMatch} sem anúncio de mesmo SKU
+                </span>
+              )}
+            </div>
+          )}
+
+          {plano.length === 0 ? (
+            <div style={{ padding: "16px 0", fontSize: ".86rem", color: "var(--muted)", lineHeight: 1.6 }}>
+              Nada a vincular — todo produto com SKU já está ligado ao anúncio correspondente.
+              {!!resumo?.semSku && <> Os {resumo.semSku} produto(s) sem SKU precisam do código preenchido na ficha para casar.</>}
+            </div>
+          ) : (
+            <div style={{ maxHeight: 340, overflow: "auto", margin: "4px 0 12px" }}>
+              {plano.map((item) => (
+                <div key={item.productId} style={{
+                  padding: "9px 0", borderTop: "1px solid var(--border)",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                    <span style={{ fontWeight: 600, fontSize: ".86rem" }}>{item.name || "—"}</span>
+                    <span style={{ fontSize: ".72rem", color: "var(--muted)", fontFamily: "monospace" }}>SKU {item.sku}</span>
+                  </div>
+                  {item.novos.map((n) => (
+                    <div key={n.mlb} style={{ fontSize: ".76rem", color: "var(--muted)", marginTop: 2 }}>
+                      <span style={{ color: "var(--green)" }}>+</span>{" "}
+                      <span style={{ fontFamily: "monospace", color: "var(--text)" }}>{n.mlb}</span>
+                      {n.titulo && <span> — {n.titulo.slice(0, 46)}</span>}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="modal-btns">
+        {!concluido && plano.length > 0 && !erro && (
+          <button type="button" className="btn btn-success" onClick={aplicar} disabled={aplicando || carregando}>
+            {aplicando ? `Vinculando… ${feito}/${plano.length}` : `Vincular ${resumo?.aVincular ?? plano.length} anúncio(s)`}
+          </button>
+        )}
+        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={aplicando}>
+          {concluido ? "Fechar" : "Cancelar"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
   uid: string; produtos: Product[]; escopoBusca: string; onClose: () => void;
 }) {
