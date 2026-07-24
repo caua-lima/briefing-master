@@ -267,6 +267,102 @@ function CurvaABC({ anuncios }: { anuncios: AnuncioResult[] }) {
   );
 }
 
+// ── Melhores dias da semana ────────────────────────────────────
+const DIAS_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+// Ordem de exibição: começa na segunda, como a semana comercial.
+const ORDEM_DIAS = [1, 2, 3, 4, 5, 6, 0];
+
+function MelhoresDias({ serie, from, to }: { serie: { data: string; faturamento: number }[]; from?: string; to?: string }) {
+  const dados = useMemo(() => {
+    if (!from || !to) return null;
+    const fat = new Map(serie.map((s) => [s.data, s.faturamento]));
+
+    // Não conta dia futuro do mês corrente: ele tem 0 e afundaria a média do
+    // dia da semana em que cai. O limite é hoje (data local).
+    const hoje = new Date();
+    const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+    const fimReal = to < hojeISO ? to : hojeISO;
+    if (fimReal < from) return null;
+
+    const soma = new Array(7).fill(0);
+    const dias = new Array(7).fill(0);
+
+    const [fy, fm, fd] = from.split("-").map(Number);
+    const [ty, tm, td] = fimReal.split("-").map(Number);
+    // Percorre data a data no fuso local (new Date(y,m,d) evita o desvio de UTC).
+    const cur = new Date(fy, fm - 1, fd);
+    const fim = new Date(ty, tm - 1, td);
+    while (cur <= fim) {
+      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+      const wd = cur.getDay();
+      soma[wd] += fat.get(iso) ?? 0;
+      dias[wd] += 1;
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const linhas = ORDEM_DIAS.map((wd) => ({
+      wd,
+      nome: DIAS_SEMANA[wd],
+      media: dias[wd] > 0 ? soma[wd] / dias[wd] : 0,
+      total: soma[wd],
+      amostras: dias[wd],
+    }));
+    const totalDias = dias.reduce((s: number, n: number) => s + n, 0);
+    const maiorMedia = Math.max(...linhas.map((l) => l.media), 0);
+    const melhor = [...linhas].filter((l) => l.amostras > 0).sort((a, b) => b.media - a.media)[0] ?? null;
+    return { linhas, maiorMedia, melhor, totalDias };
+  }, [serie, from, to]);
+
+  if (!dados || dados.totalDias === 0 || dados.maiorMedia === 0) return null;
+  const { linhas, maiorMedia, melhor } = dados;
+
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 6 }}>
+        <span className="panel-title">Melhores dias da semana</span>
+        <span className="panel-sub">faturamento médio por dia · {dados.totalDias} dia(s) no período</span>
+      </div>
+
+      {melhor && (
+        <div style={{ fontSize: ".82rem", color: "var(--muted)", marginBottom: 12 }}>
+          Seu dia mais forte é <b style={{ color: "var(--green)" }}>{melhor.nome.toLowerCase()}</b>,
+          média de <b style={{ color: "var(--text)" }}>{fmtBRL(melhor.media)}</b> por dia.
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {linhas.map((l) => {
+          const ehMelhor = melhor?.wd === l.wd;
+          const larg = maiorMedia > 0 ? (l.media / maiorMedia) * 100 : 0;
+          return (
+            <div key={l.wd} style={{ display: "grid", gridTemplateColumns: "78px 1fr auto", gap: 10, alignItems: "center" }}>
+              <span style={{ fontSize: ".8rem", fontWeight: ehMelhor ? 700 : 500, color: ehMelhor ? "var(--green)" : "var(--text)" }}>
+                {l.nome}
+              </span>
+              <div style={{ height: 20, borderRadius: 6, background: "var(--surface2)", overflow: "hidden" }}>
+                <div style={{
+                  width: `${larg}%`, height: "100%", borderRadius: 6,
+                  background: ehMelhor ? "var(--green)" : "var(--accent)",
+                  opacity: l.amostras > 0 ? (ehMelhor ? 0.9 : 0.55) : 0.2,
+                  transition: "width .3s",
+                }} />
+              </div>
+              <span style={{ fontSize: ".8rem", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: ehMelhor ? "var(--text)" : "var(--muted)", fontWeight: ehMelhor ? 700 : 400 }}>
+                {l.amostras > 0 ? fmtBRL(l.media) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.5 }}>
+        Média por dia, não o total — assim compara justo mesmo quando um dia da semana
+        aparece mais vezes no período. Amplie a data no topo para basear em mais semanas.
+      </div>
+    </div>
+  );
+}
+
 // ── Devoluções (detalhe com motivo/produto) ────────────────────
 function DevolucoesPanel({ total, detalhe }: { total: number; detalhe: Devolucao[] }) {
   const tipoLabel = (t: string) => (t === "devolucao" ? "Devolução" : t === "cancelamento" ? "Cancelamento" : t || "—");
@@ -911,6 +1007,9 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
 
           {/* Média de vendas por dia */}
           <MediaVendasDia anuncios={mlMetrics?.anuncios ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
+
+          {/* Melhores dias da semana */}
+          <MelhoresDias serie={mlMetrics?.serieDiaria ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
 
           {/* Curva ABC de produtos */}
           <CurvaABC anuncios={mlMetrics?.anuncios ?? []} />
