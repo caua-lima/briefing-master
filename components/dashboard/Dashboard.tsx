@@ -637,7 +637,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
               <tr key={a.item_id} style={a.semVenda ? { opacity: 0.72 } : undefined}>
                 <td>
                   <span title={a.title} style={{ fontWeight: 600 }}>{a.title}</span>
-                  {a.semVenda && <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5 }}>SEM VENDA</span>}
+                  {a.semVenda && <span title="Anúncio gastou em ADS mas não vendeu neste período. Se você excluiu o anúncio, o gasto anterior continua aqui porque foi dinheiro real pago ao ML." style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, cursor: "help" }}>SÓ ADS</span>}
                   {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
                 </td>
                 <td style={{ fontWeight: 700 }}>{a.vendas || "—"}</td>
