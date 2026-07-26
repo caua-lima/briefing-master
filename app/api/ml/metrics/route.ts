@@ -61,6 +61,7 @@ type Aggregates = {
   anuncios: AnuncioResult[];
   pedidosSemVinculo: number;
   ordersCount: number;
+  reconc: { count: number; nosso: number; real: number };
 };
 
 function parseDateParam(p: string | null) {
@@ -143,6 +144,16 @@ function computeAggregates(
   let totalTaxasML = 0;
   let pedidosSemVinculo = 0;
 
+  /**
+   * Conferência contra o dinheiro real do Mercado Pago. Para cada pedido com
+   * net_received (líquido que caiu), somamos o que a NOSSA conta diz que o ML
+   * repassa: total − taxa de venda − frete. Se o real vier menor, existe um
+   * custo do ML que não estamos subtraindo, e a margem está otimista por isso.
+   */
+  let reconcCount = 0;
+  let reconcNosso = 0;   // total − sale_fee − frete (nossa estimativa do repasse)
+  let reconcReal = 0;    // net_received_amount (o que o MP de fato liberou)
+
   const anunciosMap = new Map<string, AnuncioResult>();
   // Um pedido pode ter várias unidades do mesmo anúncio: 'vendas' conta o
   // PEDIDO uma vez só, enquanto 'qty' soma as unidades.
@@ -171,6 +182,15 @@ function computeAggregates(
     const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
     const orderShipping = Number(o.shipping_cost ?? 0);
     const envioPerUnit = totalUnits > 0 ? orderShipping / totalUnits : 0;
+
+    // Conferência com o líquido real (independe de o produto estar cadastrado).
+    const net = Number(o.net_received ?? 0);
+    if (net > 0) {
+      const saleFeeOrder = items.reduce((s, it) => s + Number(it.sale_fee ?? 0) * Number(it.quantity ?? 1), 0);
+      reconcCount += 1;
+      reconcNosso += totalAmt - saleFeeOrder - orderShipping;
+      reconcReal += net;
+    }
 
     let vinculado = false;
 
@@ -281,6 +301,7 @@ function computeAggregates(
     anuncios,
     pedidosSemVinculo,
     ordersCount,
+    reconc: { count: reconcCount, nosso: reconcNosso, real: reconcReal },
   };
 }
 
@@ -517,6 +538,8 @@ export async function GET(req: Request) {
       margemComCustos,
       anuncios: agg.anuncios,
       pedidosSemVinculo: agg.pedidosSemVinculo,
+      // Conferência da margem contra o líquido real do Mercado Pago.
+      reconc: agg.reconc,
       // Breakdown do dia para o card "Vendas do Dia"
       hoje: {
         faturamentoBruto: aggHoje.faturamentoBruto,

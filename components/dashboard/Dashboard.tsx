@@ -77,6 +77,7 @@ type MlMetrics = {
   pedidosSemVinculo:  number;
   hoje:               HojeBreakdown;
   serieDiaria:        { data: string; faturamento: number }[];
+  reconc?:            { count: number; nosso: number; real: number };
   devolucoesDetalhe?: Devolucao[];
   adsDiag?:           unknown;
   adsFalhou?:         boolean;
@@ -263,6 +264,71 @@ function CurvaABC({ anuncios }: { anuncios: AnuncioResult[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ── Conferência da margem com o dinheiro real (Mercado Pago) ────
+function ConferenciaMP({ reconc }: { reconc?: { count: number; nosso: number; real: number } }) {
+  if (!reconc || reconc.count === 0) return null;
+
+  const gap = reconc.nosso - reconc.real; // >0 = ML tirou mais do que a gente conta
+  const pctAbs = reconc.real > 0 ? (Math.abs(gap) / reconc.real) * 100 : 0;
+  // Menos de 1% ou R$5 no período é ruído de arredondamento/fuso, não custo oculto.
+  const ok = Math.abs(gap) < Math.max(5, reconc.real * 0.01);
+  const cor = ok ? "var(--green)" : "var(--red)";
+  const media = gap / reconc.count;
+
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 6 }}>
+        <span className="panel-title">Conferência com o dinheiro real</span>
+        <span className="panel-sub">nossa conta × líquido do Mercado Pago · {reconc.count} pedido(s)</span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>Repasse estimado (nossa conta)</div>
+          <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>{fmtBRL(reconc.nosso)}</div>
+          <div style={{ fontSize: ".68rem", color: "var(--muted)" }}>total − taxa ML − frete</div>
+        </div>
+        <div>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>Caiu de verdade (MP)</div>
+          <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>{fmtBRL(reconc.real)}</div>
+          <div style={{ fontSize: ".68rem", color: "var(--muted)" }}>net_received_amount</div>
+        </div>
+        <div>
+          <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>Diferença</div>
+          <div style={{ fontSize: "1.05rem", fontWeight: 800, color: cor }}>
+            {gap >= 0 ? "−" : "+"}{fmtBRL(Math.abs(gap))}
+          </div>
+          <div style={{ fontSize: ".68rem", color: "var(--muted)" }}>{pctAbs.toFixed(1)}% do líquido</div>
+        </div>
+      </div>
+
+      {ok ? (
+        <div style={{
+          padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
+          background: "rgba(34,197,94,.1)", border: "1px solid rgba(34,197,94,.35)", color: "var(--green)",
+        }}>
+          <b>Bate.</b> O que a gente calcula como repasse do ML confere com o que o Mercado Pago
+          liberou. Não há custo de venda escapando — a margem está confiável.
+        </div>
+      ) : (
+        <div style={{
+          padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
+          background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.4)", color: "#f7a8a8",
+        }}>
+          <b>Há {fmtBRL(Math.abs(gap))} de diferença</b> ({fmtBRL(Math.abs(media))} por pedido).{" "}
+          {gap > 0
+            ? "O ML repassou MENOS do que a nossa conta previa — existe um custo de venda que não estamos descontando (financiamento, tarifa fixa ou comissão maior). A margem real é mais baixa do que a mostrada nesta diferença."
+            : "O MP liberou MAIS do que a nossa conta previa — provável reembolso de frete ou tarifa. A margem real é um pouco melhor."}
+          <div style={{ marginTop: 6, color: "var(--muted)" }}>
+            Não inclui a taxa mensal de armazenagem do Full, que o ML cobra fora da venda — essa
+            entra à mão na aba Custos.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1007,6 +1073,9 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
 
           {/* Média de vendas por dia */}
           <MediaVendasDia anuncios={mlMetrics?.anuncios ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
+
+          {/* Conferência da margem contra o dinheiro real */}
+          <ConferenciaMP reconc={mlMetrics?.reconc} />
 
           {/* Melhores dias da semana */}
           <MelhoresDias serie={mlMetrics?.serieDiaria ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
