@@ -134,7 +134,18 @@ export async function GET(req: Request) {
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
       const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
-      const lucroLiquido = lucroAntesAds - a.cost; // já descontando o ads
+      const lucroLiquido = lucroAntesAds - a.cost; // GERAL: todas as vendas − ads
+
+      /**
+       * Lucro considerando SÓ as vendas diretas do anúncio. Aplica a margem do
+       * produto (lucro/receita) sobre a receita direta — não temos CMV/taxa
+       * separados por venda direta, então a proporção é a melhor aproximação.
+       * Responde: o ad se paga só com o que ele converte na hora?
+       */
+      const margemItem = v.receita > 0 ? lucroAntesAds / v.receita : 0;
+      const lucroDiretoAntesAds = a.directSales * margemItem;
+      const lucroDiretoLiquido = lucroDiretoAntesAds - a.cost;
+
       return {
         itemId: a.itemId, title: a.title,
         clicks: a.clicks, prints: a.prints, cost: a.cost,
@@ -142,6 +153,7 @@ export async function GET(req: Request) {
         adSales: a.sales, adUnits: a.units,
         totalSales: v.receita, totalUnits: v.unidades,
         lucroAntesAds, lucroLiquido,
+        lucroDiretoAntesAds, lucroDiretoLiquido,
       };
     }).sort((x, y) => y.cost - x.cost);
 

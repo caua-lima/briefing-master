@@ -12,6 +12,7 @@ type AdItem = {
   adSales: number; adUnits: number;
   totalSales: number; totalUnits: number;
   lucroAntesAds: number; lucroLiquido: number;
+  lucroDiretoAntesAds: number; lucroDiretoLiquido: number;
 };
 
 type Modo = "pub" | "geral";
@@ -62,8 +63,9 @@ export default function AdsTab() {
     a.direct += i.directSales; a.directUn += i.directUnits;
     a.adSales += i.adSales; a.total += i.totalSales; a.totalUn += i.totalUnits;
     a.lucroAntes += i.lucroAntesAds; a.lucroLiq += i.lucroLiquido;
+    a.lucroLiqDireto += i.lucroDiretoLiquido;
     return a;
-  }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0, lucroAntes: 0, lucroLiq: 0 }), [items]);
+  }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0, lucroAntes: 0, lucroLiq: 0, lucroLiqDireto: 0 }), [items]);
 
   const pub = modo === "pub";
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
@@ -80,7 +82,7 @@ export default function AdsTab() {
     { lbl: "ACOS direto", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas diretas", cor: corAcos(acos, t.direct > 0) },
     { lbl: "Impressões", val: num(t.prints), tone: "acc", sub: `CTR ${num(t.prints > 0 ? (t.clicks / t.prints) * 100 : 0, 2)}%` },
     { lbl: "Cliques", val: num(t.clicks), tone: "acc", sub: `CPC ${fmtBRL(t.clicks > 0 ? t.cost / t.clicks : 0)}` },
-    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads" : "ads não se paga", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Lucro após ads (direto)", val: fmtBRL(t.lucroLiqDireto), tone: t.lucroLiqDireto >= 0 ? "pos" : "neg", sub: `geral: ${fmtBRL(t.lucroLiq)}`, cor: t.lucroLiqDireto >= 0 ? "var(--green)" : "var(--red)" },
   ] : [
     { lbl: "Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
     { lbl: "Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
@@ -88,7 +90,7 @@ export default function AdsTab() {
     { lbl: "TACOS", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas totais", cor: corAcos(acos, t.total > 0) },
     { lbl: "Vendas via ads", val: `${num(pctViaAds, 0)}%`, tone: "acc", sub: `${fmtBRL(t.adSales)} vieram do ad` },
     { lbl: "Orgânico", val: `${num(100 - pctViaAds, 0)}%`, tone: "pos", sub: "vendas sem tráfego pago" },
-    { lbl: "Lucro após ads", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: t.lucroLiq >= 0 ? "vendas cobrem o ads" : "ads não se paga", cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Lucro após ads (geral)", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: `direto: ${fmtBRL(t.lucroLiqDireto)}`, cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
   return (
