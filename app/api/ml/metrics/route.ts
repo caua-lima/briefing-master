@@ -79,6 +79,18 @@ function isNaoVenda(status: unknown): boolean {
   return s === "cancelled" || s === "invalid";
 }
 
+/**
+ * Devolução concluída? Só reverte a venda quando a disputa fechou. Um claim
+ * ainda "opened"/"in_process" pode terminar sem devolução (você ganha a
+ * disputa), então segura. Status desconhecido/vazio conta como concluída para
+ * não parar de descontar devolução real por causa de um vocabulário novo do ML.
+ */
+function devolucaoConcluida(r: Record<string, unknown>): boolean {
+  const txt = `${String(r.status ?? "")} ${String(r.stage ?? "")}`.toLowerCase();
+  const emAberto = /open|process|pending|progress|review|recontact|dispute|in_?mediation/.test(txt);
+  return !emAberto;
+}
+
 // Remove prefixo "MLB" e retorna apenas o número, em maiúsculas
 function normalizeItemId(s: string): string {
   return s.trim().toUpperCase().replace(/^MLB/, "");
@@ -412,9 +424,17 @@ export async function GET(req: Request) {
     for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
     const cancelIds = new Set<string>();
     const devolIds = new Set<string>();
+    const emAndamentoIds = new Set<string>();
     for (const [id, r] of retMap) {
-      if (String(r.tipo ?? "") === "devolucao") devolIds.add(id);
-      else cancelIds.add(id); // cancelamento (ou sem tipo definido)
+      if (String(r.tipo ?? "") === "devolucao") {
+        // Só reverte a venda quando a devolução foi concluída. Enquanto está em
+        // disputa, o dinheiro/produto ainda pode ficar com você, então a venda
+        // continua contando — descontar antes da hora mostraria lucro errado.
+        if (devolucaoConcluida(r)) devolIds.add(id);
+        else emAndamentoIds.add(id);
+      } else {
+        cancelIds.add(id); // cancelamento (ou sem tipo definido) já é final
+      }
     }
 
     const agg = computeAggregates(orders, porMlb, porSku, adsByItem, cancelIds, devolIds);
@@ -436,16 +456,26 @@ export async function GET(req: Request) {
     // Diagnóstico de ADS quando o total do período vem 0 (identifica a causa)
     const adsDiag = agg.totalAds === 0 && fromStr <= adsTo ? await probeAds(fromStr, adsTo) : null;
 
-    // ── 5. Devoluções (informativo — já excluídas do faturamento/lucro acima) ──
-    const devolucoes = Array.from(retMap.values()).reduce((s, r) => s + Number(r.total_amount ?? 0), 0);
-    const devolucoesDetalhe = Array.from(retMap.values())
-      .map((r) => ({
+    // ── 5. Devoluções ──
+    // Só as concluídas (e os cancelamentos) foram excluídas do lucro acima. As
+    // em andamento seguem contando como venda até a disputa fechar.
+    const devolucoes = Array.from(retMap.entries())
+      .filter(([id]) => !emAndamentoIds.has(id))
+      .reduce((s, [, r]) => s + Number(r.total_amount ?? 0), 0);
+    const devolucoesEmAndamento = Array.from(retMap.entries())
+      .filter(([id]) => emAndamentoIds.has(id))
+      .reduce((s, [, r]) => s + Number(r.total_amount ?? 0), 0);
+    const devolucoesDetalhe = Array.from(retMap.entries())
+      .map(([id, r]) => ({
         order_id: String(r.order_id ?? ""),
         valor: Number(r.total_amount ?? 0),
         data: String(r.date_created ?? "").slice(0, 10),
         motivo: String(r.reason ?? r.motivo ?? ""),
         produto: String(r.produto ?? r.title ?? ""),
         tipo: String(r.tipo ?? r.status ?? ""),
+        // status cru + se está em andamento, para conferência na tela.
+        status: `${String(r.status ?? "")}${r.stage ? ` · ${r.stage}` : ""}`.trim(),
+        emAndamento: emAndamentoIds.has(id),
       }))
       .sort((a, b) => b.valor - a.valor);
 
@@ -521,6 +551,7 @@ export async function GET(req: Request) {
       pedidosHoje: aggHoje.ordersCount,
       ordersCount: agg.ordersCount,
       devolucoes,
+      devolucoesEmAndamento,
       devolucoesDetalhe,
       totalCMV: agg.totalCMV,
       totalAds: agg.totalAds,

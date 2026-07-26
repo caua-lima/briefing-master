@@ -419,6 +419,9 @@ export async function syncClaimsRange(accessToken: string, range: SyncRange): Pr
         claim_id: String(c.id ?? ""),
         tipo: "devolucao",
         status: String(c.status ?? ""),
+        // stage/status dizem se a devolução ainda está em disputa: sem isso não
+        // dá para saber se ela foi concluída antes de descontar do lucro.
+        stage: String(c.stage ?? ""),
         reason: String(c.reason_id ?? c.reason ?? ""),
         produto,
         date_created: String(c.date_created ?? ord?.date_created ?? ""),

@@ -78,6 +78,7 @@ type MlMetrics = {
   hoje:               HojeBreakdown;
   serieDiaria:        { data: string; faturamento: number }[];
   reconc?:            { count: number; nosso: number; real: number };
+  devolucoesEmAndamento?: number;
   devolucoesDetalhe?: Devolucao[];
   adsDiag?:           unknown;
   adsFalhou?:         boolean;
@@ -92,6 +93,8 @@ type Devolucao = {
   motivo:   string;
   produto:  string;
   tipo:     string;
+  status?:      string;
+  emAndamento?: boolean;
 };
 
 // cores usadas na composição de custos (batem com o doughnut)
@@ -430,26 +433,43 @@ function MelhoresDias({ serie, from, to }: { serie: { data: string; faturamento:
 }
 
 // ── Devoluções (detalhe com motivo/produto) ────────────────────
-function DevolucoesPanel({ total, detalhe }: { total: number; detalhe: Devolucao[] }) {
+function DevolucoesPanel({ total, emAndamento, detalhe }: { total: number; emAndamento?: number; detalhe: Devolucao[] }) {
   const tipoLabel = (t: string) => (t === "devolucao" ? "Devolução" : t === "cancelamento" ? "Cancelamento" : t || "—");
+  const nEmAndamento = detalhe.filter((d) => d.emAndamento).length;
   return (
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 10 }}>
         <span className="panel-title">Devoluções</span>
-        <span className="panel-sub">Total: <b style={{ color: "var(--red)" }}>{fmtBRL(total)}</b> · {detalhe.length} caso(s)</span>
+        <span className="panel-sub">Concluídas: <b style={{ color: "var(--red)" }}>{fmtBRL(total)}</b> · {detalhe.length} caso(s)</span>
       </div>
+
+      {(emAndamento ?? 0) > 0 && (
+        <div style={{
+          marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: ".8rem", lineHeight: 1.5,
+          background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", color: "#f7c948",
+        }}>
+          <b>{fmtBRL(emAndamento ?? 0)}</b> em {nEmAndamento} devolução(ões) <b>ainda em disputa</b> —
+          seguem contando como venda no lucro até o Mercado Livre concluir. Só desconto quando fecha.
+        </div>
+      )}
+
       {detalhe.length ? (
         <div className="table-wrapper" style={{ border: "none" }}>
           <table className="tbl-modern">
-            <thead><tr><th>Data</th><th style={{ textAlign: "left" }}>Produto</th><th style={{ textAlign: "left" }}>Motivo</th><th style={{ textAlign: "left" }}>Tipo</th><th>Valor</th></tr></thead>
+            <thead><tr><th>Data</th><th style={{ textAlign: "left" }}>Produto</th><th style={{ textAlign: "left" }}>Motivo</th><th style={{ textAlign: "left" }}>Situação</th><th>Valor</th></tr></thead>
             <tbody>
               {detalhe.map((d, i) => (
-                <tr key={d.order_id + i}>
+                <tr key={d.order_id + i} style={{ opacity: d.emAndamento ? 0.7 : 1 }}>
                   <td style={{ color: "var(--muted)" }}>{d.data}</td>
                   <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{d.produto || "—"}</td>
                   <td style={{ color: "var(--muted)", textAlign: "left" }}>{d.motivo || "—"}</td>
-                  <td style={{ textAlign: "left" }}>{tipoLabel(d.tipo)}</td>
-                  <td style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
+                  <td style={{ textAlign: "left" }}>
+                    {d.emAndamento
+                      ? <span style={{ color: "#f7c948", fontWeight: 600 }}>em disputa</span>
+                      : <span style={{ color: "var(--muted)" }}>{tipoLabel(d.tipo)} · concluída</span>}
+                    {d.status && <span style={{ display: "block", fontSize: ".64rem", color: "var(--muted)" }}>{d.status}</span>}
+                  </td>
+                  <td style={{ color: d.emAndamento ? "#f7c948" : "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
                 </tr>
               ))}
             </tbody>
@@ -474,6 +494,7 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   const stats: { label: string; icon: string; value: number; color: string }[] = [
     { label: "Faturamento bruto", icon: "", value: h.faturamentoBruto, color: "var(--green)" },
     { label: "CMV (produto)",     icon: "", value: h.totalCMV,         color: "var(--red)" },
+    { label: "Imposto",           icon: "", value: h.totalImposto,     color: "var(--red)" },
     { label: "Gasto com ADS",     icon: "", value: h.totalAds,         color: "var(--red)" },
     { label: "Lucro líquido",     icon: "", value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
   ];
@@ -1084,7 +1105,7 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
           <CurvaABC anuncios={mlMetrics?.anuncios ?? []} />
 
           {/* Devoluções detalhadas */}
-          <DevolucoesPanel total={mlMetrics?.devolucoes ?? 0} detalhe={mlMetrics?.devolucoesDetalhe ?? []} />
+          <DevolucoesPanel total={mlMetrics?.devolucoes ?? 0} emAndamento={mlMetrics?.devolucoesEmAndamento} detalhe={mlMetrics?.devolucoesDetalhe ?? []} />
         </>
       )}
     </div>
