@@ -678,6 +678,74 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
   );
 }
 
+// ── Lucro por anúncio, com filtro de data próprio ──────────────
+/**
+ * Envolve a tabela de lucro por anúncio com um período independente do
+ * dashboard. Por padrão segue o período principal (sem refazer a chamada);
+ * ao mudar a data aqui, busca só os anúncios daquele intervalo.
+ */
+function LucroPorAnuncioPanel({ anuncios, from, to }: { anuncios: AnuncioResult[]; from?: string; to?: string }) {
+  const [range, setRange] = useState<{ from: string; to: string }>({ from: from ?? "", to: to ?? "" });
+  const [proprio, setProprio] = useState<AnuncioResult[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState(false);
+
+  const indep = !!proprio && (range.from !== from || range.to !== to);
+
+  // Segue o dashboard enquanto o filtro próprio não estiver ativo.
+  useEffect(() => {
+    if (!proprio) setRange({ from: from ?? "", to: to ?? "" });
+  }, [from, to, proprio]);
+
+  async function aplicar(f: string, t: string) {
+    setRange({ from: f, to: t });
+    // Voltou ao período do dashboard → usa os dados que já vieram, sem refetch.
+    if (f === from && t === to) { setProprio(null); setErro(false); return; }
+    setLoading(true); setErro(false);
+    try {
+      const r = await authedFetch(`/api/ml/metrics?from=${f}&to=${t}`, { cache: "no-store" });
+      if (!r.ok) { setErro(true); setProprio([]); }
+      else { const j = await r.json(); setProprio(j.anuncios ?? []); }
+    } catch {
+      setErro(true); setProprio([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const dados = indep ? (proprio ?? []) : anuncios;
+
+  return (
+    <section className="panel">
+      <div className="panel-head" style={{ marginBottom: 8, gap: 10, flexWrap: "wrap" }}>
+        <span className="panel-title">Lucro por Anúncio</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {indep && (
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => aplicar(from ?? "", to ?? "")}>
+              voltar ao período do dashboard
+            </button>
+          )}
+          <DateRangePicker from={range.from} to={range.to} onApply={aplicar} />
+        </div>
+      </div>
+      <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 14 }}>
+        {indep
+          ? <>Filtro próprio: <b style={{ color: "var(--text)" }}>{formatDateBR(range.from)} a {formatDateBR(range.to)}</b> — independente do dashboard.</>
+          : "Lucro líq. = Retorno − CMV − Frete − Taxa ML − Imposto − ADS · o frete é o que você paga no envio (Full ou próprio)"}
+      </div>
+      {erro ? (
+        <div style={{ color: "var(--red)", fontSize: ".82rem", padding: "12px 0" }}>
+          Não consegui carregar os anúncios desse período. Tente de novo.
+        </div>
+      ) : loading ? (
+        <div style={{ color: "var(--muted)", fontSize: ".85rem", padding: "16px 0", textAlign: "center" }}>Carregando…</div>
+      ) : (
+        <TabelaAnuncios anuncios={dados} />
+      )}
+    </section>
+  );
+}
+
 // ── Média de vendas por dia ────────────────────────────────────
 function diasDoPeriodo(from?: string, to?: string): number {
   if (!from || !to) return 1;
@@ -1081,16 +1149,8 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
             </div>
           </div>
 
-          {/* Lucro por anúncio */}
-          <div className="panel">
-            <div className="panel-head" style={{ marginBottom: 8 }}>
-              <span className="panel-title">Lucro por Anúncio</span>
-            </div>
-            <div style={{ fontSize: ".76rem", color: "var(--muted)", marginBottom: 14 }}>
-              Lucro líq. = Retorno − CMV − Frete − Taxa ML − Imposto − ADS · o frete é o que você paga no envio (Full ou próprio)
-            </div>
-            <TabelaAnuncios anuncios={mlMetrics?.anuncios ?? []} />
-          </div>
+          {/* Lucro por anúncio — com filtro de data próprio */}
+          <LucroPorAnuncioPanel anuncios={mlMetrics?.anuncios ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
 
           {/* Média de vendas por dia */}
           <MediaVendasDia anuncios={mlMetrics?.anuncios ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
