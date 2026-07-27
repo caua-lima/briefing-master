@@ -13,7 +13,21 @@ type AdItem = {
   totalSales: number; totalUnits: number;
   lucroAntesAds: number; lucroLiquido: number;
   lucroDiretoAntesAds: number; lucroDiretoLiquido: number;
+  dailyBudget: number; roasTarget: number; acosTarget: number; lastUpdated: string;
 };
+
+/**
+ * Dias completos desde a última alteração do anúncio. A regra do vendedor: só
+ * mexer de novo depois de 3 dias completos performando — antes disso o ML ainda
+ * está reaprendendo e o número não é confiável.
+ */
+function alteracaoInfo(iso: string): { txt: string; dias: number | null; podeAlterar: boolean } {
+  if (!iso) return { txt: "—", dias: null, podeAlterar: true };
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return { txt: "—", dias: null, podeAlterar: true };
+  const dias = Math.floor((Date.now() - t) / 86400000);
+  return { txt: dias <= 0 ? "hoje" : `há ${dias}d`, dias, podeAlterar: dias >= 3 };
+}
 
 type Modo = "pub" | "geral";
 
@@ -181,6 +195,9 @@ export default function AdsTab() {
                     {pub ? (
                       <tr>
                         <th style={{ textAlign: "left" }}>Anúncio</th>
+                        <th style={{ textAlign: "right" }}>Orç/dia</th>
+                        <th style={{ textAlign: "right" }}>ROAS alvo</th>
+                        <th style={{ textAlign: "right" }}>Alterado</th>
                         <th style={{ textAlign: "right" }}>Impr.</th>
                         <th style={{ textAlign: "right" }}>Cliques</th>
                         <th style={{ textAlign: "right" }}>CTR</th>
@@ -195,6 +212,9 @@ export default function AdsTab() {
                     ) : (
                       <tr>
                         <th style={{ textAlign: "left" }}>Anúncio</th>
+                        <th style={{ textAlign: "right" }}>Orç/dia</th>
+                        <th style={{ textAlign: "right" }}>ROAS alvo</th>
+                        <th style={{ textAlign: "right" }}>Alterado</th>
                         <th style={{ textAlign: "right" }}>Investido</th>
                         <th style={{ textAlign: "right" }}>Vendas totais</th>
                         <th style={{ textAlign: "right" }}>Un</th>
@@ -220,6 +240,18 @@ export default function AdsTab() {
                             {i.title || i.itemId}
                             <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{i.itemId}</span>
                           </td>
+                          <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{i.dailyBudget > 0 ? fmtBRL(i.dailyBudget) : "—"}</td>
+                          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{i.roasTarget > 0 ? `${num(i.roasTarget, 1)}x` : "—"}</td>
+                          {(() => {
+                            const alt = alteracaoInfo(i.lastUpdated);
+                            const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#f7c948";
+                            return (
+                              <td style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}
+                                title={alt.dias == null ? "Data de alteração não informada pelo ML" : alt.podeAlterar ? "Já passou dos 3 dias — pode ajustar" : `Aguarde: só ${alt.dias} dia(s) desde a última alteração (espere 3 completos)`}>
+                                {alt.txt}{alt.dias != null && !alt.podeAlterar ? " ⏳" : ""}
+                              </td>
+                            );
+                          })()}
                           {pub && <>
                             <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.prints)}</td>
                             <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.clicks)}</td>
@@ -240,10 +272,14 @@ export default function AdsTab() {
                 </table>
               </div>
             )}
-            <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)" }}>
+            <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.6 }}>
               {pub
                 ? "Vendas diretas = compras logo após clicar no anúncio · ACOS/ROAS medem só o ad."
                 : "Vendas totais = tudo que o item vendeu (ads + orgânico) · TACOS = investido ÷ vendas totais (quanto menor, mais o ads se paga no geral)."}
+              <div style={{ marginTop: 4 }}>
+                <b>Alterado</b> = quando o anúncio foi mexido pela última vez. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,
+                espere completar 3 dias performando antes de ajustar de novo. <b>Orç/dia</b> e <b>ROAS alvo</b> vêm da configuração da campanha no ML.
+              </div>
             </div>
           </div>
         </>

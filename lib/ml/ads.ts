@@ -282,6 +282,104 @@ export async function getAdsFullByItem(
   }));
 }
 
+export type AdSettings = {
+  itemId: string;
+  dailyBudget: number;   // orçamento diário da campanha (R$); 0 = não informado
+  acosTarget: number;    // meta de ACOS (%); 0 = não informado
+  roasTarget: number;    // meta de ROAS derivada (100/ACOS); 0 = não informado
+  strategy: string;      // estratégia da campanha (texto do ML)
+  lastUpdated: string;   // ISO da última alteração (anúncio ou campanha)
+  status: string;
+};
+
+// número tolerante: aceita 12, "12", "12.5" e objetos { amount } / { value }.
+function numTolerante(v: unknown): number {
+  if (v == null) return 0;
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return numTolerante(o.amount ?? o.value ?? o.daily ?? o.target);
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+function primeiro(o: Record<string, unknown>, chaves: string[]): unknown {
+  for (const k of chaves) if (o[k] != null && o[k] !== "") return o[k];
+  return undefined;
+}
+function dataMaisRecente(...vals: unknown[]): string {
+  let melhor = "";
+  for (const v of vals) {
+    const s = typeof v === "string" ? v : "";
+    if (s && s > melhor) melhor = s;
+  }
+  return melhor;
+}
+
+/**
+ * Configuração de cada anúncio: orçamento diário, meta de ACOS/ROAS e a data da
+ * última alteração — essa última importa porque o vendedor precisa esperar
+ * alguns dias performando antes de mexer de novo. Nomes de campo do ML variam,
+ * então lemos vários candidatos e devolvemos o objeto cru para conferência.
+ */
+export async function getAdsSettingsByItem(
+  mlbs: string[],
+): Promise<{ porItem: Record<string, AdSettings>; amostraItem: unknown; amostraCampanha: unknown }> {
+  const token = await getValidMlAccessToken();
+  const adv = await getAdvertiser(token);
+  const porItem: Record<string, AdSettings> = {};
+  let amostraItem: unknown = null;
+  let amostraCampanha: unknown = null;
+  if (!adv || mlbs.length === 0) return { porItem, amostraItem, amostraCampanha };
+
+  const campanhaCache = new Map<string, Record<string, unknown> | null>();
+  async function pegarCampanha(cid: string): Promise<Record<string, unknown> | null> {
+    if (campanhaCache.has(cid)) return campanhaCache.get(cid)!;
+    let obj: Record<string, unknown> | null = null;
+    for (const url of [`${base(adv!)}/campaigns/${cid}`, `${legado(adv!)}/campaigns/${cid}`]) {
+      try {
+        const r = await get(url, token);
+        if (!r.ok) continue;
+        obj = (await r.json()) as Record<string, unknown>;
+        break;
+      } catch { /* tenta a próxima */ }
+    }
+    campanhaCache.set(cid, obj);
+    return obj;
+  }
+
+  await Promise.all(mlbs.map(async (mlbRaw) => {
+    const mlb = mlbRaw.toUpperCase();
+    try {
+      const r = await get(`${ML_API}/advertising/product_ads/items/${mlb}`, token);
+      if (!r.ok) return;
+      const item = (await r.json()) as Record<string, unknown>;
+      if (!amostraItem) amostraItem = item;
+      const cid = texto(item.campaign_id);
+      const campanha = cid ? await pegarCampanha(cid) : null;
+      if (campanha && !amostraCampanha) amostraCampanha = campanha;
+
+      const src = { ...(campanha ?? {}), ...item }; // item sobrepõe (mais específico)
+      const acos = numTolerante(primeiro(src, ["acos_target", "target_acos", "acos_objective", "acos"]));
+      const budget = numTolerante(primeiro(src, ["daily_budget", "budget", "budget_amount", "daily_budget_amount"]));
+      const lastUpdated = dataMaisRecente(
+        primeiro(item, ["last_updated", "date_last_updated", "last_modified", "date_modified"]),
+        primeiro(campanha ?? {}, ["last_updated", "date_last_updated", "last_modified", "date_modified"]),
+      );
+      porItem[mlb] = {
+        itemId: mlb,
+        dailyBudget: budget,
+        acosTarget: acos,
+        roasTarget: acos > 0 ? 100 / acos : 0,
+        strategy: texto(primeiro(src, ["strategy", "campaign_strategy", "goal"])),
+        lastUpdated,
+        status: texto(primeiro(src, ["status"])),
+      };
+    } catch { /* item fora de ads: ignora */ }
+  }));
+
+  return { porItem, amostraItem, amostraCampanha };
+}
+
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */
 export async function probeAds(from: string, to: string): Promise<Record<string, unknown>> {
   try {

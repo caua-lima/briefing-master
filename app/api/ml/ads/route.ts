@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getAdsFullByItem, probeAds } from "@/lib/ml/ads";
+import { getAdsFullByItem, getAdsSettingsByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 
@@ -131,6 +131,13 @@ export async function GET(req: Request) {
 
     const vendas = vendasPorItem(orders, porMlb, porSku, cancelIds, devolIds);
 
+    // Configuração de cada anúncio (orçamento, meta de ROAS, última alteração).
+    // Best-effort: se falhar, os anúncios ainda saem, só sem esses campos.
+    const mlbsAds = ads.map((a) => a.itemId).filter((s) => /^MLB\d+$/i.test(s));
+    const cfg = await getAdsSettingsByItem(mlbsAds).catch(
+      () => ({ porItem: {} as Record<string, AdSettings>, amostraItem: null, amostraCampanha: null }),
+    );
+
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
       const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
@@ -146,6 +153,7 @@ export async function GET(req: Request) {
       const lucroDiretoAntesAds = a.directSales * margemItem;
       const lucroDiretoLiquido = lucroDiretoAntesAds - a.cost;
 
+      const c = cfg.porItem[a.itemId.toUpperCase()];
       return {
         itemId: a.itemId, title: a.title,
         clicks: a.clicks, prints: a.prints, cost: a.cost,
@@ -154,10 +162,17 @@ export async function GET(req: Request) {
         totalSales: v.receita, totalUnits: v.unidades,
         lucroAntesAds, lucroLiquido,
         lucroDiretoAntesAds, lucroDiretoLiquido,
+        // Configuração do anúncio (0/"" quando o ML não informou).
+        dailyBudget: c?.dailyBudget ?? 0,
+        roasTarget: c?.roasTarget ?? 0,
+        acosTarget: c?.acosTarget ?? 0,
+        lastUpdated: c?.lastUpdated ?? "",
       };
     }).sort((x, y) => y.cost - x.cost);
 
-    return NextResponse.json({ items, from, to });
+    // amostraItem/amostraCampanha: se orçamento/ROAS vierem 0, mostram o
+    // objeto cru do ML para achar o nome de campo certo sem chutar.
+    return NextResponse.json({ items, from, to, cfgAmostra: { item: cfg.amostraItem, campanha: cfg.amostraCampanha } });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "unexpected", details: msg, items: [] }, { status: 500 });
