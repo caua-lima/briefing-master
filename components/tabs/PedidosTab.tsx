@@ -288,7 +288,33 @@ export default function PedidosTab() {
         ) : filtrados.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Nenhum pedido no período.</div>
         ) : modo === "produto" ? (
-          <div className="table-wrapper" style={{ border: "none" }}>
+          <>
+          {/* Celular: cartões */}
+          <div className="ped-cards">
+            {porProduto.map((r) => (
+              <div key={r.mlb || r.produto} className={`ped-card ${r.lucro >= 0 ? "pos" : "neg"}`} style={{ cursor: "default" }}>
+                <div className="ped-card-top">
+                  <span className="ped-card-nome">
+                    {r.produto}
+                    {r.semCadastro && <span className="ped-badge semcad" style={{ marginLeft: 6 }}>SEM CADASTRO</span>}
+                  </span>
+                  <span className="ped-card-lucro" style={{ color: r.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(r.lucro)}</span>
+                </div>
+                <div className="ped-card-meta">
+                  <span><b style={{ color: "var(--accent)" }}>{r.qtd}</b> un · {r.nVendas} venda(s)</span>
+                  {r.mlb && <span>{r.mlb}</span>}
+                  <span className={`tag ${margemTag(r.margem)}`} style={{ marginLeft: "auto" }}>{r.margem.toFixed(1)}%</span>
+                </div>
+                <div className="ped-card-grid">
+                  <div className="ped-card-cell"><span>Faturamento</span><b>{fmtBRL(r.valor)}</b></div>
+                  <div className="ped-card-cell"><span>Retorno</span><b>{fmtBRL(r.retorno)}</b></div>
+                  <div className="ped-card-cell"><span>Custos</span><b style={{ color: "var(--red)" }}>−{fmtBRL(r.custos)}</b></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop: tabela */}
+          <div className="table-wrapper only-desktop" style={{ border: "none" }}>
             <table className="tbl-modern">
               <thead>
                 <tr>
@@ -334,8 +360,47 @@ export default function PedidosTab() {
               </tfoot>
             </table>
           </div>
+          </>
         ) : (
-          <div className="table-wrapper" style={{ border: "none" }}>
+          <>
+          {/* Celular: cartões (clicáveis pra abrir o detalhe) */}
+          <div className="ped-cards">
+            {filtrados.map((p) => {
+              const custos = p.cmv + p.envio + p.taxaML + p.imposto;
+              const aberto = detalhe === p.order_id;
+              return (
+                <div key={p.order_id} className={`ped-card ${p.lucro >= 0 ? "pos" : "neg"}`} onClick={() => setDetalhe(aberto ? null : p.order_id)}>
+                  <div className="ped-card-top">
+                    <span className="ped-card-nome">
+                      {p.produto || "—"}
+                      {!p.vinculado && <span className="ped-badge semcad" style={{ marginLeft: 6 }}>SEM CADASTRO</span>}
+                      {(p.itens?.length ?? 0) > 1 && <span className="ped-badge multi" style={{ marginLeft: 6 }}>{p.itens?.length} PRODUTOS</span>}
+                    </span>
+                    <span className="ped-card-lucro" style={{ color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</span>
+                  </div>
+                  <div className="ped-card-meta">
+                    <span>{p.data.split("-").reverse().join("/")} {p.hora}</span>
+                    <span>#{p.order_id}</span>
+                    <span>{p.qtd} un</span>
+                    <span className={`tag ${margemTag(p.margem)}`} style={{ marginLeft: "auto" }}>{p.margem.toFixed(1)}%</span>
+                  </div>
+                  <div className="ped-card-grid">
+                    <div className="ped-card-cell"><span>Valor</span><b>{fmtBRL(p.valor)}</b></div>
+                    <div className="ped-card-cell"><span>Retorno</span><b>{fmtBRL(p.retorno)}</b></div>
+                    <div className="ped-card-cell"><span>Custos</span><b style={{ color: "var(--red)" }}>−{fmtBRL(custos)}</b></div>
+                    <div className="ped-card-cell"><span style={{ color: "var(--accent)" }}>{aberto ? "▴ fechar" : "▾ detalhes"}</span></div>
+                  </div>
+                  {aberto && (
+                    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8, borderTop: "1px solid var(--border)" }}>
+                      <DetalhePedido pedido={p} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {/* Desktop: tabela */}
+          <div className="table-wrapper only-desktop" style={{ border: "none" }}>
             <table className="tbl-modern">
               <thead>
                 <tr>
@@ -400,6 +465,7 @@ export default function PedidosTab() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

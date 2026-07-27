@@ -304,6 +304,24 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .dgoal-bar{height:10px;border-radius:99px;background:var(--surface2);overflow:hidden}
 .dgoal-fill{height:100%;border-radius:99px;transition:width .6s ease}
 
+/* ===== Pedidos: cartões no celular (tabela vira card) ===== */
+.ped-cards{display:none;flex-direction:column;gap:10px}
+.ped-card{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;position:relative;overflow:hidden;cursor:pointer}
+.ped-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--muted)}
+.ped-card.pos::before{background:var(--green)}
+.ped-card.neg::before{background:var(--red)}
+.ped-card-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.ped-card-nome{font-weight:700;font-size:.9rem;line-height:1.25;word-break:break-word}
+.ped-card-lucro{font-weight:800;font-size:1rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ped-card-meta{font-size:.7rem;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ped-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.ped-card-cell{display:flex;justify-content:space-between;gap:8px;font-size:.8rem}
+.ped-card-cell span{color:var(--muted)}
+.ped-card-cell b{font-variant-numeric:tabular-nums}
+.ped-badge{font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px}
+.ped-badge.semcad{color:#f7c948;background:rgba(247,201,72,.12)}
+.ped-badge.multi{color:var(--accent);background:rgba(79,142,247,.14)}
+
 /* conteúdo principal */
 .app-content{padding:24px}
 
@@ -333,6 +351,9 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   table thead th,table tbody td{padding:9px 9px;font-size:.8rem}
   /* rótulos de painel um pouco maiores para leitura no celular */
   .panel-title{font-size:.74rem}
+  /* Pedidos: no celular some a tabela larga, entram os cartões */
+  .only-desktop{display:none}
+  .ped-cards{display:flex}
 }
 
 @media(max-width:440px){
