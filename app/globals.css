@@ -230,7 +230,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .date-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:.82rem}
 
 /* Panels */
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;min-width:0;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 .panel-title{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800}
 .panel-sub{font-size:.74rem;color:var(--muted)}
@@ -243,20 +243,20 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .hero-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
 .hero-stat{background:rgba(15,17,23,.5);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
 .hero-stat .lbl{font-size:.72rem;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
-.hero-stat .val{font-size:1.5rem;font-weight:800;line-height:1.05}
+.hero-stat .val{font-size:1.5rem;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .hero-foot{font-size:.72rem;color:var(--muted);margin-top:12px}
 
 /* KPI grid */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
-.kpi{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px 16px 22px;overflow:hidden;transition:transform .15s,border-color .15s}
-.kpi:hover{transform:translateY(-2px);border-color:var(--accent)}
+.kpi{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px 16px 22px;overflow:hidden;transition:transform .15s,border-color .15s,box-shadow .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.kpi:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--muted)}
 .kpi.k-pos::before{background:linear-gradient(180deg,var(--green),#34d399)}
 .kpi.k-neg::before{background:linear-gradient(180deg,var(--red),#f87171)}
 .kpi.k-acc::before{background:linear-gradient(180deg,var(--accent),#a78bfa)}
 .kpi.k-warn::before{background:linear-gradient(180deg,var(--yellow),#fbbf24)}
 .kpi .k-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
-.kpi .k-val{font-size:1.4rem;font-weight:800;line-height:1.1}
+.kpi .k-val{font-size:1.4rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .kpi .k-sub{font-size:.72rem;color:var(--muted);margin-top:4px}
 
 /* two-column dashboard grid */
@@ -281,11 +281,20 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .tbl-modern thead th{background:var(--surface2);color:var(--muted);font-weight:700;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;white-space:nowrap;text-align:right}
 .tbl-modern thead th:first-child{text-align:left;border-radius:8px 0 0 0}
 .tbl-modern thead th:last-child{border-radius:0 8px 0 0}
-.tbl-modern tbody td{padding:11px 12px;border-bottom:1px solid rgba(46,51,80,.45);white-space:nowrap;text-align:right}
-.tbl-modern tbody td:first-child{text-align:left}
+.tbl-modern tbody td{padding:11px 12px;border-bottom:1px solid rgba(46,51,80,.45);white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+.tbl-modern tbody td:first-child{text-align:left;font-variant-numeric:normal}
 .tbl-modern tbody tr:hover{background:var(--surface2)}
-.tbl-modern tfoot td{padding:11px 12px;border-top:2px solid var(--border);background:var(--surface2);font-weight:800;text-align:right}
+.tbl-modern tfoot td{padding:11px 12px;border-top:2px solid var(--border);background:var(--surface2);font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
 .tbl-modern tfoot td:first-child{text-align:left}
+/* Primeira coluna fixa: ao rolar a tabela na horizontal, o nome não some.
+   Ganho grande no celular, onde as tabelas largas rolam. */
+.tbl-modern thead th:first-child,.tbl-modern tbody td:first-child,.tbl-modern tfoot td:first-child{position:sticky;left:0;z-index:2}
+.tbl-modern tbody td:first-child{background:var(--surface)}
+.tbl-modern thead th:first-child{z-index:3;background:var(--surface2)}
+.tbl-modern tfoot td:first-child{background:var(--surface2)}
+.tbl-modern tbody tr:hover td:first-child{background:var(--surface2)}
+/* borda sutil separando a coluna fixa do resto ao rolar */
+.tbl-modern th:first-child,.tbl-modern td:first-child{box-shadow:1px 0 0 var(--border)}
 .tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:800}
 .tag-g{background:var(--green-bg);color:var(--green)}
 .tag-y{background:rgba(245,158,11,.14);color:var(--yellow)}
@@ -316,9 +325,14 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .panel-head{gap:6px}
   /* tabelas largas: rolam dentro do painel, mais compactas */
   .kpi,.hero-stat,.dash-2col>*{min-width:0}
-  .tbl-modern{font-size:.76rem}
-  .tbl-modern thead th,.tbl-modern tbody td,.tbl-modern tfoot td{padding:8px 8px}
+  .kpi:hover{transform:none} /* sem “pulo” no toque */
+  .tbl-modern{font-size:.78rem}
+  .tbl-modern thead th,.tbl-modern tbody td,.tbl-modern tfoot td{padding:9px 10px}
+  /* nome quebra em vez de forçar a coluna gigante; não corta MLB/badges */
+  .tbl-modern tbody td:first-child{white-space:normal;word-break:break-word;max-width:46vw}
   table thead th,table tbody td{padding:9px 9px;font-size:.8rem}
+  /* rótulos de painel um pouco maiores para leitura no celular */
+  .panel-title{font-size:.74rem}
 }
 
 @media(max-width:440px){
