@@ -5,11 +5,13 @@ import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
 
-type StatusAnuncio = "ativo" | "pausado" | "excluido";
+// Status da CAMPANHA (não do anúncio no catálogo) — é o que decide se o
+// investimento está de fato rodando agora.
+type StatusAnuncio = "ativo" | "pausado" | "sem_campanha";
 
 type AdItem = {
   itemId: string; title: string;
-  status: StatusAnuncio; mlStatus: string;
+  status: StatusAnuncio; campaignId: string; campaignName: string; mlStatus: string;
   clicks: number; prints: number; cost: number;
   directSales: number; directUnits: number;
   adSales: number; adUnits: number;
@@ -20,16 +22,19 @@ type AdItem = {
 };
 
 const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {
-  ativo: { label: "Ativo", cor: "var(--green)", bg: "rgba(34,197,94,.12)" },
-  pausado: { label: "Pausado", cor: "#f7c948", bg: "rgba(247,201,72,.12)" },
-  excluido: { label: "Excluído", cor: "var(--muted)", bg: "rgba(100,116,139,.14)" },
+  ativo: { label: "Ativa", cor: "var(--green)", bg: "rgba(34,197,94,.12)" },
+  pausado: { label: "Pausada", cor: "#f7c948", bg: "rgba(247,201,72,.12)" },
+  sem_campanha: { label: "Sem campanha", cor: "var(--muted)", bg: "rgba(100,116,139,.14)" },
 };
 
 function StatusTag({ item }: { item: AdItem }) {
   const m = STATUS_META[item.status];
+  const tooltip = item.campaignId
+    ? `Campanha: ${item.campaignName || item.campaignId}${item.mlStatus ? ` · catálogo: ${item.mlStatus}` : ""}`
+    : "Não achamos a campanha deste anúncio na busca do Mercado Ads.";
   return (
     <span
-      title={item.mlStatus ? `Status no Mercado Livre: ${item.mlStatus}` : "Sem resposta do Mercado Livre — tratado como excluído"}
+      title={tooltip}
       style={{
         fontSize: ".62rem", fontWeight: 700, color: m.cor, background: m.bg,
         padding: "1px 7px", borderRadius: 5, whiteSpace: "nowrap", cursor: "help",
@@ -83,6 +88,7 @@ export default function AdsTab() {
   // vierem vazias sem o pedido inteiro ter falhado (ver getAdsSettingsByItem).
   const [cfgDiag, setCfgDiag] = useState<{ url: string; status: number }[]>([]);
   const [cfgAmostra, setCfgAmostra] = useState<unknown>(null);
+  const [campanhasEncontradas, setCampanhasEncontradas] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -97,6 +103,7 @@ export default function AdsTab() {
         setItems(j.items ?? []);
         setCfgDiag(j.cfgDiag ?? []);
         setCfgAmostra(j.cfgAmostra ?? null);
+        setCampanhasEncontradas(j.campanhasEncontradas ?? 0);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -218,7 +225,7 @@ export default function AdsTab() {
                 ordenado por investimento
                 {items.length > 0 && (
                   <span style={{ display: "flex", gap: 6 }}>
-                    {(["ativo", "pausado", "excluido"] as const).map((s) => {
+                    {(["ativo", "pausado", "sem_campanha"] as const).map((s) => {
                       const n = items.filter((i) => i.status === s).length;
                       if (!n) return null;
                       const m = STATUS_META[s];
@@ -326,22 +333,24 @@ export default function AdsTab() {
                 ? "Vendas diretas = compras logo após clicar no anúncio · ACOS/ROAS medem só o ad."
                 : "Vendas totais = tudo que o item vendeu (ads + orgânico) · TACOS = investido ÷ vendas totais (quanto menor, mais o ads se paga no geral)."}
               <div style={{ marginTop: 4 }}>
-                <b>Alterado</b> = quando o anúncio foi mexido pela última vez. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,
+                <b>Alterado</b> = quando a campanha foi mexida pela última vez. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,
                 espere completar 3 dias performando antes de ajustar de novo. <b>Orç/dia</b> e <b>ROAS alvo</b> vêm da configuração da campanha no ML.
               </div>
               <div style={{ marginTop: 4 }}>
-                <b>Ativo</b>/<b>Pausado</b> vêm do status do anúncio no catálogo. <b>Excluído</b> cobre encerrado, em revisão ou
-                sem resposta do ML — na prática, não está vendendo agora. Passe o mouse na etiqueta para ver o status cru do ML.
+                <b>Ativa</b>/<b>Pausada</b> é o status da CAMPANHA (não do anúncio no catálogo) — campanha pausada não gasta
+                nem gira, mesmo com o anúncio ativo. <b>Sem campanha</b> = não achamos nenhuma campanha ligada a este anúncio
+                na busca do Mercado Ads. Passe o mouse na etiqueta pra ver o nome da campanha.
               </div>
               {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0 && !i.lastUpdated) && (
                 <div style={{ marginTop: 8, color: "#f7c948" }}>
-                  <b>Orç/dia, ROAS alvo e Alterado vieram vazios em todos os anúncios.</b> Abra &quot;Diagnóstico de
-                  configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
+                  <b>Orç/dia, ROAS alvo e Alterado vieram vazios em todos os anúncios</b>
+                  {campanhasEncontradas === 0 ? " — nenhuma campanha foi encontrada na busca" : ` (${campanhasEncontradas} campanha(s) encontrada(s), mas sem cruzar com os anúncios)`}.
+                  Abra &quot;Diagnóstico de configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
                 </div>
               )}
               {(cfgDiag.length > 0 || !!cfgAmostra) && (
                 <details style={{ marginTop: 8 }}>
-                  <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Diagnóstico de configuração (orçamento/ROAS/alterado)</summary>
+                  <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Diagnóstico de configuração (orçamento/ROAS/alterado/campanha) — {campanhasEncontradas} campanha(s) encontrada(s)</summary>
                   {cfgDiag.length > 0 && (
                     <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
                       <table className="tbl-modern">

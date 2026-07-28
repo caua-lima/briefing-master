@@ -4,17 +4,18 @@ import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, getAdsSettingsByItem, getItemStatusByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
 
 /**
- * Rótulo simples pras 3 etiquetas que a tela mostra. O status do Product Ads
- * pode dizer "active" mesmo com o anúncio encerrado no catálogo — por isso
- * usamos o status do ITEM (catálogo), não o da campanha. Qualquer coisa fora
- * de active/paused (closed, under_review, sem resposta = excluído/inexistente)
- * cai em "excluído": na prática, anúncio que não está vendendo agora.
+ * Etiqueta é sobre a CAMPANHA (o que o vendedor pediu), não o anúncio no
+ * catálogo — uma campanha pausada não gasta nem gira, mesmo com o anúncio
+ * "active" no catálogo. Sem campaignId resolvido = "sem_campanha" (não é erro,
+ * é um anúncio que nunca foi posto em nenhuma campanha, ou a campanha não foi
+ * encontrada na busca).
  */
-function statusLabel(mlStatus: string): "ativo" | "pausado" | "excluido" {
-  const s = mlStatus.toLowerCase();
+function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pausado" | "sem_campanha" {
+  if (!campaignId) return "sem_campanha";
+  const s = campaignStatus.toLowerCase();
   if (s === "active") return "ativo";
   if (s === "paused") return "pausado";
-  return "excluido";
+  return "sem_campanha";
 }
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
@@ -152,10 +153,13 @@ export async function GET(req: Request) {
     const campaignIdByItem: Record<string, string> = {};
     for (const a of ads) if (a.campaignId) campaignIdByItem[a.itemId.toUpperCase()] = a.campaignId;
     const cfg = await getAdsSettingsByItem(mlbsAds, campaignIdByItem).catch(
-      () => ({ porItem: {} as Record<string, AdSettings>, amostraItem: null, amostraCampanha: null, tentativas: [] as { url: string; status: number }[] }),
+      () => ({
+        porItem: {} as Record<string, AdSettings>, amostraCampanha: null,
+        tentativas: [] as { url: string; status: number }[], campanhasEncontradas: 0,
+      }),
     );
-    // Status real do catálogo (Ativo/Pausado/Excluído). Best-effort: sem
-    // resposta, o item cai em "excluído" (ver statusLabel acima).
+    // Status do catálogo (se o anúncio em si está ativo/pausado/encerrado) —
+    // vira só um dado extra no tooltip agora; a etiqueta principal é da campanha.
     const statusPorItem = await getItemStatusByItem(mlbsAds).catch(() => ({} as Record<string, string>));
 
     const items = ads.map((a) => {
@@ -174,17 +178,18 @@ export async function GET(req: Request) {
       const lucroDiretoLiquido = lucroDiretoAntesAds - a.cost;
 
       const c = cfg.porItem[a.itemId.toUpperCase()];
-      const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? "";
+      const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? ""; // status do catálogo — só informativo
       return {
         itemId: a.itemId, title: a.title,
-        status: statusLabel(mlStatus), mlStatus,
+        status: statusLabel(c?.campaignId ?? "", c?.status ?? ""),
+        campaignId: c?.campaignId ?? "", campaignName: c?.campaignName ?? "", mlStatus,
         clicks: a.clicks, prints: a.prints, cost: a.cost,
         directSales: a.directSales, directUnits: a.directUnits,
         adSales: a.sales, adUnits: a.units,
         totalSales: v.receita, totalUnits: v.unidades,
         lucroAntesAds, lucroLiquido,
         lucroDiretoAntesAds, lucroDiretoLiquido,
-        // Configuração do anúncio (0/"" quando o ML não informou).
+        // Configuração da campanha do anúncio (0/"" quando não achamos a campanha).
         dailyBudget: c?.dailyBudget ?? 0,
         roasTarget: c?.roasTarget ?? 0,
         acosTarget: c?.acosTarget ?? 0,
@@ -192,14 +197,15 @@ export async function GET(req: Request) {
       };
     }).sort((x, y) => y.cost - x.cost);
 
-    // amostraItem/amostraCampanha: se orçamento/ROAS vierem 0, mostram o
-    // objeto cru do ML para achar o nome de campo certo sem chutar.
-    // cfgDiag: status HTTP de cada URL tentada — se nenhuma respondeu 200,
-    // o problema é o endpoint, não o nome do campo.
+    // amostraCampanha: primeira campanha crua devolvida pelo ML — se
+    // orçamento/ROAS vierem 0, mostra o objeto para achar o campo certo sem
+    // chutar. cfgDiag: status HTTP das URLs de campanhas tentadas — se
+    // nenhuma respondeu 200, o problema é o endpoint, não o nome do campo.
     return NextResponse.json({
       items, from, to,
-      cfgAmostra: { item: cfg.amostraItem, campanha: cfg.amostraCampanha },
+      cfgAmostra: { campanha: cfg.amostraCampanha },
       cfgDiag: cfg.tentativas,
+      campanhasEncontradas: cfg.campanhasEncontradas,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

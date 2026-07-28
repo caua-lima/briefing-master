@@ -353,12 +353,14 @@ export async function getItemStatusByItem(mlbs: string[]): Promise<Record<string
 
 export type AdSettings = {
   itemId: string;
+  campaignId: string;    // "" quando não achamos a campanha do anúncio
+  campaignName: string;
   dailyBudget: number;   // orçamento diário da campanha (R$); 0 = não informado
   acosTarget: number;    // meta de ACOS (%); 0 = não informado
   roasTarget: number;    // meta de ROAS (direta do ML ou derivada de ACOS); 0 = não informado
   strategy: string;      // estratégia da campanha (texto do ML)
-  lastUpdated: string;   // ISO da última alteração ou criação (anúncio ou campanha)
-  status: string;
+  lastUpdated: string;   // ISO da última alteração ou criação da CAMPANHA
+  status: string;        // status da CAMPANHA (active/paused/...), não do anúncio
 };
 
 // número tolerante: aceita 12, "12", "12.5" e objetos { amount } / { value }.
@@ -375,123 +377,113 @@ function primeiro(o: Record<string, unknown>, chaves: string[]): unknown {
   for (const k of chaves) if (o[k] != null && o[k] !== "") return o[k];
   return undefined;
 }
-function dataMaisRecente(...vals: unknown[]): string {
-  let melhor = "";
-  for (const v of vals) {
-    const s = typeof v === "string" ? v : "";
-    if (s && s > melhor) melhor = s;
-  }
-  return melhor;
-}
 
 /**
- * Configuração de cada anúncio: orçamento diário, meta de ACOS/ROAS e a data da
- * última alteração — essa última importa porque o vendedor precisa esperar
- * alguns dias performando antes de mexer de novo.
+ * Configuração de cada anúncio vem da CAMPANHA à qual ele pertence: orçamento
+ * diário, meta de ACOS/ROAS, status (ativa/pausada) e última alteração — não
+ * do anúncio em si. A versão anterior buscava isso por um GET de item único
+ * (`/advertising/product_ads/items/{id}` e variantes novas por id), que nunca
+ * respondeu nesta conta: ficou tudo vazio duas vezes seguidas.
  *
- * O detalhe do anúncio individual não tem um endpoint confirmado: a doc do ML
- * lista campos de campanha (`budget`, `acos_target`, `roas_target` — este
- * último substituiu o ACOS como campo oficial a partir de dez/2025 —,
- * `last_updated`, `strategy`), mas o endpoint de item único mudou de família
- * (novo `/marketplace/.../product_ads/ads/{id}` vs. o antigo
- * `/advertising/product_ads/items/{id}`) e nunca foi exercitado com sucesso
- * neste projeto: a resolução de MLB normal (resolverMlb) só o chama quando o
- * recurso de busca não devolve MLB direto, o que não é o caso aqui. Por isso
- * tentamos várias URLs em ordem e guardamos, para CADA uma, status e um
- * pedaço do corpo — se ainda vier tudo zerado, a causa aparece em `tentativas`
- * sem precisar de outra rodada de chute.
+ * Agora usamos só recursos de BUSCA (mesma família do `/ads/search` que já
+ * funciona para a tabela principal), nunca GET por id isolado:
+ *   1. `/campaigns/search` — lista TODAS as campanhas de uma vez (1 chamada),
+ *      com status/orçamento/meta próprios. Não depende de saber o campaign_id
+ *      de nenhum item antes.
+ *   2. Para achar A QUAL campanha cada anúncio pertence: usa o campaign_id que
+ *      já veio junto das métricas (getAdsFullByItem) quando disponível; para
+ *      o resto, busca os anúncios DE CADA campanha (`/campaigns/{id}/ads/search`
+ *      — a mesma busca, só filtrada por campanha).
+ * Anúncio sem campanha resolvida fica com campaignId="" (o chamador rotula
+ * como "sem campanha", não como erro).
  */
 export async function getAdsSettingsByItem(
   mlbs: string[],
   campaignIdByItem: Record<string, string> = {},
 ): Promise<{
   porItem: Record<string, AdSettings>;
-  amostraItem: unknown;
   amostraCampanha: unknown;
   tentativas: { url: string; status: number }[];
+  campanhasEncontradas: number;
 }> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
   const porItem: Record<string, AdSettings> = {};
-  let amostraItem: unknown = null;
-  let amostraCampanha: unknown = null;
   const tentativas: { url: string; status: number }[] = [];
-  if (!adv || mlbs.length === 0) return { porItem, amostraItem, amostraCampanha, tentativas };
-  const advOk: Adv = adv; // narrowa de vez — closures abaixo não herdam o `if` acima
+  if (!adv || mlbs.length === 0) return { porItem, amostraCampanha: null, tentativas, campanhasEncontradas: 0 };
+  const advOk: Adv = adv;
 
-  // Ordem de prioridade: recurso novo "ads" (mesma família do /ads/search que
-  // já funciona), depois "items" novo, depois os caminhos legados.
-  const urlsItem = (mlb: string) => [
-    `${base(advOk)}/ads/${mlb}`,
-    `${base(advOk)}/items/${mlb}`,
-    `${legado(advOk)}/items/${mlb}`,
-    `${ML_API}/advertising/product_ads/items/${mlb}`,
-  ];
-
-  const campanhaCache = new Map<string, Record<string, unknown> | null>();
-  async function pegarCampanha(cid: string): Promise<Record<string, unknown> | null> {
-    if (campanhaCache.has(cid)) return campanhaCache.get(cid)!;
-    let obj: Record<string, unknown> | null = null;
-    for (const url of [`${base(advOk)}/campaigns/${cid}`, `${legado(advOk)}/campaigns/${cid}`]) {
-      try {
-        const r = await get(url, token);
-        tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
-        if (!r.ok) continue;
-        obj = (await r.json()) as Record<string, unknown>;
-        break;
-      } catch { /* tenta a próxima */ }
+  // Diagnóstico honesto: testa as duas URLs candidatas isoladamente (1 item
+  // só, rápido) ANTES de pedir a lista completa — se nenhuma vier 200, o
+  // problema é o endpoint, e isso fica visível na tela sem precisar chutar de novo.
+  for (const url of [`${base(advOk)}/campaigns/search?limit=1`, `${legado(advOk)}/campaigns?limit=1`]) {
+    try {
+      const r = await get(url, token);
+      tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
+    } catch {
+      tentativas.push({ url: url.replace(ML_API, ""), status: -1 });
     }
-    campanhaCache.set(cid, obj);
-    return obj;
   }
 
-  await Promise.all(mlbs.map(async (mlbRaw) => {
-    const mlb = mlbRaw.toUpperCase();
-    try {
-      let item: Record<string, unknown> | null = null;
-      // Já sabemos o campaign_id (veio junto do /ads/search)? Pula a busca do
-      // item — é uma chamada a menos e uma fonte de erro a menos.
-      let cid = campaignIdByItem[mlb] ?? "";
-      if (!cid) {
-        for (const url of urlsItem(mlb)) {
-          try {
-            const r = await get(url, token);
-            if (tentativas.length < 8) tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
-            if (!r.ok) continue;
-            item = (await r.json()) as Record<string, unknown>;
-            break;
-          } catch { /* tenta a próxima */ }
-        }
-        if (!item) return; // nenhuma URL respondeu pra este item
-        if (!amostraItem) amostraItem = item;
-        cid = texto(primeiro(item, ["campaign_id", "campaignId"]) ?? (item.campaign as Record<string, unknown>)?.id);
+  const camposCrus = await buscar(
+    (o) => [`${base(advOk)}/campaigns/search?limit=50&offset=${o}`, `${legado(advOk)}/campaigns?limit=50&offset=${o}`],
+    token,
+  ).catch(() => []);
+  const amostraCampanha = camposCrus[0] ?? null;
+
+  const campanhas = new Map<string, AdSettings>();
+  for (const c of camposCrus) {
+    const id = texto(primeiro(c, ["id", "campaign_id"]));
+    if (!id) continue;
+    const acos = numTolerante(primeiro(c, ["acos_target", "target_acos", "acos_objective", "acos"]));
+    const roasDireto = numTolerante(primeiro(c, ["roas_target", "target_roas"]));
+    campanhas.set(id, {
+      itemId: "", campaignId: id,
+      campaignName: texto(primeiro(c, ["name", "campaign_name"])),
+      dailyBudget: numTolerante(primeiro(c, ["budget", "daily_budget", "budget_amount", "daily_budget_amount"])),
+      acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
+      roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
+      strategy: texto(primeiro(c, ["strategy", "campaign_strategy", "goal"])),
+      lastUpdated: texto(primeiro(c, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"])),
+      status: texto(primeiro(c, ["status"])),
+    });
+  }
+
+  // itemId (MLB) → campaignId. Começa com o que já veio das métricas; para o
+  // resto, pergunta a cada campanha quais anúncios são dela.
+  const mlbsUpper = Array.from(new Set(mlbs.map((m) => m.toUpperCase())));
+  const itemToCampaign: Record<string, string> = { ...campaignIdByItem };
+  const faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
+  if (faltam.size > 0 && campanhas.size > 0) {
+    await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
+      const rows = await buscar(
+        (o) => [
+          `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
+          `${base(advOk)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+          `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
+          `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+        ],
+        token,
+      ).catch(() => []);
+      for (const row of rows) {
+        const mlb = itemIdDe(row);
+        if (mlb && faltam.has(mlb)) itemToCampaign[mlb] = cid;
       }
+    }));
+  }
 
-      const campanha = cid ? await pegarCampanha(cid) : null;
-      if (campanha && !amostraCampanha) amostraCampanha = campanha;
-      if (!item && campanha && !amostraItem) amostraItem = campanha; // pelo menos alguma amostra
+  for (const mlb of mlbsUpper) {
+    const cid = itemToCampaign[mlb] ?? "";
+    const info = cid ? campanhas.get(cid) : undefined;
+    porItem[mlb] = info
+      ? { ...info, itemId: mlb }
+      : {
+          itemId: mlb, campaignId: "", campaignName: "",
+          dailyBudget: 0, acosTarget: 0, roasTarget: 0, strategy: "", lastUpdated: "", status: "",
+        };
+  }
 
-      const src = { ...(campanha ?? {}), ...(item ?? {}) }; // item sobrepõe (mais específico)
-      const acos = numTolerante(primeiro(src, ["acos_target", "target_acos", "acos_objective", "acos"]));
-      const roasDireto = numTolerante(primeiro(src, ["roas_target", "target_roas"]));
-      const budget = numTolerante(primeiro(src, ["budget", "daily_budget", "budget_amount", "daily_budget_amount"]));
-      const lastUpdated = dataMaisRecente(
-        primeiro(item ?? {}, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"]),
-        primeiro(campanha ?? {}, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"]),
-      );
-      porItem[mlb] = {
-        itemId: mlb,
-        dailyBudget: budget,
-        acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
-        roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
-        strategy: texto(primeiro(src, ["strategy", "campaign_strategy", "goal"])),
-        lastUpdated,
-        status: texto(primeiro(src, ["status"])),
-      };
-    } catch { /* item fora de ads: ignora */ }
-  }));
-
-  return { porItem, amostraItem, amostraCampanha, tentativas };
+  return { porItem, amostraCampanha, tentativas, campanhasEncontradas: campanhas.size };
 }
 
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */
