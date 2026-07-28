@@ -245,6 +245,9 @@ export type AdItemFull = {
   directSales: number; // receita das vendas DIRETAS do anúncio
   directUnits: number; // unidades diretas
   indirectSales: number;
+  /** campaign_id, quando a própria linha de métricas já trouxe — evita uma
+   *  chamada extra por item em getAdsSettingsByItem. */
+  campaignId: string;
 };
 
 const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amount,indirect_amount,direct_items_quantity,advertising_items_quantity";
@@ -273,7 +276,7 @@ export async function getAdsFullByItem(
    * que dá número errado quando os volumes das linhas são diferentes.
    */
   type Acc = {
-    itemId: string; title: string; status: string;
+    itemId: string; title: string; status: string; campaignId: string;
     clicks: number; prints: number; cost: number; sales: number; units: number;
     directSales: number; directUnits: number; indirectSales: number;
   };
@@ -282,12 +285,13 @@ export async function getAdsFullByItem(
     const itemId = itemIdDe(row);
     if (!itemId) continue;
     const cur = porItem.get(itemId) ?? {
-      itemId, title: "", status: "",
+      itemId, title: "", status: "", campaignId: "",
       clicks: 0, prints: 0, cost: 0, sales: 0, units: 0,
       directSales: 0, directUnits: 0, indirectSales: 0,
     };
     if (!cur.title) cur.title = String(row.title ?? row.name ?? row.campaign_name ?? "");
     if (!cur.status) cur.status = String(row.status ?? "");
+    if (!cur.campaignId) cur.campaignId = String(row.campaign_id ?? row.campaignId ?? "");
     cur.clicks += metrica(row, "clicks");
     cur.prints += metrica(row, "prints");
     cur.cost += metrica(row, "cost");
@@ -303,6 +307,7 @@ export async function getAdsFullByItem(
     itemId: a.itemId,
     title: a.title,
     status: a.status,
+    campaignId: a.campaignId,
     clicks: a.clicks,
     prints: a.prints,
     ctr: a.prints > 0 ? (a.clicks / a.prints) * 100 : 0,
@@ -350,9 +355,9 @@ export type AdSettings = {
   itemId: string;
   dailyBudget: number;   // orçamento diário da campanha (R$); 0 = não informado
   acosTarget: number;    // meta de ACOS (%); 0 = não informado
-  roasTarget: number;    // meta de ROAS derivada (100/ACOS); 0 = não informado
+  roasTarget: number;    // meta de ROAS (direta do ML ou derivada de ACOS); 0 = não informado
   strategy: string;      // estratégia da campanha (texto do ML)
-  lastUpdated: string;   // ISO da última alteração (anúncio ou campanha)
+  lastUpdated: string;   // ISO da última alteração ou criação (anúncio ou campanha)
   status: string;
 };
 
@@ -382,26 +387,55 @@ function dataMaisRecente(...vals: unknown[]): string {
 /**
  * Configuração de cada anúncio: orçamento diário, meta de ACOS/ROAS e a data da
  * última alteração — essa última importa porque o vendedor precisa esperar
- * alguns dias performando antes de mexer de novo. Nomes de campo do ML variam,
- * então lemos vários candidatos e devolvemos o objeto cru para conferência.
+ * alguns dias performando antes de mexer de novo.
+ *
+ * O detalhe do anúncio individual não tem um endpoint confirmado: a doc do ML
+ * lista campos de campanha (`budget`, `acos_target`, `roas_target` — este
+ * último substituiu o ACOS como campo oficial a partir de dez/2025 —,
+ * `last_updated`, `strategy`), mas o endpoint de item único mudou de família
+ * (novo `/marketplace/.../product_ads/ads/{id}` vs. o antigo
+ * `/advertising/product_ads/items/{id}`) e nunca foi exercitado com sucesso
+ * neste projeto: a resolução de MLB normal (resolverMlb) só o chama quando o
+ * recurso de busca não devolve MLB direto, o que não é o caso aqui. Por isso
+ * tentamos várias URLs em ordem e guardamos, para CADA uma, status e um
+ * pedaço do corpo — se ainda vier tudo zerado, a causa aparece em `tentativas`
+ * sem precisar de outra rodada de chute.
  */
 export async function getAdsSettingsByItem(
   mlbs: string[],
-): Promise<{ porItem: Record<string, AdSettings>; amostraItem: unknown; amostraCampanha: unknown }> {
+  campaignIdByItem: Record<string, string> = {},
+): Promise<{
+  porItem: Record<string, AdSettings>;
+  amostraItem: unknown;
+  amostraCampanha: unknown;
+  tentativas: { url: string; status: number }[];
+}> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
   const porItem: Record<string, AdSettings> = {};
   let amostraItem: unknown = null;
   let amostraCampanha: unknown = null;
-  if (!adv || mlbs.length === 0) return { porItem, amostraItem, amostraCampanha };
+  const tentativas: { url: string; status: number }[] = [];
+  if (!adv || mlbs.length === 0) return { porItem, amostraItem, amostraCampanha, tentativas };
+  const advOk: Adv = adv; // narrowa de vez — closures abaixo não herdam o `if` acima
+
+  // Ordem de prioridade: recurso novo "ads" (mesma família do /ads/search que
+  // já funciona), depois "items" novo, depois os caminhos legados.
+  const urlsItem = (mlb: string) => [
+    `${base(advOk)}/ads/${mlb}`,
+    `${base(advOk)}/items/${mlb}`,
+    `${legado(advOk)}/items/${mlb}`,
+    `${ML_API}/advertising/product_ads/items/${mlb}`,
+  ];
 
   const campanhaCache = new Map<string, Record<string, unknown> | null>();
   async function pegarCampanha(cid: string): Promise<Record<string, unknown> | null> {
     if (campanhaCache.has(cid)) return campanhaCache.get(cid)!;
     let obj: Record<string, unknown> | null = null;
-    for (const url of [`${base(adv!)}/campaigns/${cid}`, `${legado(adv!)}/campaigns/${cid}`]) {
+    for (const url of [`${base(advOk)}/campaigns/${cid}`, `${legado(advOk)}/campaigns/${cid}`]) {
       try {
         const r = await get(url, token);
+        tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
         if (!r.ok) continue;
         obj = (await r.json()) as Record<string, unknown>;
         break;
@@ -414,26 +448,42 @@ export async function getAdsSettingsByItem(
   await Promise.all(mlbs.map(async (mlbRaw) => {
     const mlb = mlbRaw.toUpperCase();
     try {
-      const r = await get(`${ML_API}/advertising/product_ads/items/${mlb}`, token);
-      if (!r.ok) return;
-      const item = (await r.json()) as Record<string, unknown>;
-      if (!amostraItem) amostraItem = item;
-      const cid = texto(item.campaign_id);
+      let item: Record<string, unknown> | null = null;
+      // Já sabemos o campaign_id (veio junto do /ads/search)? Pula a busca do
+      // item — é uma chamada a menos e uma fonte de erro a menos.
+      let cid = campaignIdByItem[mlb] ?? "";
+      if (!cid) {
+        for (const url of urlsItem(mlb)) {
+          try {
+            const r = await get(url, token);
+            if (tentativas.length < 8) tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
+            if (!r.ok) continue;
+            item = (await r.json()) as Record<string, unknown>;
+            break;
+          } catch { /* tenta a próxima */ }
+        }
+        if (!item) return; // nenhuma URL respondeu pra este item
+        if (!amostraItem) amostraItem = item;
+        cid = texto(primeiro(item, ["campaign_id", "campaignId"]) ?? (item.campaign as Record<string, unknown>)?.id);
+      }
+
       const campanha = cid ? await pegarCampanha(cid) : null;
       if (campanha && !amostraCampanha) amostraCampanha = campanha;
+      if (!item && campanha && !amostraItem) amostraItem = campanha; // pelo menos alguma amostra
 
-      const src = { ...(campanha ?? {}), ...item }; // item sobrepõe (mais específico)
+      const src = { ...(campanha ?? {}), ...(item ?? {}) }; // item sobrepõe (mais específico)
       const acos = numTolerante(primeiro(src, ["acos_target", "target_acos", "acos_objective", "acos"]));
-      const budget = numTolerante(primeiro(src, ["daily_budget", "budget", "budget_amount", "daily_budget_amount"]));
+      const roasDireto = numTolerante(primeiro(src, ["roas_target", "target_roas"]));
+      const budget = numTolerante(primeiro(src, ["budget", "daily_budget", "budget_amount", "daily_budget_amount"]));
       const lastUpdated = dataMaisRecente(
-        primeiro(item, ["last_updated", "date_last_updated", "last_modified", "date_modified"]),
-        primeiro(campanha ?? {}, ["last_updated", "date_last_updated", "last_modified", "date_modified"]),
+        primeiro(item ?? {}, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"]),
+        primeiro(campanha ?? {}, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"]),
       );
       porItem[mlb] = {
         itemId: mlb,
         dailyBudget: budget,
-        acosTarget: acos,
-        roasTarget: acos > 0 ? 100 / acos : 0,
+        acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
+        roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
         strategy: texto(primeiro(src, ["strategy", "campaign_strategy", "goal"])),
         lastUpdated,
         status: texto(primeiro(src, ["status"])),
@@ -441,7 +491,7 @@ export async function getAdsSettingsByItem(
     } catch { /* item fora de ads: ignora */ }
   }));
 
-  return { porItem, amostraItem, amostraCampanha };
+  return { porItem, amostraItem, amostraCampanha, tentativas };
 }
 
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */

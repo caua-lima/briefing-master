@@ -147,9 +147,12 @@ export async function GET(req: Request) {
 
     // Configuração de cada anúncio (orçamento, meta de ROAS, última alteração).
     // Best-effort: se falhar, os anúncios ainda saem, só sem esses campos.
+    // O campaign_id que já veio junto das métricas poupa uma chamada por item.
     const mlbsAds = ads.map((a) => a.itemId).filter((s) => /^MLB\d+$/i.test(s));
-    const cfg = await getAdsSettingsByItem(mlbsAds).catch(
-      () => ({ porItem: {} as Record<string, AdSettings>, amostraItem: null, amostraCampanha: null }),
+    const campaignIdByItem: Record<string, string> = {};
+    for (const a of ads) if (a.campaignId) campaignIdByItem[a.itemId.toUpperCase()] = a.campaignId;
+    const cfg = await getAdsSettingsByItem(mlbsAds, campaignIdByItem).catch(
+      () => ({ porItem: {} as Record<string, AdSettings>, amostraItem: null, amostraCampanha: null, tentativas: [] as { url: string; status: number }[] }),
     );
     // Status real do catálogo (Ativo/Pausado/Excluído). Best-effort: sem
     // resposta, o item cai em "excluído" (ver statusLabel acima).
@@ -191,7 +194,13 @@ export async function GET(req: Request) {
 
     // amostraItem/amostraCampanha: se orçamento/ROAS vierem 0, mostram o
     // objeto cru do ML para achar o nome de campo certo sem chutar.
-    return NextResponse.json({ items, from, to, cfgAmostra: { item: cfg.amostraItem, campanha: cfg.amostraCampanha } });
+    // cfgDiag: status HTTP de cada URL tentada — se nenhuma respondeu 200,
+    // o problema é o endpoint, não o nome do campo.
+    return NextResponse.json({
+      items, from, to,
+      cfgAmostra: { item: cfg.amostraItem, campanha: cfg.amostraCampanha },
+      cfgDiag: cfg.tentativas,
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: "unexpected", details: msg, items: [] }, { status: 500 });

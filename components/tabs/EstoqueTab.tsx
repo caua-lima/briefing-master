@@ -1236,10 +1236,17 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
   // Envio seu tira estoque de casa; transferência entre centros do ML, não.
   const remessas = todas.filter((r) => !r.ehTransferencia);
   const transferencias = todas.filter((r) => r.ehTransferencia);
-  // Total que será baixado — já com as correções que o usuário digitou.
+  // Produto específico já com baixa gravada nesta remessa (não a remessa
+  // inteira). Sem isso, reabrir a página depois de uma baixa parcial (falhou
+  // no meio do loop) reapresentava TODOS os produtos editáveis com o valor
+  // default do ML — reenviar sobrescreveria uma correção que já tinha dado
+  // certo, voltando ela pro valor recebido em vez do que você digitou.
+  const movDoProduto = (r: Remessa, productId: string) =>
+    productId ? movimentos.find((m) => m.id === movIdRemessa(r.remessa, productId)) : undefined;
+  // Total que será baixado agora — só o que falta, já com as correções digitadas.
   const totalDaRemessa = (r: Remessa) =>
     r.produtos.reduce((s, p) => {
-      if (!p.productId) return s;
+      if (!p.productId || movDoProduto(r, p.productId)) return s;
       return s + Math.max(Math.round(Number(qtds[`${r.remessa}|${p.productId}`] ?? p.qtd) || 0), 0);
     }, 0);
   const jaBaixada = (r: Remessa) => remessaTemBaixa(r, movimentos);
@@ -1249,8 +1256,10 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
   const resolvidas = remessas.filter(resolvida);
 
   async function darBaixa(r: Remessa) {
-    const alvos = r.produtos.filter((p) => p.productId);
-    if (!alvos.length) { alert("Nenhum produto desta remessa está cadastrado no Estoque."); return; }
+    // Pula quem já tem baixa gravada: reenviar de novo é inofensivo (mesmo id,
+    // sobrescreve com o mesmo valor), mas melhor nem tocar no que já está certo.
+    const alvos = r.produtos.filter((p) => p.productId && !movDoProduto(r, p.productId));
+    if (!alvos.length) { alert("Nada pendente: os produtos com cadastro já têm baixa nesta remessa."); return; }
     setSalvando(r.remessa);
     try {
       for (const p of alvos) {
@@ -1375,27 +1384,31 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
 
                 {/* Produtos */}
                 {r.produtos.map((p) => {
+                  const movExistente = movDoProduto(r, p.productId);
                   const chave = `${r.remessa}|${p.productId}`;
-                  const valor = qtds[chave] ?? String(p.qtd);
+                  const valor = movExistente ? String(movExistente.quantidade) : (qtds[chave] ?? String(p.qtd));
                   const dif = Math.round(Number(valor) || 0) - p.qtd;
                   return (
                     <div key={p.inventory} style={{
                       display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px",
                       alignItems: "center", padding: "7px 0",
                       borderTop: "1px solid rgba(255,255,255,.04)",
+                      opacity: movExistente ? 0.65 : 1,
                     }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: ".84rem", fontWeight: 500 }}>
                           {p.nome || p.inventory}
                         </div>
                         <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>
-                          {p.productId
-                            ? <>ML recebeu {p.qtd} un{dif !== 0 && !feita && (
-                                <span style={{ color: "#f7c948", fontWeight: 600 }}>
-                                  {" · "}{dif > 0 ? `+${dif}` : dif} a mais que o recebido
-                                </span>
-                              )}</>
-                            : <span style={{ color: "var(--red)" }}>sem cadastro no Estoque — não dá baixa</span>}
+                          {movExistente
+                            ? <span style={{ color: "var(--green)" }}>✓ já baixado: {movExistente.quantidade} un</span>
+                            : p.productId
+                              ? <>ML recebeu {p.qtd} un{dif !== 0 && (
+                                  <span style={{ color: "#f7c948", fontWeight: 600 }}>
+                                    {" · "}{dif > 0 ? `+${dif}` : dif} a mais que o recebido
+                                  </span>
+                                )}</>
+                              : <span style={{ color: "var(--red)" }}>sem cadastro no Estoque — não dá baixa</span>}
                         </div>
                       </div>
                       <input
@@ -1405,11 +1418,11 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
                         style={{
                           width: 84, fontSize: 16, textAlign: "right", padding: "7px 9px",
                           background: p.productId ? "var(--surface)" : "transparent",
-                          border: `1px solid ${dif !== 0 && !feita && p.productId ? "rgba(245,158,11,.5)" : "var(--border)"}`,
+                          border: `1px solid ${dif !== 0 && !movExistente && p.productId ? "rgba(245,158,11,.5)" : "var(--border)"}`,
                           borderRadius: 8, color: "var(--text)", outline: "none",
                         }}
                         value={valor}
-                        disabled={feita || !p.productId}
+                        disabled={!!movExistente || !p.productId}
                         onChange={(e) => setQtds((s) => ({ ...s, [chave]: e.target.value }))}
                       />
                     </div>

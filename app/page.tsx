@@ -339,12 +339,28 @@ function AppShell() {
               </svg>
             </button>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 9, fontWeight: 700, fontSize: ".95rem" }}>
-              <span style={{ color: "var(--accent)", display: "inline-flex" }}><NavIcon id={activeTab} /></span>
-              {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
+            {/*
+              A sidebar (onde mora o logo) fica fora da tela no celular por
+              padrão — só abre pelo hamburger. Sem isto, a marca simplesmente
+              não aparece em lugar nenhum até o usuário abrir o menu.
+            */}
+            <span className="mobile-brand">
+              <ZxpMark size={22} />
+            </span>
+
+            {/* flex:1 + minWidth:0 para truncar em vez de empurrar o status
+                da conta ML pra fora da tela em telas bem estreitas. */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 9, fontWeight: 700, fontSize: ".95rem",
+              flex: "1 1 auto", minWidth: 0, overflow: "hidden",
+            }}>
+              <span style={{ color: "var(--accent)", display: "inline-flex", flexShrink: 0 }}><NavIcon id={activeTab} /></span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
+              </span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <MlAccountStatus />
         </div>
           </header>

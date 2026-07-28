@@ -79,6 +79,10 @@ export default function AdsTab() {
     advertiserId?: number | string; conta?: { tokenNickname?: string; mesmaConta?: boolean };
     tentativas?: Tentativa[]; periodo?: { from?: string; to?: string };
   } | null>(null);
+  // Diagnóstico de orçamento/ROAS/última alteração — para quando essas colunas
+  // vierem vazias sem o pedido inteiro ter falhado (ver getAdsSettingsByItem).
+  const [cfgDiag, setCfgDiag] = useState<{ url: string; status: number }[]>([]);
+  const [cfgAmostra, setCfgAmostra] = useState<unknown>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -89,7 +93,11 @@ export default function AdsTab() {
         setDiag(j.diag ?? null);
         setErro(j.diag ? JSON.stringify(j.diag, null, 2) : (j.details ?? j.error));
         setItems([]);
-      } else setItems(j.items ?? []);
+      } else {
+        setItems(j.items ?? []);
+        setCfgDiag(j.cfgDiag ?? []);
+        setCfgAmostra(j.cfgAmostra ?? null);
+      }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [range]);
@@ -325,6 +333,37 @@ export default function AdsTab() {
                 <b>Ativo</b>/<b>Pausado</b> vêm do status do anúncio no catálogo. <b>Excluído</b> cobre encerrado, em revisão ou
                 sem resposta do ML — na prática, não está vendendo agora. Passe o mouse na etiqueta para ver o status cru do ML.
               </div>
+              {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0 && !i.lastUpdated) && (
+                <div style={{ marginTop: 8, color: "#f7c948" }}>
+                  <b>Orç/dia, ROAS alvo e Alterado vieram vazios em todos os anúncios.</b> Abra &quot;Diagnóstico de
+                  configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
+                </div>
+              )}
+              {(cfgDiag.length > 0 || !!cfgAmostra) && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Diagnóstico de configuração (orçamento/ROAS/alterado)</summary>
+                  {cfgDiag.length > 0 && (
+                    <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
+                      <table className="tbl-modern">
+                        <thead><tr><th style={{ textAlign: "left" }}>URL tentada</th><th style={{ textAlign: "right" }}>Status</th></tr></thead>
+                        <tbody>
+                          {cfgDiag.map((t, idx) => (
+                            <tr key={`${t.url}-${idx}`}>
+                              <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>{t.url}</td>
+                              <td style={{ textAlign: "right", color: t.status === 200 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{t.status}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {!!cfgAmostra && (
+                    <pre style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 240, overflow: "auto" }}>
+                      {JSON.stringify(cfgAmostra, null, 2)}
+                    </pre>
+                  )}
+                </details>
+              )}
             </div>
           </div>
         </>

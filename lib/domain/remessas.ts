@@ -31,10 +31,20 @@ export function movIdRemessa(remessa: string, productId: string): string {
   return `full-${remessa}-${productId}`;
 }
 
+/**
+ * A remessa só conta como resolvida quando TODO produto com cadastro já tem a
+ * baixa (não basta um). Era `.some()`: se "Dar baixa" gravasse 2 de 3 produtos
+ * e falhasse no 3º (erro de rede no meio do loop), a remessa já aparecia como
+ * "✓ baixa dada" na próxima carga — o 3º produto nunca seria corrigido, porque
+ * ninguém veria que faltava. Produto sem cadastro nunca entra nesta conta
+ * (não há como dar baixa nele), então uma remessa 100% sem cadastro não conta
+ * como resolvida por "não ter nada pendente" — ela fica pendente até alguém
+ * cadastrar e dar baixa, ou marcar "já lancei".
+ */
 export function remessaTemBaixa(r: Remessa, movimentos: EstoqueMovimento[]): boolean {
-  return r.produtos.some(
-    (p) => p.productId && movimentos.some((m) => m.id === movIdRemessa(r.remessa, p.productId)),
-  );
+  const comCadastro = r.produtos.filter((p) => p.productId);
+  if (!comCadastro.length) return false;
+  return comCadastro.every((p) => movimentos.some((m) => m.id === movIdRemessa(r.remessa, p.productId)));
 }
 
 /**

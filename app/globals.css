@@ -382,6 +382,9 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 /* Sidebar layout */
 .app-sidebar{display:flex}
 .sidebar-toggle{display:none}
+/* Logo compacta no topo mobile — a sidebar (onde ela mora) fica fora da tela
+   até abrir o menu, então sem isto a marca não aparecia em lugar nenhum. */
+.mobile-brand{display:none}
 @media(min-width:721px){
   .app-sidebar{left:0!important}
 }
@@ -389,6 +392,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .app-sidebar{left:-220px}
   .app-main{margin-left:0!important}
   .sidebar-toggle{display:inline-flex!important}
+  .mobile-brand{display:inline-flex;align-items:center;flex-shrink:0}
   .dashboard-main-grid,.dashboard-bottom-grid{grid-template-columns:1fr!important}
 }
 

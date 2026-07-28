@@ -243,7 +243,10 @@ export async function GET(req: Request) {
             for (const t of outrasRefs) agg.refs.add(t);
             agg.recebido += entrou;
             agg.problema += ruins;
-            agg.porTipo.set(tipo, (agg.porTipo.get(tipo) ?? 0) + entrou + ruins);
+            // Só `entrou` aqui: a soma dos tipos precisa bater com "recebido"
+            // (que também só soma entrou). Incluir "ruins" fazia o total da
+            // quebra por tipo, mostrado do lado do recebido, não bater com ele.
+            agg.porTipo.set(tipo, (agg.porTipo.get(tipo) ?? 0) + entrou);
             if (inventory) agg.porInventory.set(inventory, (agg.porInventory.get(inventory) ?? 0) + entrou);
             if (data < agg.data) agg.data = data;
             // Ordenamos por date_created: o `id` do ML passa de 9e15 e o
