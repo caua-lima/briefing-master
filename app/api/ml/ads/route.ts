@@ -1,7 +1,21 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getAdsFullByItem, getAdsSettingsByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
+import { getAdsFullByItem, getAdsSettingsByItem, getItemStatusByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
+
+/**
+ * Rótulo simples pras 3 etiquetas que a tela mostra. O status do Product Ads
+ * pode dizer "active" mesmo com o anúncio encerrado no catálogo — por isso
+ * usamos o status do ITEM (catálogo), não o da campanha. Qualquer coisa fora
+ * de active/paused (closed, under_review, sem resposta = excluído/inexistente)
+ * cai em "excluído": na prática, anúncio que não está vendendo agora.
+ */
+function statusLabel(mlStatus: string): "ativo" | "pausado" | "excluido" {
+  const s = mlStatus.toLowerCase();
+  if (s === "active") return "ativo";
+  if (s === "paused") return "pausado";
+  return "excluido";
+}
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 
@@ -137,6 +151,9 @@ export async function GET(req: Request) {
     const cfg = await getAdsSettingsByItem(mlbsAds).catch(
       () => ({ porItem: {} as Record<string, AdSettings>, amostraItem: null, amostraCampanha: null }),
     );
+    // Status real do catálogo (Ativo/Pausado/Excluído). Best-effort: sem
+    // resposta, o item cai em "excluído" (ver statusLabel acima).
+    const statusPorItem = await getItemStatusByItem(mlbsAds).catch(() => ({} as Record<string, string>));
 
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
@@ -154,8 +171,10 @@ export async function GET(req: Request) {
       const lucroDiretoLiquido = lucroDiretoAntesAds - a.cost;
 
       const c = cfg.porItem[a.itemId.toUpperCase()];
+      const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? "";
       return {
         itemId: a.itemId, title: a.title,
+        status: statusLabel(mlStatus), mlStatus,
         clicks: a.clicks, prints: a.prints, cost: a.cost,
         directSales: a.directSales, directUnits: a.directUnits,
         adSales: a.sales, adUnits: a.units,

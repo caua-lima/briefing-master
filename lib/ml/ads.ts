@@ -263,23 +263,87 @@ export async function getAdsFullByItem(
     else throw e;
   }
   rows = await resolverMlb(rows, token, mlbs);
-  return rows.map((row) => ({
-    itemId: itemIdDe(row),
-    title: String(row.title ?? row.name ?? row.campaign_name ?? ""),
-    status: String(row.status ?? ""),
-    clicks: metrica(row, "clicks"),
-    prints: metrica(row, "prints"),
-    ctr: metrica(row, "ctr"),
-    cost: metrica(row, "cost"),
-    cpc: metrica(row, "cpc"),
-    acos: metrica(row, "acos"),
-    cvr: metrica(row, "cvr"),
-    sales: metrica(row, "total_amount"),
-    units: metrica(row, "advertising_items_quantity"),
-    directSales: metrica(row, "direct_amount"),
-    directUnits: metrica(row, "direct_items_quantity"),
-    indirectSales: metrica(row, "indirect_amount"),
+
+  /**
+   * Um MLB pode vir em mais de uma linha (anunciado em duas campanhas, ou
+   * paginação duplicando o mesmo anúncio) — sem agrupar, a tabela mostrava o
+   * mesmo produto duas vezes com o investimento partido entre as linhas.
+   * Agrupamos por item e SOMAMOS as métricas de base; as taxas (CTR/CPC/ACOS/
+   * CVR) são recalculadas a partir da soma — nunca a média das taxas prontas,
+   * que dá número errado quando os volumes das linhas são diferentes.
+   */
+  type Acc = {
+    itemId: string; title: string; status: string;
+    clicks: number; prints: number; cost: number; sales: number; units: number;
+    directSales: number; directUnits: number; indirectSales: number;
+  };
+  const porItem = new Map<string, Acc>();
+  for (const row of rows) {
+    const itemId = itemIdDe(row);
+    if (!itemId) continue;
+    const cur = porItem.get(itemId) ?? {
+      itemId, title: "", status: "",
+      clicks: 0, prints: 0, cost: 0, sales: 0, units: 0,
+      directSales: 0, directUnits: 0, indirectSales: 0,
+    };
+    if (!cur.title) cur.title = String(row.title ?? row.name ?? row.campaign_name ?? "");
+    if (!cur.status) cur.status = String(row.status ?? "");
+    cur.clicks += metrica(row, "clicks");
+    cur.prints += metrica(row, "prints");
+    cur.cost += metrica(row, "cost");
+    cur.sales += metrica(row, "total_amount");
+    cur.units += metrica(row, "advertising_items_quantity");
+    cur.directSales += metrica(row, "direct_amount");
+    cur.directUnits += metrica(row, "direct_items_quantity");
+    cur.indirectSales += metrica(row, "indirect_amount");
+    porItem.set(itemId, cur);
+  }
+
+  return Array.from(porItem.values()).map((a) => ({
+    itemId: a.itemId,
+    title: a.title,
+    status: a.status,
+    clicks: a.clicks,
+    prints: a.prints,
+    ctr: a.prints > 0 ? (a.clicks / a.prints) * 100 : 0,
+    cost: a.cost,
+    cpc: a.clicks > 0 ? a.cost / a.clicks : 0,
+    acos: a.sales > 0 ? (a.cost / a.sales) * 100 : 0,
+    cvr: a.clicks > 0 ? (a.units / a.clicks) * 100 : 0,
+    sales: a.sales,
+    units: a.units,
+    directSales: a.directSales,
+    directUnits: a.directUnits,
+    indirectSales: a.indirectSales,
   }));
+}
+
+/**
+ * Status real do anúncio no Mercado Livre (do catálogo, não da campanha de
+ * ads) — "active"/"paused"/"closed"/etc. Serve para as etiquetas Ativo/
+ * Pausado/Excluído na aba de Ads: o status dentro do Product Ads pode não
+ * refletir que o anúncio foi encerrado no catálogo.
+ */
+export async function getItemStatusByItem(mlbs: string[]): Promise<Record<string, string>> {
+  const token = await getValidMlAccessToken();
+  const out: Record<string, string> = {};
+  const uniq = Array.from(new Set(mlbs.map((m) => m.toUpperCase()))).filter((m) => /^MLB\d+$/.test(m));
+  for (let i = 0; i < uniq.length; i += 20) {
+    const chunk = uniq.slice(i, i + 20);
+    try {
+      const res = await fetch(`${ML_API}/items?ids=${chunk.join(",")}&attributes=id,status`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) continue;
+      const rows = (await res.json()) as { code?: number; body?: { id?: string; status?: string } }[];
+      for (const row of rows) {
+        const id = String(row.body?.id ?? "").toUpperCase();
+        if (id) out[id] = String(row.body?.status ?? "");
+      }
+    } catch { /* item sem resposta: fica sem status, tratado como excluído no chamador */ }
+  }
+  return out;
 }
 
 export type AdSettings = {

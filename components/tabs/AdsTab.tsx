@@ -5,8 +5,11 @@ import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
 
+type StatusAnuncio = "ativo" | "pausado" | "excluido";
+
 type AdItem = {
   itemId: string; title: string;
+  status: StatusAnuncio; mlStatus: string;
   clicks: number; prints: number; cost: number;
   directSales: number; directUnits: number;
   adSales: number; adUnits: number;
@@ -15,6 +18,27 @@ type AdItem = {
   lucroDiretoAntesAds: number; lucroDiretoLiquido: number;
   dailyBudget: number; roasTarget: number; acosTarget: number; lastUpdated: string;
 };
+
+const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {
+  ativo: { label: "Ativo", cor: "var(--green)", bg: "rgba(34,197,94,.12)" },
+  pausado: { label: "Pausado", cor: "#f7c948", bg: "rgba(247,201,72,.12)" },
+  excluido: { label: "Excluído", cor: "var(--muted)", bg: "rgba(100,116,139,.14)" },
+};
+
+function StatusTag({ item }: { item: AdItem }) {
+  const m = STATUS_META[item.status];
+  return (
+    <span
+      title={item.mlStatus ? `Status no Mercado Livre: ${item.mlStatus}` : "Sem resposta do Mercado Livre — tratado como excluído"}
+      style={{
+        fontSize: ".62rem", fontWeight: 700, color: m.cor, background: m.bg,
+        padding: "1px 7px", borderRadius: 5, whiteSpace: "nowrap", cursor: "help",
+      }}
+    >
+      {m.label}
+    </span>
+  );
+}
 
 /**
  * Dias completos desde a última alteração do anúncio. A regra do vendedor: só
@@ -182,7 +206,23 @@ export default function AdsTab() {
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: 8 }}>
               <span className="panel-title">Por anúncio — {pub ? "publicidade" : "geral"}</span>
-              <span className="panel-sub">ordenado por investimento</span>
+              <span className="panel-sub" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                ordenado por investimento
+                {items.length > 0 && (
+                  <span style={{ display: "flex", gap: 6 }}>
+                    {(["ativo", "pausado", "excluido"] as const).map((s) => {
+                      const n = items.filter((i) => i.status === s).length;
+                      if (!n) return null;
+                      const m = STATUS_META[s];
+                      return (
+                        <span key={s} style={{ fontSize: ".68rem", fontWeight: 700, color: m.cor, background: m.bg, padding: "1px 7px", borderRadius: 5 }}>
+                          {n} {m.label.toLowerCase()}
+                        </span>
+                      );
+                    })}
+                  </span>
+                )}
+              </span>
             </div>
             {loading ? (
               <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando…</div>
@@ -237,6 +277,7 @@ export default function AdsTab() {
                       return (
                         <tr key={i.itemId}>
                           <td style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
+                            <span style={{ marginRight: 6 }}><StatusTag item={i} /></span>
                             {i.title || i.itemId}
                             <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{i.itemId}</span>
                           </td>
@@ -279,6 +320,10 @@ export default function AdsTab() {
               <div style={{ marginTop: 4 }}>
                 <b>Alterado</b> = quando o anúncio foi mexido pela última vez. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,
                 espere completar 3 dias performando antes de ajustar de novo. <b>Orç/dia</b> e <b>ROAS alvo</b> vêm da configuração da campanha no ML.
+              </div>
+              <div style={{ marginTop: 4 }}>
+                <b>Ativo</b>/<b>Pausado</b> vêm do status do anúncio no catálogo. <b>Excluído</b> cobre encerrado, em revisão ou
+                sem resposta do ML — na prática, não está vendendo agora. Passe o mouse na etiqueta para ver o status cru do ML.
               </div>
             </div>
           </div>
