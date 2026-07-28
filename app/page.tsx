@@ -14,6 +14,7 @@ import AccessControlTab from "@/components/tabs/AccessControlTab";
 import DreTab from "@/components/tabs/DreTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
+import { ZxpMark } from "@/components/ZxpMark";
 
 type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "dre" | "acesso";
 
@@ -169,28 +170,24 @@ function AppShell() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <span
-                style={{
-                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
-                  color: "#fff", fontWeight: 800, fontSize: ".9rem", letterSpacing: "-.02em",
-                }}
-              >
-                ML
-              </span>
-              <div
-                style={{
-                  fontWeight: 800,
-                  fontSize: ".98rem",
-                  lineHeight: 1.15,
-                  background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
-              >
-                Dashboard<br />Mercado Livre
+              <ZxpMark size={30} />
+              <div style={{ lineHeight: 1.15 }}>
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: ".92rem",
+                    letterSpacing: ".02em",
+                    background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    backgroundClip: "text",
+                  }}
+                >
+                  ZXP SOLUTIONS
+                </div>
+                <div style={{ fontSize: ".68rem", color: "var(--muted)", marginTop: 1 }}>
+                  Dashboard Mercado Livre
+                </div>
               </div>
             </div>
             <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 8, textTransform: "capitalize" }}>

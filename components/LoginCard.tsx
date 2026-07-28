@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { ZxpMark } from "@/components/ZxpMark";
 
 export default function LoginCard() {
   const { signIn, signInWithAccountSelection, signInWithEmail } = useAuth();
@@ -49,18 +50,20 @@ export default function LoginCard() {
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <div
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+          <ZxpMark size={46} />
+        </div>
+        <h2
           style={{
-            width: 46, height: 46, borderRadius: 12, margin: "0 auto 14px",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 800, letterSpacing: ".03em",
             background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
-            color: "#fff", fontWeight: 800, fontSize: "1.15rem", letterSpacing: "-.02em",
+            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
           }}
         >
-          ML
-        </div>
-        <h2>Dashboard Mercado Livre</h2>
-        <p>Entre com e-mail e senha ou com sua conta Google.</p>
+          ZXP SOLUTIONS
+        </h2>
+        <p style={{ marginBottom: 2 }}>Dashboard Mercado Livre</p>
+        <p style={{ fontSize: ".8rem" }}>Entre com e-mail e senha ou com sua conta Google.</p>
 
         <form onSubmit={handleEmail} style={{ textAlign: "left", marginBottom: 6 }}>
           <input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} autoComplete="username" />

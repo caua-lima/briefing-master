@@ -3,8 +3,9 @@ import { AuthProvider } from "@/lib/firebase/auth-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dashboard Mercado Livre",
-  description: "Dashboard de controle financeiro e de vendas para vendedor do Mercado Livre",
+  title: "ZXP Solutions | Dashboard Mercado Livre",
+  description: "ZXP Solutions — Dashboard de controle financeiro e de vendas para vendedor do Mercado Livre",
+  applicationName: "ZXP Solutions",
 };
 
 export default function RootLayout({
