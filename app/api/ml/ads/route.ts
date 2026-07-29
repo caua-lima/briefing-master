@@ -151,8 +151,13 @@ export async function GET(req: Request) {
     // O campaign_id que já veio junto das métricas poupa uma chamada por item.
     const mlbsAds = ads.map((a) => a.itemId).filter((s) => /^MLB\d+$/i.test(s));
     const campaignIdByItem: Record<string, string> = {};
-    for (const a of ads) if (a.campaignId) campaignIdByItem[a.itemId.toUpperCase()] = a.campaignId;
-    const cfg = await getAdsSettingsByItem(mlbsAds, campaignIdByItem).catch(
+    const costByItem: Record<string, number> = {};
+    for (const a of ads) {
+      const id = a.itemId.toUpperCase();
+      if (a.campaignId) campaignIdByItem[id] = a.campaignId;
+      costByItem[id] = a.cost;
+    }
+    const cfg = await getAdsSettingsByItem(mlbsAds, campaignIdByItem, costByItem).catch(
       () => ({
         porItem: {} as Record<string, AdSettings>, amostraCampanha: null,
         tentativas: [] as { url: string; status: number }[], campanhasEncontradas: 0,

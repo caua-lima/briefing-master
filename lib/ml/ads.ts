@@ -400,6 +400,7 @@ function primeiro(o: Record<string, unknown>, chaves: string[]): unknown {
 export async function getAdsSettingsByItem(
   mlbs: string[],
   campaignIdByItem: Record<string, string> = {},
+  costByItem: Record<string, number> = {},
 ): Promise<{
   porItem: Record<string, AdSettings>;
   amostraCampanha: unknown;
@@ -455,16 +456,24 @@ export async function getAdsSettingsByItem(
   const itemToCampaign: Record<string, string> = { ...campaignIdByItem };
   const faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
   if (faltam.size > 0 && campanhas.size > 0) {
+    let diagRegistrado = 0;
     await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
-      const rows = await buscar(
-        (o) => [
-          `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
-          `${base(advOk)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
-          `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
-          `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
-        ],
-        token,
-      ).catch(() => []);
+      const urls = (o: number) => [
+        `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
+        `${base(advOk)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+        `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
+        `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+      ];
+      // Registra o status da 1ª tentativa pra algumas campanhas — sem isso,
+      // "o item continua sem campanha" fica sem explicação nenhuma na tela.
+      if (diagRegistrado < 3) {
+        diagRegistrado += 1;
+        try {
+          const r = await get(urls(0)[0], token);
+          tentativas.push({ url: urls(0)[0].replace(ML_API, ""), status: r.status });
+        } catch { /* segue pro buscar() abaixo mesmo assim */ }
+      }
+      const rows = await buscar(urls, token).catch(() => []);
       for (const row of rows) {
         const mlb = itemIdDe(row);
         if (mlb && faltam.has(mlb)) itemToCampaign[mlb] = cid;
@@ -472,9 +481,25 @@ export async function getAdsSettingsByItem(
     }));
   }
 
+  /**
+   * Só interessam campanhas que gastaram algo no período — o resto é ruído
+   * (a conta pode ter dezenas de campanhas antigas/pausadas sem relação com
+   * o que está rodando agora). Uma campanha só tem gasto>0 aqui se pelo menos
+   * um dos NOSSOS anúncios nela também tiver, então isso nunca esconde um
+   * anúncio que realmente gastou — só reclassifica como "sem campanha" quem
+   * está numa campanha 100% zerada no período.
+   */
+  const gastoPorCampanha = new Map<string, number>();
+  for (const mlb of mlbsUpper) {
+    const cid = itemToCampaign[mlb];
+    if (!cid) continue;
+    gastoPorCampanha.set(cid, (gastoPorCampanha.get(cid) ?? 0) + (costByItem[mlb] ?? 0));
+  }
+  const campanhasComGasto = new Set(Array.from(gastoPorCampanha.entries()).filter(([, v]) => v > 0).map(([k]) => k));
+
   for (const mlb of mlbsUpper) {
     const cid = itemToCampaign[mlb] ?? "";
-    const info = cid ? campanhas.get(cid) : undefined;
+    const info = cid && campanhasComGasto.has(cid) ? campanhas.get(cid) : undefined;
     porItem[mlb] = info
       ? { ...info, itemId: mlb }
       : {
@@ -483,7 +508,7 @@ export async function getAdsSettingsByItem(
         };
   }
 
-  return { porItem, amostraCampanha, tentativas, campanhasEncontradas: campanhas.size };
+  return { porItem, amostraCampanha, tentativas, campanhasEncontradas: campanhasComGasto.size };
 }
 
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */

@@ -338,19 +338,20 @@ export default function AdsTab() {
               </div>
               <div style={{ marginTop: 4 }}>
                 <b>Ativa</b>/<b>Pausada</b> é o status da CAMPANHA (não do anúncio no catálogo) — campanha pausada não gasta
-                nem gira, mesmo com o anúncio ativo. <b>Sem campanha</b> = não achamos nenhuma campanha ligada a este anúncio
-                na busca do Mercado Ads. Passe o mouse na etiqueta pra ver o nome da campanha.
+                nem gira, mesmo com o anúncio ativo. <b>Sem campanha</b> = não achamos campanha ligada a este anúncio, ou a
+                campanha dele não teve investimento neste período (campanhas zeradas no período são ignoradas de propósito).
+                Passe o mouse na etiqueta pra ver o nome da campanha.
               </div>
               {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0 && !i.lastUpdated) && (
                 <div style={{ marginTop: 8, color: "#f7c948" }}>
                   <b>Orç/dia, ROAS alvo e Alterado vieram vazios em todos os anúncios</b>
-                  {campanhasEncontradas === 0 ? " — nenhuma campanha foi encontrada na busca" : ` (${campanhasEncontradas} campanha(s) encontrada(s), mas sem cruzar com os anúncios)`}.
+                  {campanhasEncontradas === 0 ? " — nenhuma campanha com investimento neste período foi encontrada" : ` (${campanhasEncontradas} campanha(s) com investimento encontrada(s), mas sem cruzar com os anúncios)`}.
                   Abra &quot;Diagnóstico de configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
                 </div>
               )}
               {(cfgDiag.length > 0 || !!cfgAmostra) && (
                 <details style={{ marginTop: 8 }}>
-                  <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Diagnóstico de configuração (orçamento/ROAS/alterado/campanha) — {campanhasEncontradas} campanha(s) encontrada(s)</summary>
+                  <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Diagnóstico de configuração (orçamento/ROAS/alterado/campanha) — {campanhasEncontradas} campanha(s) com investimento neste período</summary>
                   {cfgDiag.length > 0 && (
                     <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
                       <table className="tbl-modern">
