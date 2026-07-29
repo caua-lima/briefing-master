@@ -450,11 +450,46 @@ export async function getAdsSettingsByItem(
     });
   }
 
-  // itemId (MLB) → campaignId. Começa com o que já veio das métricas; para o
-  // resto, pergunta a cada campanha quais anúncios são dela.
+  // itemId (MLB) → campaignId, em ordem de confiança:
   const mlbsUpper = Array.from(new Set(mlbs.map((m) => m.toUpperCase())));
-  const itemToCampaign: Record<string, string> = { ...campaignIdByItem };
-  const faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
+  const itemToCampaign: Record<string, string> = { ...campaignIdByItem }; // 1) já veio das métricas
+
+  /**
+   * 2) Busca de item único (`/advertising/product_ads/items/{mlb}` e a
+   * variante nova por id) — este é o caminho que, na rodada anterior, CHEGOU
+   * a devolver campaign_id reais e distintos pra vários MLBs (o diagnóstico
+   * mostrou 5 ids diferentes sendo tentados); só a busca do DETALHE da
+   * campanha por esse id que falhava (404). Como agora buscamos o detalhe da
+   * campanha na lista já carregada (`campanhas`), em vez de um GET por id,
+   * esse caminho volta a ser útil — sem repetir o erro de antes.
+   */
+  let faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
+  if (faltam.size > 0) {
+    let diagItemRegistrado = 0;
+    await Promise.all(Array.from(faltam).map(async (mlb) => {
+      for (const url of [
+        `${base(advOk)}/ads/${mlb}`,
+        `${base(advOk)}/items/${mlb}`,
+        `${legado(advOk)}/items/${mlb}`,
+        `${ML_API}/advertising/product_ads/items/${mlb}`,
+      ]) {
+        try {
+          const r = await get(url, token);
+          if (diagItemRegistrado < 3) {
+            diagItemRegistrado += 1;
+            tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
+          }
+          if (!r.ok) continue;
+          const item = (await r.json()) as Record<string, unknown>;
+          const cid = texto(primeiro(item, ["campaign_id", "campaignId"]) ?? (item.campaign as Record<string, unknown> | undefined)?.id);
+          if (cid) { itemToCampaign[mlb] = cid; return; }
+        } catch { /* tenta a próxima */ }
+      }
+    }));
+  }
+
+  // 3) Último recurso: pergunta a cada campanha quais anúncios são dela.
+  faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
   if (faltam.size > 0 && campanhas.size > 0) {
     let diagRegistrado = 0;
     await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {

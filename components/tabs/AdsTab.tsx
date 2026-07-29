@@ -18,6 +18,9 @@ type AdItem = {
   totalSales: number; totalUnits: number;
   lucroAntesAds: number; lucroLiquido: number;
   lucroDiretoAntesAds: number; lucroDiretoLiquido: number;
+  /** false = sem venda vinculada no período pra calcular a margem do "direto"
+   *  — não é prejuízo real, é falta de dado (ver route.ts). */
+  diretoDisponivel: boolean;
   dailyBudget: number; roasTarget: number; acosTarget: number; lastUpdated: string;
 };
 
@@ -116,9 +119,12 @@ export default function AdsTab() {
     a.direct += i.directSales; a.directUn += i.directUnits;
     a.adSales += i.adSales; a.total += i.totalSales; a.totalUn += i.totalUnits;
     a.lucroAntes += i.lucroAntesAds; a.lucroLiq += i.lucroLiquido;
-    a.lucroLiqDireto += i.lucroDiretoLiquido;
+    // Só soma o "direto" de quem tem dado — incluir os sem dado (valor 0,
+    // custo cheio) puxava a soma pra negativo mesmo com ROAS bom.
+    if (i.diretoDisponivel) a.lucroLiqDireto += i.lucroDiretoLiquido;
+    else a.semDadoDireto += 1;
     return a;
-  }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0, lucroAntes: 0, lucroLiq: 0, lucroLiqDireto: 0 }), [items]);
+  }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0, lucroAntes: 0, lucroLiq: 0, lucroLiqDireto: 0, semDadoDireto: 0 }), [items]);
 
   const pub = modo === "pub";
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
@@ -135,7 +141,7 @@ export default function AdsTab() {
     { lbl: "ACOS direto", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas diretas", cor: corAcos(acos, t.direct > 0) },
     { lbl: "Impressões", val: num(t.prints), tone: "acc", sub: `CTR ${num(t.prints > 0 ? (t.clicks / t.prints) * 100 : 0, 2)}%` },
     { lbl: "Cliques", val: num(t.clicks), tone: "acc", sub: `CPC ${fmtBRL(t.clicks > 0 ? t.cost / t.clicks : 0)}` },
-    { lbl: "Lucro após ads (direto)", val: fmtBRL(t.lucroLiqDireto), tone: t.lucroLiqDireto >= 0 ? "pos" : "neg", sub: `geral: ${fmtBRL(t.lucroLiq)}`, cor: t.lucroLiqDireto >= 0 ? "var(--green)" : "var(--red)" },
+    { lbl: "Lucro após ads (direto)", val: fmtBRL(t.lucroLiqDireto), tone: t.lucroLiqDireto >= 0 ? "pos" : "neg", sub: `geral: ${fmtBRL(t.lucroLiq)}${t.semDadoDireto ? ` · ${t.semDadoDireto} sem dado p/ direto` : ""}`, cor: t.lucroLiqDireto >= 0 ? "var(--green)" : "var(--red)" },
   ] : [
     { lbl: "Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
     { lbl: "Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
@@ -320,7 +326,13 @@ export default function AdsTab() {
                           {!pub && <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(pctAds, 0)}%</td>}
                           <td style={{ textAlign: "right", color: corAcos(a, v > 0), fontWeight: 700, whiteSpace: "nowrap" }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
                           <td style={{ textAlign: "right", color: corRoas(r), fontWeight: 700, whiteSpace: "nowrap" }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
-                          <td style={{ textAlign: "right", color: i.lucroLiquido >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(i.lucroLiquido)}</td>
+                          {pub && !i.diretoDisponivel ? (
+                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }} title="Sem venda vinculada no período pra calcular a margem do lucro direto — não é prejuízo, é falta de dado.">—</td>
+                          ) : (
+                            <td style={{ textAlign: "right", color: (pub ? i.lucroDiretoLiquido : i.lucroLiquido) >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                              {fmtBRL(pub ? i.lucroDiretoLiquido : i.lucroLiquido)}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -330,7 +342,8 @@ export default function AdsTab() {
             )}
             <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.6 }}>
               {pub
-                ? "Vendas diretas = compras logo após clicar no anúncio · ACOS/ROAS medem só o ad."
+                ? <>Vendas diretas = compras logo após clicar no anúncio · ACOS/ROAS medem só o ad. <b>Lucro</b> com &quot;—&quot; =
+                    sem venda vinculada no período pra calcular a margem — não conta como prejuízo na soma do topo.</>
                 : "Vendas totais = tudo que o item vendeu (ads + orgânico) · TACOS = investido ÷ vendas totais (quanto menor, mais o ads se paga no geral)."}
               <div style={{ marginTop: 4 }}>
                 <b>Alterado</b> = quando a campanha foi mexida pela última vez. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,

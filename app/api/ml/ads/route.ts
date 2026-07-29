@@ -177,10 +177,18 @@ export async function GET(req: Request) {
        * produto (lucro/receita) sobre a receita direta — não temos CMV/taxa
        * separados por venda direta, então a proporção é a melhor aproximação.
        * Responde: o ad se paga só com o que ele converte na hora?
+       *
+       * Sem v.receita (produto não vinculado no Estoque, ou nenhuma venda
+       * nossa achada no período — acontece mesmo o ML atribuindo venda direta
+       * ao clique), a margem cai pra 0 e o cálculo virava "0 de lucro − custo
+       * do ad inteiro" = -100%, puxando a soma geral pra negativo mesmo com
+       * ROAS bom. Isso não é um prejuízo real, é falta de dado — marcamos
+       * como indisponível em vez de inventar perda.
        */
-      const margemItem = v.receita > 0 ? lucroAntesAds / v.receita : 0;
+      const diretoDisponivel = v.receita > 0;
+      const margemItem = diretoDisponivel ? lucroAntesAds / v.receita : 0;
       const lucroDiretoAntesAds = a.directSales * margemItem;
-      const lucroDiretoLiquido = lucroDiretoAntesAds - a.cost;
+      const lucroDiretoLiquido = diretoDisponivel ? lucroDiretoAntesAds - a.cost : 0;
 
       const c = cfg.porItem[a.itemId.toUpperCase()];
       const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? ""; // status do catálogo — só informativo
@@ -193,14 +201,21 @@ export async function GET(req: Request) {
         adSales: a.sales, adUnits: a.units,
         totalSales: v.receita, totalUnits: v.unidades,
         lucroAntesAds, lucroLiquido,
-        lucroDiretoAntesAds, lucroDiretoLiquido,
+        lucroDiretoAntesAds, lucroDiretoLiquido, diretoDisponivel,
         // Configuração da campanha do anúncio (0/"" quando não achamos a campanha).
         dailyBudget: c?.dailyBudget ?? 0,
         roasTarget: c?.roasTarget ?? 0,
         acosTarget: c?.acosTarget ?? 0,
         lastUpdated: c?.lastUpdated ?? "",
       };
-    }).sort((x, y) => y.cost - x.cost);
+      // Sem campanha vai pro fim da lista, não importa o investimento — é
+      // ruído pra quem quer olhar o que está rodando de verdade primeiro.
+    }).sort((x, y) => {
+      const semA = x.status === "sem_campanha" ? 1 : 0;
+      const semB = y.status === "sem_campanha" ? 1 : 0;
+      if (semA !== semB) return semA - semB;
+      return y.cost - x.cost;
+    });
 
     // amostraCampanha: primeira campanha crua devolvida pelo ML — se
     // orçamento/ROAS vierem 0, mostra o objeto para achar o campo certo sem
