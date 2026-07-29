@@ -481,6 +481,9 @@ export async function getAdsSettingsByItem(
           }
           if (!r.ok) continue;
           const item = (await r.json()) as Record<string, unknown>;
+          // Confere que a resposta é mesmo do item pedido, se ela disser quem é.
+          const idNaResposta = texto(primeiro(item, ["item_id", "id"]));
+          if (idNaResposta && idNaResposta.toUpperCase() !== mlb) continue;
           const cid = texto(primeiro(item, ["campaign_id", "campaignId"]) ?? (item.campaign as Record<string, unknown> | undefined)?.id);
           if (cid) { itemToCampaign[mlb] = cid; return; }
         } catch { /* tenta a próxima */ }
@@ -509,9 +512,26 @@ export async function getAdsSettingsByItem(
         } catch { /* segue pro buscar() abaixo mesmo assim */ }
       }
       const rows = await buscar(urls, token).catch(() => []);
+      /**
+       * Salvaguarda: se algum candidato 404 no scoping por campanha, o
+       * `buscar()` cai pro próximo candidato — e se ESSE ignorar o filtro
+       * `filters[campaign_id]=` (aceita o parâmetro mas devolve TODOS os
+       * anúncios da conta, sem filtrar), o resultado parece válido mas está
+       * errado: foi exatamente isso que atribuiu ROAS/orçamento de uma
+       * campanha a anúncios de outra. Nesta conta cada campanha tem só
+       * 1 anúncio patrocinado — uma resposta com muitas linhas é sinal de
+       * que o filtro não foi respeitado, e a lote inteiro é descartado (em
+       * vez de assumir os primeiros itens como certos).
+       */
+      if (rows.length > 5) return;
       for (const row of rows) {
         const mlb = itemIdDe(row);
-        if (mlb && faltam.has(mlb)) itemToCampaign[mlb] = cid;
+        if (!mlb || !faltam.has(mlb)) continue;
+        // Se a própria linha declarar outro campaign_id, o filtro mentiu —
+        // não confia nesta linha nem em nenhuma outra deste lote.
+        const cidNaLinha = texto(primeiro(row, ["campaign_id", "campaignId"]));
+        if (cidNaLinha && cidNaLinha !== cid) return;
+        itemToCampaign[mlb] = cid;
       }
     }));
   }
