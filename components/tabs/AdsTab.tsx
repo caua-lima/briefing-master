@@ -92,6 +92,7 @@ export default function AdsTab() {
   const [cfgDiag, setCfgDiag] = useState<{ url: string; status: number }[]>([]);
   const [cfgAmostra, setCfgAmostra] = useState<unknown>(null);
   const [campanhasEncontradas, setCampanhasEncontradas] = useState(0);
+  const [semGastoNoPeriodo, setSemGastoNoPeriodo] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -107,6 +108,7 @@ export default function AdsTab() {
         setCfgDiag(j.cfgDiag ?? []);
         setCfgAmostra(j.cfgAmostra ?? null);
         setCampanhasEncontradas(j.campanhasEncontradas ?? 0);
+        setSemGastoNoPeriodo(j.semGastoNoPeriodo ?? 0);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -227,8 +229,16 @@ export default function AdsTab() {
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: 8 }}>
               <span className="panel-title">Por anúncio — {pub ? "publicidade" : "geral"}</span>
-              <span className="panel-sub" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span className="panel-sub" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 ordenado por investimento
+                {semGastoNoPeriodo > 0 && (
+                  <span
+                    title="Anúncios sem nenhum investimento no período — ocultados de propósito pra não poluir a tela"
+                    style={{ fontSize: ".68rem", color: "var(--muted)", cursor: "help" }}
+                  >
+                    ({semGastoNoPeriodo} sem gasto ocultado{semGastoNoPeriodo === 1 ? "" : "s"})
+                  </span>
+                )}
                 {items.length > 0 && (
                   <span style={{ display: "flex", gap: 6 }}>
                     {(["ativo", "pausado", "sem_campanha"] as const).map((s) => {

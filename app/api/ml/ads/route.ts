@@ -103,6 +103,13 @@ export async function GET(req: Request) {
       }
     }
 
+    // Só o que teve investimento no período — anúncio parado é poluição
+    // visual aqui, e cortar cedo também poupa chamada de config (campanha)
+    // pra quem nem entraria na tela.
+    const totalAntesDoFiltro = ads.length;
+    ads = ads.filter((a) => a.cost > 0);
+    const semGastoNoPeriodo = totalAntesDoFiltro - ads.length;
+
     const db = getAdminDb();
 
     // ── Produtos (custo médio + imposto) indexados por MLB e SKU ──
@@ -223,6 +230,7 @@ export async function GET(req: Request) {
     // nenhuma respondeu 200, o problema é o endpoint, não o nome do campo.
     return NextResponse.json({
       items, from, to,
+      semGastoNoPeriodo, // quantos anúncios ficaram de fora por não ter investido
       cfgAmostra: { campanha: cfg.amostraCampanha },
       cfgDiag: cfg.tentativas,
       campanhasEncontradas: cfg.campanhasEncontradas,
