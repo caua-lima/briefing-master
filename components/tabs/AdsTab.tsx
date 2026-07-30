@@ -49,16 +49,22 @@ function StatusTag({ item }: { item: AdItem }) {
 }
 
 /**
- * Dias completos desde a última alteração do anúncio. A regra do vendedor: só
- * mexer de novo depois de 3 dias completos performando — antes disso o ML ainda
- * está reaprendendo e o número não é confiável.
+ * Data e hora exatas da última alteração, não só "hoje"/"há Nd" — o campo
+ * `last_updated` da campanha pode não significar "você editou a campanha":
+ * pode ser um timestamp que o próprio ML atualiza sozinho (ex.: toda vez que
+ * a campanha gasta ou recalcula métrica). Mostrando o horário exato, você
+ * julga se faz sentido pra sua campanha em vez de confiar só no resumo.
  */
-function alteracaoInfo(iso: string): { txt: string; dias: number | null; podeAlterar: boolean } {
-  if (!iso) return { txt: "—", dias: null, podeAlterar: true };
+function alteracaoInfo(iso: string): { txt: string; dataHora: string; dias: number | null; podeAlterar: boolean } {
+  if (!iso) return { txt: "—", dataHora: "", dias: null, podeAlterar: true };
   const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return { txt: "—", dias: null, podeAlterar: true };
+  if (!Number.isFinite(t)) return { txt: "—", dataHora: "", dias: null, podeAlterar: true };
+  const d = new Date(t);
+  const dataHora = d.toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
   const dias = Math.floor((Date.now() - t) / 86400000);
-  return { txt: dias <= 0 ? "hoje" : `há ${dias}d`, dias, podeAlterar: dias >= 3 };
+  return { txt: dataHora, dataHora, dias, podeAlterar: dias >= 3 };
 }
 
 type Modo = "pub" | "geral";
@@ -93,6 +99,11 @@ export default function AdsTab() {
   const [cfgAmostra, setCfgAmostra] = useState<unknown>(null);
   const [campanhasEncontradas, setCampanhasEncontradas] = useState(0);
   const [semGastoNoPeriodo, setSemGastoNoPeriodo] = useState(0);
+  // Roster completo de campanhas da conta (mesmo as sem gasto no período) —
+  // pra conferir que nenhuma campanha real sumiu da tela, já que a tabela
+  // principal só mostra quem gastou.
+  const [campanhasTotal, setCampanhasTotal] = useState(0);
+  const [campanhasResumo, setCampanhasResumo] = useState<{ id: string; name: string; status: string; gasto: number }[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -109,6 +120,8 @@ export default function AdsTab() {
         setCfgAmostra(j.cfgAmostra ?? null);
         setCampanhasEncontradas(j.campanhasEncontradas ?? 0);
         setSemGastoNoPeriodo(j.semGastoNoPeriodo ?? 0);
+        setCampanhasTotal(j.campanhasTotal ?? 0);
+        setCampanhasResumo(j.campanhasResumo ?? []);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -319,8 +332,11 @@ export default function AdsTab() {
                             const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#f7c948";
                             return (
                               <td style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}
-                                title={alt.dias == null ? "Data de alteração não informada pelo ML" : alt.podeAlterar ? "Já passou dos 3 dias — pode ajustar" : `Aguarde: só ${alt.dias} dia(s) desde a última alteração (espere 3 completos)`}>
-                                {alt.txt}{alt.dias != null && !alt.podeAlterar ? " ⏳" : ""}
+                                title={alt.dias == null
+                                  ? "Data de alteração não informada pelo ML"
+                                  : `${alt.dataHora} · ${alt.podeAlterar ? "já passou dos 3 dias, pode ajustar" : `${alt.dias} dia(s) desde então — espere 3 completos`}`}>
+                                {alt.dataHora || "—"}
+                                {alt.dias != null && !alt.podeAlterar ? " ⏳" : ""}
                               </td>
                             );
                           })()}
@@ -356,8 +372,11 @@ export default function AdsTab() {
                     sem venda vinculada no período pra calcular a margem — não conta como prejuízo na soma do topo.</>
                 : "Vendas totais = tudo que o item vendeu (ads + orgânico) · TACOS = investido ÷ vendas totais (quanto menor, mais o ads se paga no geral)."}
               <div style={{ marginTop: 4 }}>
-                <b>Alterado</b> = quando a campanha foi mexida pela última vez. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,
-                espere completar 3 dias performando antes de ajustar de novo. <b>Orç/dia</b> e <b>ROAS alvo</b> vêm da configuração da campanha no ML.
+                <b>Alterado</b> = data/hora de <code>last_updated</code> da campanha no ML. <span style={{ color: "#f7c948" }}>⏳</span> = menos de 3 dias,
+                espere completar antes de ajustar de novo. <b>Atenção:</b> este campo pode não significar &quot;você editou a campanha&quot; —
+                se aparecer &quot;hoje&quot; em campanha que você não mexeu, é provável que o ML atualize esse timestamp sozinho quando a
+                campanha gasta ou recalcula métrica; use a data exata mostrada pra julgar, não confie só no ⏳. <b>Orç/dia</b> e
+                <b> ROAS alvo</b> vêm da configuração da campanha no ML.
               </div>
               <div style={{ marginTop: 4 }}>
                 <b>Ativa</b>/<b>Pausada</b> é o status da CAMPANHA (não do anúncio no catálogo) — campanha pausada não gasta
@@ -395,6 +414,40 @@ export default function AdsTab() {
                       {JSON.stringify(cfgAmostra, null, 2)}
                     </pre>
                   )}
+                </details>
+              )}
+              {campanhasResumo.length > 0 && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: "pointer", color: "var(--muted)" }}>
+                    Todas as campanhas da conta ({campanhasTotal}) — conferir se nenhuma sumiu da tabela
+                  </summary>
+                  <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
+                    <table className="tbl-modern">
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left" }}>Campanha</th>
+                          <th style={{ textAlign: "left" }}>Status ML</th>
+                          <th style={{ textAlign: "right" }}>Gasto no período</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {campanhasResumo.map((c) => (
+                          <tr key={c.id}>
+                            <td style={{ textAlign: "left", fontWeight: 600 }} title={c.id}>{c.name}</td>
+                            <td style={{ textAlign: "left", color: "var(--muted)" }}>{c.status || "—"}</td>
+                            <td style={{ textAlign: "right", color: c.gasto > 0 ? "var(--green)" : "var(--muted)", fontWeight: c.gasto > 0 ? 700 : 400 }}>
+                              {c.gasto > 0 ? fmtBRL(c.gasto) : "sem gasto no período"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: ".7rem" }}>
+                    Campanhas com &quot;sem gasto no período&quot; não aparecem na tabela principal (poluição visual), mas estão
+                    listadas aqui pra você confirmar que existem e foram encontradas — se faltar alguma campanha real desta lista,
+                    é a busca de campanhas do ML que não retornou, não um filtro nosso escondendo ela.
+                  </div>
                 </details>
               )}
             </div>

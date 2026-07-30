@@ -406,12 +406,17 @@ export async function getAdsSettingsByItem(
   amostraCampanha: unknown;
   tentativas: { url: string; status: number }[];
   campanhasEncontradas: number;
+  campanhasTotal: number;
+  campanhasResumo: { id: string; name: string; status: string; gasto: number }[];
 }> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
   const porItem: Record<string, AdSettings> = {};
   const tentativas: { url: string; status: number }[] = [];
-  if (!adv || mlbs.length === 0) return { porItem, amostraCampanha: null, tentativas, campanhasEncontradas: 0 };
+  if (!adv || mlbs.length === 0) return {
+    porItem, amostraCampanha: null, tentativas,
+    campanhasEncontradas: 0, campanhasTotal: 0, campanhasResumo: [],
+  };
   const advOk: Adv = adv;
 
   // Diagnóstico honesto: testa as duas URLs candidatas isoladamente (1 item
@@ -563,7 +568,22 @@ export async function getAdsSettingsByItem(
         };
   }
 
-  return { porItem, amostraCampanha, tentativas, campanhasEncontradas: campanhasComGasto.size };
+  // Lista completa das campanhas da conta (mesmo as sem gasto), pra dar pra
+  // conferir que nenhuma sumiu — a tabela principal continua só com quem
+  // gastou, mas essa cobertura fica visível em algum lugar da tela.
+  const campanhasResumo = Array.from(campanhas.values())
+    .map((c) => ({
+      id: c.campaignId, name: c.campaignName || c.campaignId,
+      status: c.status, gasto: gastoPorCampanha.get(c.campaignId) ?? 0,
+    }))
+    .sort((a, b) => b.gasto - a.gasto || a.name.localeCompare(b.name));
+
+  return {
+    porItem, amostraCampanha, tentativas,
+    campanhasEncontradas: campanhasComGasto.size,
+    campanhasTotal: campanhas.size,
+    campanhasResumo,
+  };
 }
 
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */

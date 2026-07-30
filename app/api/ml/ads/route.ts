@@ -168,6 +168,7 @@ export async function GET(req: Request) {
       () => ({
         porItem: {} as Record<string, AdSettings>, amostraCampanha: null,
         tentativas: [] as { url: string; status: number }[], campanhasEncontradas: 0,
+        campanhasTotal: 0, campanhasResumo: [] as { id: string; name: string; status: string; gasto: number }[],
       }),
     );
     // Status do catálogo (se o anúncio em si está ativo/pausado/encerrado) —
@@ -234,6 +235,8 @@ export async function GET(req: Request) {
       cfgAmostra: { campanha: cfg.amostraCampanha },
       cfgDiag: cfg.tentativas,
       campanhasEncontradas: cfg.campanhasEncontradas,
+      campanhasTotal: cfg.campanhasTotal,
+      campanhasResumo: cfg.campanhasResumo,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
