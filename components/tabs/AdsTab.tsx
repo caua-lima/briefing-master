@@ -62,6 +62,7 @@ function alteracaoInfo(iso: string): { txt: string; dataHora: string; dias: numb
   const d = new Date(t);
   const dataHora = d.toLocaleString("pt-BR", {
     day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit",
+    timeZone: "America/Sao_Paulo", hour12: false,
   });
   const dias = Math.floor((Date.now() - t) / 86400000);
   return { txt: dataHora, dataHora, dias, podeAlterar: dias >= 3 };
@@ -103,7 +104,12 @@ export default function AdsTab() {
   // pra conferir que nenhuma campanha real sumiu da tela, já que a tabela
   // principal só mostra quem gastou.
   const [campanhasTotal, setCampanhasTotal] = useState(0);
-  const [campanhasResumo, setCampanhasResumo] = useState<{ id: string; name: string; status: string; gasto: number }[]>([]);
+  const [campanhasResumo, setCampanhasResumo] = useState<{ id: string; name: string; status: string; gasto: number; totalAds: number }[]>([]);
+  // anunciosTotal = anúncios cadastrados nas campanhas da conta (sem filtro de
+  // data); anunciosNoPeriodo = quantos tiveram alguma atividade no período —
+  // só esses últimos entram na tabela (com ou sem gasto).
+  const [anunciosTotal, setAnunciosTotal] = useState(0);
+  const [anunciosNoPeriodo, setAnunciosNoPeriodo] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -122,6 +128,8 @@ export default function AdsTab() {
         setSemGastoNoPeriodo(j.semGastoNoPeriodo ?? 0);
         setCampanhasTotal(j.campanhasTotal ?? 0);
         setCampanhasResumo(j.campanhasResumo ?? []);
+        setAnunciosTotal(j.anunciosTotal ?? 0);
+        setAnunciosNoPeriodo(j.anunciosNoPeriodo ?? 0);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -419,14 +427,21 @@ export default function AdsTab() {
               {campanhasResumo.length > 0 && (
                 <details style={{ marginTop: 8 }}>
                   <summary style={{ cursor: "pointer", color: "var(--muted)" }}>
-                    Todas as campanhas da conta ({campanhasTotal}) — conferir se nenhuma sumiu da tabela
+                    Todas as campanhas da conta ({campanhasTotal}, {anunciosTotal} anúncio(s) cadastrado(s)) — conferir se nada sumiu da tabela
                   </summary>
+                  <div style={{ marginTop: 6, fontSize: ".7rem", color: "var(--muted)" }}>
+                    A tabela acima só mostra anúncio com atividade (impressão/clique/gasto) neste período — é o próprio
+                    Mercado Ads que já filtra por data nesse recurso. Neste período, <b>{anunciosNoPeriodo}</b> anúncio(s) tiveram
+                    atividade (de {anunciosTotal} cadastrados no total); os outros ficaram fora porque estiveram 100% zerados o
+                    tempo todo, não porque foram escondidos por um filtro nosso.
+                  </div>
                   <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
                     <table className="tbl-modern">
                       <thead>
                         <tr>
                           <th style={{ textAlign: "left" }}>Campanha</th>
                           <th style={{ textAlign: "left" }}>Status ML</th>
+                          <th style={{ textAlign: "right" }}>Anúncios cadastrados</th>
                           <th style={{ textAlign: "right" }}>Gasto no período</th>
                         </tr>
                       </thead>
@@ -435,6 +450,7 @@ export default function AdsTab() {
                           <tr key={c.id}>
                             <td style={{ textAlign: "left", fontWeight: 600 }} title={c.id}>{c.name}</td>
                             <td style={{ textAlign: "left", color: "var(--muted)" }}>{c.status || "—"}</td>
+                            <td style={{ textAlign: "right", color: "var(--muted)" }}>{c.totalAds}</td>
                             <td style={{ textAlign: "right", color: c.gasto > 0 ? "var(--green)" : "var(--muted)", fontWeight: c.gasto > 0 ? 700 : 400 }}>
                               {c.gasto > 0 ? fmtBRL(c.gasto) : "sem gasto no período"}
                             </td>

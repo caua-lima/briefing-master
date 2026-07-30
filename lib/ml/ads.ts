@@ -407,7 +407,9 @@ export async function getAdsSettingsByItem(
   tentativas: { url: string; status: number }[];
   campanhasEncontradas: number;
   campanhasTotal: number;
-  campanhasResumo: { id: string; name: string; status: string; gasto: number }[];
+  campanhasResumo: { id: string; name: string; status: string; gasto: number; totalAds: number }[];
+  anunciosTotal: number;
+  anunciosNoPeriodo: number;
 }> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
@@ -416,6 +418,7 @@ export async function getAdsSettingsByItem(
   if (!adv || mlbs.length === 0) return {
     porItem, amostraCampanha: null, tentativas,
     campanhasEncontradas: 0, campanhasTotal: 0, campanhasResumo: [],
+    anunciosTotal: 0, anunciosNoPeriodo: 0,
   };
   const advOk: Adv = adv;
 
@@ -568,6 +571,26 @@ export async function getAdsSettingsByItem(
         };
   }
 
+  /**
+   * A tabela principal só enxerga anúncio que teve atividade (prints/clicks/
+   * custo) no período — é o próprio recurso de métricas do ML que já filtra
+   * por data, então um anúncio zerado no período inteiro nunca aparece nas
+   * linhas de métrica, nem como "sem gasto". Pra responder "cadê os outros
+   * anúncios", contamos os anúncios de cada campanha direto (sem filtro de
+   * data) — é o mesmo recurso já usado no passo 3 acima, sem data.
+   */
+  const adsPorCampanha = new Map<string, number>();
+  await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
+    const urls = (o: number) => [
+      `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
+      `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
+      `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+    ];
+    const rows = await buscar(urls, token).catch(() => []);
+    adsPorCampanha.set(cid, rows.length);
+  }));
+  const anunciosTotal = Array.from(adsPorCampanha.values()).reduce((s, n) => s + n, 0);
+
   // Lista completa das campanhas da conta (mesmo as sem gasto), pra dar pra
   // conferir que nenhuma sumiu — a tabela principal continua só com quem
   // gastou, mas essa cobertura fica visível em algum lugar da tela.
@@ -575,6 +598,7 @@ export async function getAdsSettingsByItem(
     .map((c) => ({
       id: c.campaignId, name: c.campaignName || c.campaignId,
       status: c.status, gasto: gastoPorCampanha.get(c.campaignId) ?? 0,
+      totalAds: adsPorCampanha.get(c.campaignId) ?? 0,
     }))
     .sort((a, b) => b.gasto - a.gasto || a.name.localeCompare(b.name));
 
@@ -583,6 +607,8 @@ export async function getAdsSettingsByItem(
     campanhasEncontradas: campanhasComGasto.size,
     campanhasTotal: campanhas.size,
     campanhasResumo,
+    anunciosTotal,
+    anunciosNoPeriodo: mlbsUpper.length,
   };
 }
 
