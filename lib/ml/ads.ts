@@ -31,6 +31,26 @@ async function getAdvertiser(token: string): Promise<Adv | null> {
   return adv;
 }
 
+/**
+ * TODOS os anunciantes da conta, não só o primeiro. Uma conta pode ter mais de
+ * um anunciante (ex.: uma marca por anunciante) e as campanhas de cada um só
+ * aparecem na URL do respectivo advertiser_id — pegando só o primeiro, os
+ * anúncios dos outros ficavam eternamente "sem campanha" mesmo gastando de
+ * verdade, e o gasto deles não batia com nenhuma campanha da lista.
+ */
+async function getAdvertisersAll(token: string): Promise<Adv[]> {
+  const res = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
+    headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
+    cache: "no-store",
+  });
+  if (!res.ok) return [];
+  const j = (await res.json()) as { advertisers?: Advertiser[] };
+  const list = Array.isArray(j?.advertisers) ? j.advertisers : [];
+  return list
+    .filter((a) => a?.advertiser_id != null)
+    .map((a) => ({ id: String(a.advertiser_id), siteId: String(a.site_id ?? "MLB").toUpperCase() }));
+}
+
 /** GET com retry em 429/5xx, tentando Api-Version 2 e caindo pra 1. */
 async function get(url: string, token: string): Promise<Response> {
   const call = async (v: string) => {
@@ -411,6 +431,12 @@ export async function getAdsSettingsByItem(
   anunciosTotal: number;
   anunciosNoPeriodo: number;
   anunciosContagemFalhou: boolean;
+  /** campaign_ids que os anúncios declararam mas que não vieram na lista de campanhas. */
+  campanhasOrfas: string[];
+  /** R$ do período gastos por anúncios cuja campanha não está na lista. */
+  gastoOrfao: number;
+  /** R$ do período gastos por anúncios sem nenhuma campanha resolvida. */
+  gastoSemVinculo: number;
 }> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
@@ -420,6 +446,7 @@ export async function getAdsSettingsByItem(
     porItem, amostraCampanha: null, tentativas,
     campanhasEncontradas: 0, campanhasTotal: 0, campanhasResumo: [],
     anunciosTotal: 0, anunciosNoPeriodo: 0, anunciosContagemFalhou: false,
+    campanhasOrfas: [], gastoOrfao: 0, gastoSemVinculo: 0,
   };
   const advOk: Adv = adv;
 
@@ -435,10 +462,32 @@ export async function getAdsSettingsByItem(
     }
   }
 
-  const camposCrus = await buscar(
-    (o) => [`${base(advOk)}/campaigns/search?limit=50&offset=${o}`, `${legado(advOk)}/campaigns?limit=50&offset=${o}`],
-    token,
-  ).catch(() => []);
+  /**
+   * Campanhas de TODOS os anunciantes da conta. Antes só o primeiro era
+   * consultado: se a conta tem mais de um anunciante, os anúncios dos outros
+   * gastavam de verdade mas nunca achavam campanha ("sem campanha"), e o gasto
+   * deles não batia com nenhuma linha da lista de campanhas.
+   */
+  const anunciantes = await getAdvertisersAll(token).catch(() => []);
+  const todosAdvs = anunciantes.length > 0 ? anunciantes : [advOk];
+  // Guarda de qual anunciante veio cada campanha — a busca dos anúncios dela
+  // precisa ser feita na URL do anunciante certo.
+  const advDaCampanha = new Map<string, Adv>();
+  const camposCrus: Record<string, unknown>[] = [];
+  for (const a of todosAdvs) {
+    const linhas = await buscar(
+      (o) => [`${base(a)}/campaigns/search?limit=50&offset=${o}`, `${legado(a)}/campaigns?limit=50&offset=${o}`],
+      token,
+    ).catch(() => []);
+    for (const c of linhas) {
+      const id = texto(primeiro(c, ["id", "campaign_id"]));
+      if (id) advDaCampanha.set(id, a);
+    }
+    camposCrus.push(...linhas);
+  }
+  if (todosAdvs.length > 1) {
+    tentativas.push({ url: `[anunciantes] ${todosAdvs.map((a) => a.id).join(", ")}`, status: 200 });
+  }
   const amostraCampanha = camposCrus[0] ?? null;
 
   const campanhas = new Map<string, AdSettings>();
@@ -464,29 +513,72 @@ export async function getAdsSettingsByItem(
   const itemToCampaign: Record<string, string> = { ...campaignIdByItem }; // 1) já veio das métricas
 
   /**
-   * 2) Busca de item único (`/advertising/product_ads/items/{mlb}` e a
-   * variante nova por id) — este é o caminho que, na rodada anterior, CHEGOU
-   * a devolver campaign_id reais e distintos pra vários MLBs (o diagnóstico
-   * mostrou 5 ids diferentes sendo tentados); só a busca do DETALHE da
-   * campanha por esse id que falhava (404). Como agora buscamos o detalhe da
-   * campanha na lista já carregada (`campanhas`), em vez de um GET por id,
-   * esse caminho volta a ser útil — sem repetir o erro de antes.
+   * 2) Fonte PRINCIPAL: pergunta a cada campanha quais anúncios são dela.
+   *
+   * O diagnóstico em produção resolveu a dúvida de qual rota confiar:
+   * `/campaigns/{id}/ads/search` responde 404, mas o candidato seguinte
+   * (`/ads/search?filters[campaign_id]=`) responde E respeita o filtro — a
+   * contagem por campanha bateu exatamente com o painel do Mercado Ads
+   * (2/2/2/2/1/1/1/1/1/1 = 14 anúncios). Como isso dá a relação anúncio↔
+   * campanha direto da fonte, vale mais do que deduzir item a item, e a mesma
+   * varredura já serve pra contar os anúncios cadastrados de cada campanha.
    */
-  let faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
+  const adsPorCampanha = new Map<string, number>();
+  let diagRegistrado = 0;
+  await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
+    const advC = advDaCampanha.get(cid) ?? advOk; // campanha do anunciante certo
+    const urls = (o: number) => [
+      `${base(advC)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
+      `${base(advC)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+      `${base(advC)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
+      `${legado(advC)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
+    ];
+    // Registra o status do candidato que de fato funciona — sem isso, "o item
+    // continua sem campanha" fica sem explicação nenhuma na tela.
+    if (diagRegistrado < 2) {
+      diagRegistrado += 1;
+      try {
+        const r = await get(urls(0)[1], token);
+        tentativas.push({ url: `[anuncios] ${urls(0)[1].replace(ML_API, "")}`, status: r.status });
+      } catch { /* segue pro buscar() abaixo mesmo assim */ }
+    }
+    const rows = await buscar(urls, token).catch(() => []);
+    /**
+     * Salvaguarda: se o candidato que respondeu ignorar o `filters[campaign_id]`
+     * (aceita o parâmetro e devolve a conta inteira), o lote parece válido mas
+     * atribuiria orçamento/ROAS de uma campanha aos anúncios de outra — foi
+     * exatamente esse o bug de cruzamento cruzado de antes. Se qualquer linha
+     * declarar um campaign_id diferente do pedido, o filtro mentiu e o lote
+     * inteiro é descartado (em vez de assumir as primeiras linhas como certas).
+     */
+    for (const row of rows) {
+      const cidNaLinha = texto(primeiro(row, ["campaign_id", "campaignId"]));
+      if (cidNaLinha && cidNaLinha !== cid) return;
+    }
+    adsPorCampanha.set(cid, rows.length);
+    for (const row of rows) {
+      const mlb = itemIdDe(row);
+      if (ehMlb(mlb)) itemToCampaign[mlb] = cid; // fonte direta vence o palpite das métricas
+    }
+  }));
+
+  /**
+   * 3) Sobrou anúncio sem campanha? Tenta o detalhe do anúncio isolado. Só
+   * chega aqui quem a varredura por campanha não cobriu.
+   */
+  const faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
   if (faltam.size > 0) {
     let diagItemRegistrado = 0;
     await Promise.all(Array.from(faltam).map(async (mlb) => {
       for (const url of [
-        `${base(advOk)}/ads/${mlb}`,
-        `${base(advOk)}/items/${mlb}`,
-        `${legado(advOk)}/items/${mlb}`,
+        ...todosAdvs.flatMap((a) => [`${base(a)}/ads/${mlb}`, `${base(a)}/items/${mlb}`, `${legado(a)}/items/${mlb}`]),
         `${ML_API}/advertising/product_ads/items/${mlb}`,
       ]) {
         try {
           const r = await get(url, token);
           if (diagItemRegistrado < 3) {
             diagItemRegistrado += 1;
-            tentativas.push({ url: url.replace(ML_API, ""), status: r.status });
+            tentativas.push({ url: `[anuncio-solto] ${url.replace(ML_API, "")}`, status: r.status });
           }
           if (!r.ok) continue;
           const item = (await r.json()) as Record<string, unknown>;
@@ -496,51 +588,6 @@ export async function getAdsSettingsByItem(
           const cid = texto(primeiro(item, ["campaign_id", "campaignId"]) ?? (item.campaign as Record<string, unknown> | undefined)?.id);
           if (cid) { itemToCampaign[mlb] = cid; return; }
         } catch { /* tenta a próxima */ }
-      }
-    }));
-  }
-
-  // 3) Último recurso: pergunta a cada campanha quais anúncios são dela.
-  faltam = new Set(mlbsUpper.filter((m) => !itemToCampaign[m]));
-  if (faltam.size > 0 && campanhas.size > 0) {
-    let diagRegistrado = 0;
-    await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
-      const urls = (o: number) => [
-        `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
-        `${base(advOk)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
-        `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
-        `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
-      ];
-      // Registra o status da 1ª tentativa pra algumas campanhas — sem isso,
-      // "o item continua sem campanha" fica sem explicação nenhuma na tela.
-      if (diagRegistrado < 3) {
-        diagRegistrado += 1;
-        try {
-          const r = await get(urls(0)[0], token);
-          tentativas.push({ url: urls(0)[0].replace(ML_API, ""), status: r.status });
-        } catch { /* segue pro buscar() abaixo mesmo assim */ }
-      }
-      const rows = await buscar(urls, token).catch(() => []);
-      /**
-       * Salvaguarda: se algum candidato 404 no scoping por campanha, o
-       * `buscar()` cai pro próximo candidato — e se ESSE ignorar o filtro
-       * `filters[campaign_id]=` (aceita o parâmetro mas devolve TODOS os
-       * anúncios da conta, sem filtrar), o resultado parece válido mas está
-       * errado: foi exatamente isso que atribuiu ROAS/orçamento de uma
-       * campanha a anúncios de outra. Nesta conta cada campanha tem só
-       * 1 anúncio patrocinado — uma resposta com muitas linhas é sinal de
-       * que o filtro não foi respeitado, e a lote inteiro é descartado (em
-       * vez de assumir os primeiros itens como certos).
-       */
-      if (rows.length > 5) return;
-      for (const row of rows) {
-        const mlb = itemIdDe(row);
-        if (!mlb || !faltam.has(mlb)) continue;
-        // Se a própria linha declarar outro campaign_id, o filtro mentiu —
-        // não confia nesta linha nem em nenhuma outra deste lote.
-        const cidNaLinha = texto(primeiro(row, ["campaign_id", "campaignId"]));
-        if (cidNaLinha && cidNaLinha !== cid) return;
-        itemToCampaign[mlb] = cid;
       }
     }));
   }
@@ -572,40 +619,37 @@ export async function getAdsSettingsByItem(
         };
   }
 
-  /**
-   * A tabela principal só enxerga anúncio que teve atividade (prints/clicks/
-   * custo) no período — é o próprio recurso de métricas do ML que já filtra
-   * por data, então um anúncio zerado no período inteiro nunca aparece nas
-   * linhas de métrica, nem como "sem gasto". Pra responder "cadê os outros
-   * anúncios", contamos os anúncios de cada campanha direto (sem filtro de
-   * data) — é o mesmo recurso já usado no passo 3 acima, sem data.
-   */
-  const adsPorCampanha = new Map<string, number>();
-  let diagAdsRegistrado = 0;
-  await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
-    const urls = (o: number) => [
-      `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
-      `${base(advOk)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
-      `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
-      `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
-    ];
-    // Diagnóstico honesto: se essa contagem der tudo zero, precisamos saber
-    // se foi porque a campanha está mesmo vazia ou porque nenhuma URL respondeu.
-    if (diagAdsRegistrado < 3) {
-      diagAdsRegistrado += 1;
-      try {
-        const r = await get(urls(0)[0], token);
-        tentativas.push({ url: `[contagem] ${urls(0)[0].replace(ML_API, "")}`, status: r.status });
-      } catch { /* segue pro buscar() abaixo mesmo assim */ }
-    }
-    const rows = await buscar(urls, token).catch(() => []);
-    adsPorCampanha.set(cid, rows.length);
-  }));
+  // A varredura do passo 2 já contou os anúncios cadastrados de cada campanha
+  // (sem filtro de data) — a tabela principal só enxerga quem teve atividade no
+  // período, então esse total é o que responde "cadê os outros anúncios".
   const anunciosTotal = Array.from(adsPorCampanha.values()).reduce((s, n) => s + n, 0);
   // Se a conta tem campanha mas a contagem deu zero em tudo, o número não é
   // confiável (nenhuma URL candidata respondeu) — melhor avisar isso do que
   // mostrar "0 anúncios" como se fosse fato.
   const anunciosContagemFalhou = campanhas.size > 0 && anunciosTotal === 0;
+
+  /**
+   * Prestação de contas do investimento: todo real gasto no período tem que
+   * cair em alguma campanha conhecida. O que não cai fica explícito aqui em vez
+   * de sumir — foi assim que apareceu R$ 86,44 rotulado "sem campanha" enquanto
+   * a soma das campanhas dava menos que o investimento total da tela.
+   *
+   * Dois casos diferentes, e a distinção importa:
+   *  - órfão: o anúncio TEM campaign_id, mas essa campanha não veio na lista de
+   *    campanhas do anunciante (lista incompleta, ou campanha de outro
+   *    anunciante da mesma conta) → problema de cobertura da nossa busca;
+   *  - sem vínculo: não achamos campanha nenhuma pro anúncio.
+   */
+  const campanhasOrfas = new Set<string>();
+  let gastoOrfao = 0;
+  let gastoSemVinculo = 0;
+  for (const mlb of mlbsUpper) {
+    const custo = costByItem[mlb] ?? 0;
+    if (custo <= 0) continue;
+    const cid = itemToCampaign[mlb];
+    if (!cid) { gastoSemVinculo += custo; continue; }
+    if (!campanhas.has(cid)) { campanhasOrfas.add(cid); gastoOrfao += custo; }
+  }
 
   // Lista completa das campanhas da conta (mesmo as sem gasto), pra dar pra
   // conferir que nenhuma sumiu — a tabela principal continua só com quem
@@ -626,6 +670,9 @@ export async function getAdsSettingsByItem(
     anunciosTotal,
     anunciosNoPeriodo: mlbsUpper.length,
     anunciosContagemFalhou,
+    campanhasOrfas: Array.from(campanhasOrfas),
+    gastoOrfao,
+    gastoSemVinculo,
   };
 }
 

@@ -171,6 +171,7 @@ export async function GET(req: Request) {
         campanhasTotal: 0,
         campanhasResumo: [] as { id: string; name: string; status: string; gasto: number; totalAds: number }[],
         anunciosTotal: 0, anunciosNoPeriodo: 0, anunciosContagemFalhou: false,
+        campanhasOrfas: [] as string[], gastoOrfao: 0, gastoSemVinculo: 0,
       }),
     );
     // Status do catálogo (se o anúncio em si está ativo/pausado/encerrado) —
@@ -227,6 +228,22 @@ export async function GET(req: Request) {
       return y.cost - x.cost;
     });
 
+    /**
+     * Reconciliação com o dashboard. A tabela cobre SÓ os itens anunciados, mas
+     * o rótulo "Geral (todas as vendas)" dava a entender que o total era o
+     * faturamento inteiro do período — e não é: R$ 9.465 dos itens anunciados
+     * contra R$ 12.040 de faturamento líquido do dashboard. Os dois estão
+     * certos e medem coisas diferentes; devolvendo o total da conta, a tela
+     * consegue dizer quanto do faturamento esses anúncios representam em vez de
+     * deixar o vendedor achar que um dos números está quebrado.
+     */
+    let receitaConta = 0, unidadesConta = 0, lucroContaAntesAds = 0;
+    for (const v of vendas.values()) {
+      receitaConta += v.receita;
+      unidadesConta += v.unidades;
+      lucroContaAntesAds += v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
+    }
+
     // amostraCampanha: primeira campanha crua devolvida pelo ML — se
     // orçamento/ROAS vierem 0, mostra o objeto para achar o campo certo sem
     // chutar. cfgDiag: status HTTP das URLs de campanhas tentadas — se
@@ -242,6 +259,13 @@ export async function GET(req: Request) {
       anunciosTotal: cfg.anunciosTotal,
       anunciosNoPeriodo: cfg.anunciosNoPeriodo,
       anunciosContagemFalhou: cfg.anunciosContagemFalhou,
+      campanhasOrfas: cfg.campanhasOrfas,
+      gastoOrfao: cfg.gastoOrfao,
+      gastoSemVinculo: cfg.gastoSemVinculo,
+      conta: {
+        receita: receitaConta, unidades: unidadesConta,
+        lucroAntesAds: lucroContaAntesAds, itens: vendas.size,
+      },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

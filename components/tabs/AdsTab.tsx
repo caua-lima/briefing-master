@@ -111,6 +111,15 @@ export default function AdsTab() {
   const [anunciosTotal, setAnunciosTotal] = useState(0);
   const [anunciosNoPeriodo, setAnunciosNoPeriodo] = useState(0);
   const [anunciosContagemFalhou, setAnunciosContagemFalhou] = useState(false);
+  // Investimento que não caiu em nenhuma campanha conhecida — precisa ficar
+  // visível, senão a soma das campanhas fica menor que o investimento do topo
+  // sem nenhuma explicação.
+  const [gastoOrfao, setGastoOrfao] = useState(0);
+  const [gastoSemVinculo, setGastoSemVinculo] = useState(0);
+  const [campanhasOrfas, setCampanhasOrfas] = useState<string[]>([]);
+  // Totais da conta inteira no período (todos os itens, anunciados ou não) —
+  // serve pra dizer quanto do faturamento os itens anunciados representam.
+  const [conta, setConta] = useState<{ receita: number; unidades: number; lucroAntesAds: number; itens: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -132,6 +141,10 @@ export default function AdsTab() {
         setAnunciosTotal(j.anunciosTotal ?? 0);
         setAnunciosNoPeriodo(j.anunciosNoPeriodo ?? 0);
         setAnunciosContagemFalhou(!!j.anunciosContagemFalhou);
+        setGastoOrfao(j.gastoOrfao ?? 0);
+        setGastoSemVinculo(j.gastoSemVinculo ?? 0);
+        setCampanhasOrfas(j.campanhasOrfas ?? []);
+        setConta(j.conta ?? null);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -169,7 +182,7 @@ export default function AdsTab() {
     { lbl: "Lucro após ads (direto)", val: fmtBRL(t.lucroLiqDireto), tone: t.lucroLiqDireto >= 0 ? "pos" : "neg", sub: `geral: ${fmtBRL(t.lucroLiq)}${t.semDadoDireto ? ` · ${t.semDadoDireto} sem dado p/ direto` : ""}`, cor: t.lucroLiqDireto >= 0 ? "var(--green)" : "var(--red)" },
   ] : [
     { lbl: "Investimento", val: fmtBRL(t.cost), tone: "neg", sub: `${items.length} anúncio(s)` },
-    { lbl: "Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un (todos os canais)` },
+    { lbl: "Vendas totais", val: fmtBRL(t.total), tone: "pos", sub: `${num(t.totalUn)} un · só os itens anunciados${conta && conta.receita > 0 ? ` (conta toda: ${fmtBRL(conta.receita)})` : ""}` },
     { lbl: "ROAS geral", val: `${num(roas, 2)}x`, tone: "acc", sub: "vendas totais ÷ investido", cor: corRoas(roas) },
     { lbl: "TACOS", val: `${num(acos, 1)}%`, tone: "warn", sub: "investido ÷ vendas totais", cor: corAcos(acos, t.total > 0) },
     { lbl: "Vendas via ads", val: `${num(pctViaAds, 0)}%`, tone: "acc", sub: `${fmtBRL(t.adSales)} vieram do ad` },
@@ -197,8 +210,17 @@ export default function AdsTab() {
       <div style={{ fontSize: ".78rem", color: "var(--muted)", marginTop: -6 }}>
         {pub
           ? "Só o que saiu direto do anúncio — mede a eficiência do ad em si."
-          : "Quanto você gastou de ads vs TUDO que vendeu (inclui vendas sem tráfego pago) — o impacto real no faturamento."}
+          : "Gasto de ads vs TUDO que os itens anunciados venderam (ads + orgânico) — o impacto real no faturamento deles."}
       </div>
+      {/* Sem isso, "Vendas totais" aqui parece brigar com o faturamento do
+          dashboard: são recortes diferentes (itens anunciados vs conta toda). */}
+      {!pub && conta && conta.receita > 0 && (
+        <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: -2 }}>
+          Esta aba cobre <b>só os {items.length} item(ns) anunciados</b>: {fmtBRL(t.total)} dos {fmtBRL(conta.receita)} que a
+          conta faturou no período ({num((t.total / conta.receita) * 100, 0)}% do total, {conta.itens} item(ns) vendidos ao todo).
+          Por isso o número aqui é menor que o faturamento do dashboard — não é divergência, é recorte.
+        </div>
+      )}
 
       {erro ? (
         <div style={{ padding: "12px 14px", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.3)", borderRadius: 8, fontSize: ".8rem", color: "var(--red)" }}>
@@ -470,6 +492,16 @@ export default function AdsTab() {
                       </tbody>
                     </table>
                   </div>
+                  {(gastoOrfao > 0 || gastoSemVinculo > 0) && (
+                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "#f7c948" }}>
+                      <b>{fmtBRL(gastoOrfao + gastoSemVinculo)} de investimento não caiu em nenhuma campanha desta lista</b> —
+                      por isso a soma da coluna &quot;Gasto no período&quot; fica menor que o Investimento do topo ({fmtBRL(t.cost)}).
+                      {gastoOrfao > 0 && <> {fmtBRL(gastoOrfao)} são de anúncios que declaram uma campanha que o ML não devolveu
+                        na lista{campanhasOrfas.length > 0 ? ` (id ${campanhasOrfas.join(", ")})` : ""} — provavelmente campanha de
+                        outro anunciante da mesma conta.</>}
+                      {gastoSemVinculo > 0 && <> {fmtBRL(gastoSemVinculo)} são de anúncios sem nenhuma campanha resolvida.</>}
+                    </div>
+                  )}
                   <div style={{ marginTop: 6, fontSize: ".7rem" }}>
                     Campanhas com &quot;sem gasto no período&quot; não aparecem na tabela principal (poluição visual), mas estão
                     listadas aqui pra você confirmar que existem e foram encontradas — se faltar alguma campanha real desta lista,
