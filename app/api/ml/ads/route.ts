@@ -170,7 +170,7 @@ export async function GET(req: Request) {
         tentativas: [] as { url: string; status: number }[], campanhasEncontradas: 0,
         campanhasTotal: 0,
         campanhasResumo: [] as { id: string; name: string; status: string; gasto: number; totalAds: number }[],
-        anunciosTotal: 0, anunciosNoPeriodo: 0,
+        anunciosTotal: 0, anunciosNoPeriodo: 0, anunciosContagemFalhou: false,
       }),
     );
     // Status do catálogo (se o anúncio em si está ativo/pausado/encerrado) —
@@ -241,6 +241,7 @@ export async function GET(req: Request) {
       campanhasResumo: cfg.campanhasResumo,
       anunciosTotal: cfg.anunciosTotal,
       anunciosNoPeriodo: cfg.anunciosNoPeriodo,
+      anunciosContagemFalhou: cfg.anunciosContagemFalhou,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -410,6 +410,7 @@ export async function getAdsSettingsByItem(
   campanhasResumo: { id: string; name: string; status: string; gasto: number; totalAds: number }[];
   anunciosTotal: number;
   anunciosNoPeriodo: number;
+  anunciosContagemFalhou: boolean;
 }> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
@@ -418,7 +419,7 @@ export async function getAdsSettingsByItem(
   if (!adv || mlbs.length === 0) return {
     porItem, amostraCampanha: null, tentativas,
     campanhasEncontradas: 0, campanhasTotal: 0, campanhasResumo: [],
-    anunciosTotal: 0, anunciosNoPeriodo: 0,
+    anunciosTotal: 0, anunciosNoPeriodo: 0, anunciosContagemFalhou: false,
   };
   const advOk: Adv = adv;
 
@@ -580,16 +581,31 @@ export async function getAdsSettingsByItem(
    * data) — é o mesmo recurso já usado no passo 3 acima, sem data.
    */
   const adsPorCampanha = new Map<string, number>();
+  let diagAdsRegistrado = 0;
   await Promise.all(Array.from(campanhas.keys()).map(async (cid) => {
     const urls = (o: number) => [
       `${base(advOk)}/campaigns/${cid}/ads/search?limit=50&offset=${o}`,
+      `${base(advOk)}/ads/search?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
       `${base(advOk)}/campaigns/${cid}/items/search?limit=50&offset=${o}`,
       `${legado(advOk)}/items?filters[campaign_id]=${cid}&limit=50&offset=${o}`,
     ];
+    // Diagnóstico honesto: se essa contagem der tudo zero, precisamos saber
+    // se foi porque a campanha está mesmo vazia ou porque nenhuma URL respondeu.
+    if (diagAdsRegistrado < 3) {
+      diagAdsRegistrado += 1;
+      try {
+        const r = await get(urls(0)[0], token);
+        tentativas.push({ url: `[contagem] ${urls(0)[0].replace(ML_API, "")}`, status: r.status });
+      } catch { /* segue pro buscar() abaixo mesmo assim */ }
+    }
     const rows = await buscar(urls, token).catch(() => []);
     adsPorCampanha.set(cid, rows.length);
   }));
   const anunciosTotal = Array.from(adsPorCampanha.values()).reduce((s, n) => s + n, 0);
+  // Se a conta tem campanha mas a contagem deu zero em tudo, o número não é
+  // confiável (nenhuma URL candidata respondeu) — melhor avisar isso do que
+  // mostrar "0 anúncios" como se fosse fato.
+  const anunciosContagemFalhou = campanhas.size > 0 && anunciosTotal === 0;
 
   // Lista completa das campanhas da conta (mesmo as sem gasto), pra dar pra
   // conferir que nenhuma sumiu — a tabela principal continua só com quem
@@ -609,6 +625,7 @@ export async function getAdsSettingsByItem(
     campanhasResumo,
     anunciosTotal,
     anunciosNoPeriodo: mlbsUpper.length,
+    anunciosContagemFalhou,
   };
 }
 

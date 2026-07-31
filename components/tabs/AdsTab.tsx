@@ -110,6 +110,7 @@ export default function AdsTab() {
   // só esses últimos entram na tabela (com ou sem gasto).
   const [anunciosTotal, setAnunciosTotal] = useState(0);
   const [anunciosNoPeriodo, setAnunciosNoPeriodo] = useState(0);
+  const [anunciosContagemFalhou, setAnunciosContagemFalhou] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -130,6 +131,7 @@ export default function AdsTab() {
         setCampanhasResumo(j.campanhasResumo ?? []);
         setAnunciosTotal(j.anunciosTotal ?? 0);
         setAnunciosNoPeriodo(j.anunciosNoPeriodo ?? 0);
+        setAnunciosContagemFalhou(!!j.anunciosContagemFalhou);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -427,14 +429,23 @@ export default function AdsTab() {
               {campanhasResumo.length > 0 && (
                 <details style={{ marginTop: 8 }}>
                   <summary style={{ cursor: "pointer", color: "var(--muted)" }}>
-                    Todas as campanhas da conta ({campanhasTotal}, {anunciosTotal} anúncio(s) cadastrado(s)) — conferir se nada sumiu da tabela
+                    Todas as campanhas da conta ({campanhasTotal}{anunciosContagemFalhou ? "" : `, ${anunciosTotal} anúncio(s) cadastrado(s)`}) — conferir se nada sumiu da tabela
                   </summary>
-                  <div style={{ marginTop: 6, fontSize: ".7rem", color: "var(--muted)" }}>
-                    A tabela acima só mostra anúncio com atividade (impressão/clique/gasto) neste período — é o próprio
-                    Mercado Ads que já filtra por data nesse recurso. Neste período, <b>{anunciosNoPeriodo}</b> anúncio(s) tiveram
-                    atividade (de {anunciosTotal} cadastrados no total); os outros ficaram fora porque estiveram 100% zerados o
-                    tempo todo, não porque foram escondidos por um filtro nosso.
-                  </div>
+                  {anunciosContagemFalhou ? (
+                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "#f7c948" }}>
+                      Não conseguimos contar os anúncios cadastrados por campanha — nenhuma das URLs de listagem respondeu
+                      com dados (veja os status &quot;[contagem]&quot; no diagnóstico acima). A coluna &quot;Anúncios cadastrados&quot;
+                      abaixo está vazia de propósito, pra não mostrar 0 como se fosse um fato — o gasto por campanha continua
+                      confiável, só a contagem total de anúncios que falhou.
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "var(--muted)" }}>
+                      A tabela acima só mostra anúncio com atividade (impressão/clique/gasto) neste período — é o próprio
+                      Mercado Ads que já filtra por data nesse recurso. Neste período, <b>{anunciosNoPeriodo}</b> anúncio(s) tiveram
+                      atividade (de {anunciosTotal} cadastrados no total); os outros ficaram fora porque estiveram 100% zerados o
+                      tempo todo, não porque foram escondidos por um filtro nosso.
+                    </div>
+                  )}
                   <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
                     <table className="tbl-modern">
                       <thead>
@@ -450,7 +461,7 @@ export default function AdsTab() {
                           <tr key={c.id}>
                             <td style={{ textAlign: "left", fontWeight: 600 }} title={c.id}>{c.name}</td>
                             <td style={{ textAlign: "left", color: "var(--muted)" }}>{c.status || "—"}</td>
-                            <td style={{ textAlign: "right", color: "var(--muted)" }}>{c.totalAds}</td>
+                            <td style={{ textAlign: "right", color: "var(--muted)" }}>{anunciosContagemFalhou ? "—" : c.totalAds}</td>
                             <td style={{ textAlign: "right", color: c.gasto > 0 ? "var(--green)" : "var(--muted)", fontWeight: c.gasto > 0 ? 700 : 400 }}>
                               {c.gasto > 0 ? fmtBRL(c.gasto) : "sem gasto no período"}
                             </td>
