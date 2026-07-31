@@ -398,6 +398,22 @@ function primeiro(o: Record<string, unknown>, chaves: string[]): unknown {
   return undefined;
 }
 
+/** Campanha crua do ML → AdSettings, tolerando os nomes de campo que o ML já usou. */
+function campanhaDe(id: string, c: Record<string, unknown>): AdSettings {
+  const acos = numTolerante(primeiro(c, ["acos_target", "target_acos", "acos_objective", "acos"]));
+  const roasDireto = numTolerante(primeiro(c, ["roas_target", "target_roas"]));
+  return {
+    itemId: "", campaignId: id,
+    campaignName: texto(primeiro(c, ["name", "campaign_name"])),
+    dailyBudget: numTolerante(primeiro(c, ["budget", "daily_budget", "budget_amount", "daily_budget_amount"])),
+    acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
+    roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
+    strategy: texto(primeiro(c, ["strategy", "campaign_strategy", "goal"])),
+    lastUpdated: texto(primeiro(c, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"])),
+    status: texto(primeiro(c, ["status"])),
+  };
+}
+
 /**
  * Configuração de cada anúncio vem da CAMPANHA à qual ele pertence: orçamento
  * diário, meta de ACOS/ROAS, status (ativa/pausada) e última alteração — não
@@ -437,6 +453,8 @@ export async function getAdsSettingsByItem(
   gastoOrfao: number;
   /** R$ do período gastos por anúncios sem nenhuma campanha resolvida. */
   gastoSemVinculo: number;
+  /** Objeto cru da 1ª campanha órfã recuperada — mostra por que ela faltava na lista. */
+  amostraCampanhaOrfa: unknown;
 }> {
   const token = await getValidMlAccessToken();
   const adv = await getAdvertiser(token);
@@ -446,7 +464,7 @@ export async function getAdsSettingsByItem(
     porItem, amostraCampanha: null, tentativas,
     campanhasEncontradas: 0, campanhasTotal: 0, campanhasResumo: [],
     anunciosTotal: 0, anunciosNoPeriodo: 0, anunciosContagemFalhou: false,
-    campanhasOrfas: [], gastoOrfao: 0, gastoSemVinculo: 0,
+    campanhasOrfas: [], gastoOrfao: 0, gastoSemVinculo: 0, amostraCampanhaOrfa: null,
   };
   const advOk: Adv = adv;
 
@@ -494,18 +512,7 @@ export async function getAdsSettingsByItem(
   for (const c of camposCrus) {
     const id = texto(primeiro(c, ["id", "campaign_id"]));
     if (!id) continue;
-    const acos = numTolerante(primeiro(c, ["acos_target", "target_acos", "acos_objective", "acos"]));
-    const roasDireto = numTolerante(primeiro(c, ["roas_target", "target_roas"]));
-    campanhas.set(id, {
-      itemId: "", campaignId: id,
-      campaignName: texto(primeiro(c, ["name", "campaign_name"])),
-      dailyBudget: numTolerante(primeiro(c, ["budget", "daily_budget", "budget_amount", "daily_budget_amount"])),
-      acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
-      roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
-      strategy: texto(primeiro(c, ["strategy", "campaign_strategy", "goal"])),
-      lastUpdated: texto(primeiro(c, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"])),
-      status: texto(primeiro(c, ["status"])),
-    });
+    campanhas.set(id, campanhaDe(id, c));
   }
 
   // itemId (MLB) → campaignId, em ordem de confiança:
@@ -593,6 +600,46 @@ export async function getAdsSettingsByItem(
   }
 
   /**
+   * 4) Campanha órfã: o anúncio DECLARA um campaign_id, mas esse id não veio na
+   * lista do `/campaigns/search`. Aconteceu de verdade — 3 anúncios gastando
+   * R$ 86,44 apontavam pra campanha 352947089, ausente da lista de 10, no mesmo
+   * anunciante. Rotular isso como "sem campanha" é falso: o anúncio tem
+   * campanha, nós é que não a carregamos. Aqui buscamos cada órfã pelo id; se
+   * vier, entra na lista como qualquer outra. O objeto cru da primeira
+   * recuperada vai pro diagnóstico — comparando com uma campanha normal fica
+   * visível qual campo (status, channel, etc.) explica a ausência na busca.
+   */
+  const orfasIniciais = Array.from(new Set(
+    mlbsUpper.map((m) => itemToCampaign[m]).filter((cid): cid is string => !!cid && !campanhas.has(cid)),
+  ));
+  let amostraCampanhaOrfa: unknown = null;
+  for (const cid of orfasIniciais) {
+    for (const url of [
+      `${base(advOk)}/campaigns/search?filters[campaign_id]=${cid}&limit=10&offset=0`,
+      `${base(advOk)}/campaigns/${cid}`,
+      `${legado(advOk)}/campaigns/${cid}`,
+    ]) {
+      try {
+        const r = await get(url, token);
+        tentativas.push({ url: `[campanha-orfa] ${url.replace(ML_API, "")}`, status: r.status });
+        if (!r.ok) continue;
+        const j = await r.json().catch(() => null);
+        if (!j || typeof j !== "object") continue;
+        // Aceita tanto lista quanto objeto solto, mas só se o id bater — uma
+        // busca que ignora o filtro devolveria a campanha errada.
+        const obj = j as Record<string, unknown>;
+        const bruto = extrairLinhas(j).find((l) => texto(primeiro(l, ["id", "campaign_id"])) === cid)
+          ?? (texto(primeiro(obj, ["id", "campaign_id"])) === cid ? obj : null);
+        if (!bruto) continue;
+        if (!amostraCampanhaOrfa) amostraCampanhaOrfa = bruto;
+        campanhas.set(cid, campanhaDe(cid, bruto));
+        advDaCampanha.set(cid, advOk);
+        break;
+      } catch { /* tenta a próxima */ }
+    }
+  }
+
+  /**
    * Só interessam campanhas que gastaram algo no período — o resto é ruído
    * (a conta pode ter dezenas de campanhas antigas/pausadas sem relação com
    * o que está rodando agora). Uma campanha só tem gasto>0 aqui se pelo menos
@@ -614,7 +661,13 @@ export async function getAdsSettingsByItem(
     porItem[mlb] = info
       ? { ...info, itemId: mlb }
       : {
-          itemId: mlb, campaignId: "", campaignName: "",
+          itemId: mlb,
+          // Guarda o id quando SABEMOS a campanha mas não conseguimos carregar a
+          // config dela — dizer "sem campanha" nesse caso seria mentira. Campanha
+          // conhecida porém zerada no período continua caindo em "" (é o filtro
+          // de ruído de propósito).
+          campaignId: cid && !campanhas.has(cid) ? cid : "",
+          campaignName: "",
           dailyBudget: 0, acosTarget: 0, roasTarget: 0, strategy: "", lastUpdated: "", status: "",
         };
   }
@@ -673,6 +726,7 @@ export async function getAdsSettingsByItem(
     campanhasOrfas: Array.from(campanhasOrfas),
     gastoOrfao,
     gastoSemVinculo,
+    amostraCampanhaOrfa,
   };
 }
 

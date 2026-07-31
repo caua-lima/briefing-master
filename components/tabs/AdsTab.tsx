@@ -7,7 +7,7 @@ import DateRangePicker from "@/components/dashboard/DateRangePicker";
 
 // Status da CAMPANHA (não do anúncio no catálogo) — é o que decide se o
 // investimento está de fato rodando agora.
-type StatusAnuncio = "ativo" | "pausado" | "sem_campanha";
+type StatusAnuncio = "ativo" | "pausado" | "sem_campanha" | "config_indisponivel";
 
 type AdItem = {
   itemId: string; title: string;
@@ -28,13 +28,17 @@ const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: strin
   ativo: { label: "Ativa", cor: "var(--green)", bg: "rgba(34,197,94,.12)" },
   pausado: { label: "Pausada", cor: "#f7c948", bg: "rgba(247,201,72,.12)" },
   sem_campanha: { label: "Sem campanha", cor: "var(--muted)", bg: "rgba(100,116,139,.14)" },
+  // Sabemos o id da campanha, mas o ML não devolveu a configuração dela.
+  config_indisponivel: { label: "Campanha ?", cor: "#f7c948", bg: "rgba(247,201,72,.12)" },
 };
 
 function StatusTag({ item }: { item: AdItem }) {
   const m = STATUS_META[item.status];
-  const tooltip = item.campaignId
-    ? `Campanha: ${item.campaignName || item.campaignId}${item.mlStatus ? ` · catálogo: ${item.mlStatus}` : ""}`
-    : "Não achamos a campanha deste anúncio na busca do Mercado Ads.";
+  const tooltip = item.status === "config_indisponivel"
+    ? `Este anúncio está na campanha ${item.campaignId}, mas o Mercado Ads não devolveu a configuração dela (nem na lista de campanhas, nem na busca por id). Orçamento/ROAS alvo/alterado ficam vazios por isso — o gasto e as vendas continuam corretos.`
+    : item.campaignId
+      ? `Campanha: ${item.campaignName || item.campaignId}${item.mlStatus ? ` · catálogo: ${item.mlStatus}` : ""}`
+      : "Não achamos a campanha deste anúncio na busca do Mercado Ads.";
   return (
     <span
       title={tooltip}
@@ -97,7 +101,7 @@ export default function AdsTab() {
   // Diagnóstico de orçamento/ROAS/última alteração — para quando essas colunas
   // vierem vazias sem o pedido inteiro ter falhado (ver getAdsSettingsByItem).
   const [cfgDiag, setCfgDiag] = useState<{ url: string; status: number }[]>([]);
-  const [cfgAmostra, setCfgAmostra] = useState<unknown>(null);
+  const [cfgAmostra, setCfgAmostra] = useState<{ campanha?: unknown; campanhaOrfa?: unknown } | null>(null);
   const [campanhasEncontradas, setCampanhasEncontradas] = useState(0);
   const [semGastoNoPeriodo, setSemGastoNoPeriodo] = useState(0);
   // Roster completo de campanhas da conta (mesmo as sem gasto no período) —
@@ -286,7 +290,7 @@ export default function AdsTab() {
                 )}
                 {items.length > 0 && (
                   <span style={{ display: "flex", gap: 6 }}>
-                    {(["ativo", "pausado", "sem_campanha"] as const).map((s) => {
+                    {(["ativo", "pausado", "config_indisponivel", "sem_campanha"] as const).map((s) => {
                       const n = items.filter((i) => i.status === s).length;
                       if (!n) return null;
                       const m = STATUS_META[s];
@@ -441,9 +445,18 @@ export default function AdsTab() {
                       </table>
                     </div>
                   )}
+                  {!!cfgAmostra?.campanhaOrfa && (
+                    <div style={{ marginTop: 8, fontSize: ".7rem", color: "#f7c948" }}>
+                      Campanha que faltava na lista, recuperada pelo id — compare com a campanha normal abaixo pra ver qual
+                      campo (status, channel…) explica ela não vir na busca:
+                      <pre style={{ marginTop: 4, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 240, overflow: "auto" }}>
+                        {JSON.stringify(cfgAmostra.campanhaOrfa, null, 2)}
+                      </pre>
+                    </div>
+                  )}
                   {!!cfgAmostra && (
                     <pre style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 240, overflow: "auto" }}>
-                      {JSON.stringify(cfgAmostra, null, 2)}
+                      {JSON.stringify(cfgAmostra.campanha ?? cfgAmostra, null, 2)}
                     </pre>
                   )}
                 </details>

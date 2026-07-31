@@ -10,12 +10,14 @@ import { getAdsFullByItem, getAdsSettingsByItem, getItemStatusByItem, probeAds, 
  * é um anúncio que nunca foi posto em nenhuma campanha, ou a campanha não foi
  * encontrada na busca).
  */
-function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pausado" | "sem_campanha" {
+function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pausado" | "sem_campanha" | "config_indisponivel" {
   if (!campaignId) return "sem_campanha";
   const s = campaignStatus.toLowerCase();
   if (s === "active") return "ativo";
   if (s === "paused") return "pausado";
-  return "sem_campanha";
+  // Tem campanha (sabemos o id), mas não conseguimos carregar a config dela —
+  // "sem campanha" aqui seria falso.
+  return "config_indisponivel";
 }
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
@@ -172,6 +174,7 @@ export async function GET(req: Request) {
         campanhasResumo: [] as { id: string; name: string; status: string; gasto: number; totalAds: number }[],
         anunciosTotal: 0, anunciosNoPeriodo: 0, anunciosContagemFalhou: false,
         campanhasOrfas: [] as string[], gastoOrfao: 0, gastoSemVinculo: 0,
+        amostraCampanhaOrfa: null,
       }),
     );
     // Status do catálogo (se o anúncio em si está ativo/pausado/encerrado) —
@@ -251,7 +254,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       items, from, to,
       semGastoNoPeriodo, // quantos anúncios ficaram de fora por não ter investido
-      cfgAmostra: { campanha: cfg.amostraCampanha },
+      cfgAmostra: { campanha: cfg.amostraCampanha, campanhaOrfa: cfg.amostraCampanhaOrfa },
       cfgDiag: cfg.tentativas,
       campanhasEncontradas: cfg.campanhasEncontradas,
       campanhasTotal: cfg.campanhasTotal,
