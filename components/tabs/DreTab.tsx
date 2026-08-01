@@ -70,13 +70,9 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
 
   return (
     <div
+      className={`dre-line${ehSub ? "" : " is-nested"}`}
       style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto 118px",
-        gap: "0 16px",
-        alignItems: "center",
         padding: ehSub ? "11px 12px" : "7px 12px 7px 26px",
-        borderRadius: 8,
         marginTop: ehSub ? 4 : 0,
         background: ehResultado
           ? (valor >= 0 ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.1)")
@@ -86,7 +82,7 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
           : undefined,
       }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+      <div className="dre-lbl" style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
         {ehDed && <span style={{ color: "var(--muted)", fontSize: ".8rem", flexShrink: 0 }}>−</span>}
         <div style={{ minWidth: 0 }}>
           <span style={{
@@ -102,7 +98,7 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
         </div>
       </div>
 
-      <span style={{
+      <span className="dre-val" style={{
         fontSize: ehResultado ? "1.05rem" : ehSub ? ".95rem" : ".86rem",
         fontWeight: ehSub ? 800 : 600,
         whiteSpace: "nowrap", color: cor, fontVariantNumeric: "tabular-nums",
@@ -111,7 +107,7 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
       </span>
 
       {/* % sobre a receita, com mini-barra para leitura rápida */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+      <div className="dre-pct" style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
         <span style={{
           fontSize: ".72rem", color: ehSub ? "var(--text)" : "var(--muted)",
           whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums",
@@ -120,7 +116,7 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
           {pct === null ? "" : `${pct.toFixed(1)}%`}
         </span>
         {pct !== null && !ehResultado && (
-          <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+          <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden", minWidth: 54 }}>
             <div style={{
               width: `${larguraBarra}%`, height: "100%", borderRadius: 2,
               background: ehDed ? "var(--red)" : "var(--green)", opacity: ehDed ? .55 : .7,
@@ -183,10 +179,10 @@ export default function DreTab() {
 
   return (
     <div className="dash">
-      <div className="dash-top">
-        <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>DRE</h2>
-          <span style={{ fontSize: ".78rem", color: "var(--muted)", textTransform: "capitalize" }}>
+      <div className="tab-head">
+        <div className="tab-head-left">
+          <h2 className="tab-title">DRE</h2>
+          <span className="tab-head-sub" style={{ textTransform: "capitalize" }}>
             {fmtPeriodo(range.from, range.to)} · {m.ordersCount} pedido(s)
           </span>
         </div>
@@ -194,7 +190,7 @@ export default function DreTab() {
       </div>
 
       {m.adsFalhou && (
-        <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.45)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
+        <div className="note note-warn">
           O gasto com ADS não veio do Mercado Livre neste período. O resultado abaixo está
           <b> otimista</b> — falta descontar a verba de anúncios.
         </div>
@@ -229,13 +225,8 @@ export default function DreTab() {
           <span className="panel-sub">{fmtPeriodo(range.from, range.to)}</span>
         </div>
 
-        {/* Cabeçalho das colunas de valor */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "1fr auto 118px", gap: "0 16px",
-          padding: "0 12px 6px", borderBottom: "1px solid var(--border)",
-          fontSize: ".66rem", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
-          color: "var(--muted)",
-        }}>
+        {/* Cabeçalho das colunas de valor (no celular some: cada linha já se explica) */}
+        <div className="dre-head">
           <span />
           <span style={{ textAlign: "right" }}>Valor</span>
           <span style={{ textAlign: "right" }}>% receita</span>
@@ -284,7 +275,7 @@ export default function DreTab() {
           </div>
         ) : (
           <div className="table-wrapper" style={{ border: "none" }}>
-            <table className="tbl-modern">
+            <table className="tbl-modern tbl-cards">
               <thead><tr>
                 <th style={{ textAlign: "left" }}>Despesa</th>
                 <th style={{ textAlign: "left" }}>Frequência</th>
@@ -295,9 +286,9 @@ export default function DreTab() {
                 {m.custosDreDetalhe.map((c, i) => (
                   <tr key={`${c.nome}-${i}`}>
                     <td style={{ textAlign: "left", fontWeight: 600 }}>{c.nome}</td>
-                    <td style={{ textAlign: "left", color: "var(--muted)", fontSize: ".8rem" }}>{c.freq}</td>
-                    <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap" }}>−{fmtBRL(c.valor)}</td>
-                    <td style={{ textAlign: "right", color: "var(--muted)" }}>{margem(c.valor).toFixed(1)}%</td>
+                    <td data-label="Frequência" style={{ textAlign: "left", color: "var(--muted)", fontSize: ".8rem" }}>{c.freq}</td>
+                    <td data-label="No período" style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap" }}>−{fmtBRL(c.valor)}</td>
+                    <td data-label="% da receita" style={{ textAlign: "right", color: "var(--muted)" }}>{margem(c.valor).toFixed(1)}%</td>
                   </tr>
                 ))}
               </tbody>

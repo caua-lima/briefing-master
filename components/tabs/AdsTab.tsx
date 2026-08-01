@@ -196,9 +196,9 @@ export default function AdsTab() {
 
   return (
     <div className="dash">
-      <div className="dash-top">
-        <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Ads</h2>
+      <div className="tab-head">
+        <div className="tab-head-left">
+          <h2 className="tab-title">Ads</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={load} disabled={loading}>
             {loading ? "..." : "⟳ Atualizar"}
           </button>
@@ -239,7 +239,7 @@ export default function AdsTab() {
           {/* Sonda por recurso — o dado que importa, visível sem rolar JSON */}
           {diag?.tentativas?.length ? (
             <div className="table-wrapper" style={{ marginTop: 10, border: "1px solid rgba(239,68,68,.25)" }}>
-              <table className="tbl-modern">
+              <table className="tbl-modern tbl-cards">
                 <thead><tr>
                   <th style={{ textAlign: "left" }}>Recurso do ML</th>
                   <th>Status</th>
@@ -249,8 +249,8 @@ export default function AdsTab() {
                   {diag.tentativas.map((t) => (
                     <tr key={t.tentativa}>
                       <td style={{ textAlign: "left", fontWeight: 600, whiteSpace: "nowrap" }}>{t.tentativa}</td>
-                      <td style={{ fontWeight: 800, color: t.status && t.status < 300 ? "var(--green)" : "var(--red)" }}>{t.status ?? "erro"}</td>
-                      <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".66rem", color: "var(--muted)", wordBreak: "break-all" }}>{t.body || t.erro || "—"}</td>
+                      <td data-label="Status" style={{ fontWeight: 800, color: t.status && t.status < 300 ? "var(--green)" : "var(--red)" }}>{t.status ?? "erro"}</td>
+                      <td data-label="Resposta do ML" style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".66rem", color: "var(--muted)", wordBreak: "break-all" }}>{t.body || t.erro || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -305,12 +305,12 @@ export default function AdsTab() {
               </span>
             </div>
             {loading ? (
-              <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando…</div>
+              <div className="empty-state">Carregando…</div>
             ) : items.length === 0 ? (
-              <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Sem dados de Ads no período.</div>
+              <div className="empty-state"><span className="empty-ico">📣</span>Sem dados de Ads no período.</div>
             ) : (
               <div className="table-wrapper" style={{ border: "none" }}>
-                <table className="tbl-modern">
+                <table className="tbl-modern tbl-cards">
                   <thead>
                     {pub ? (
                       <tr>
@@ -356,18 +356,18 @@ export default function AdsTab() {
                       const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
                       return (
                         <tr key={i.itemId}>
-                          <td style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
+                          <td className="ads-name" style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
                             <span style={{ marginRight: 6 }}><StatusTag item={i} /></span>
                             {i.title || i.itemId}
                             <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{i.itemId}</span>
                           </td>
-                          <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{i.dailyBudget > 0 ? fmtBRL(i.dailyBudget) : "—"}</td>
-                          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{i.roasTarget > 0 ? `${num(i.roasTarget, 1)}x` : "—"}</td>
+                          <td data-label="Orç/dia" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{i.dailyBudget > 0 ? fmtBRL(i.dailyBudget) : "—"}</td>
+                          <td data-label="ROAS alvo" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{i.roasTarget > 0 ? `${num(i.roasTarget, 1)}x` : "—"}</td>
                           {(() => {
                             const alt = alteracaoInfo(i.lastUpdated);
                             const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#f7c948";
                             return (
-                              <td style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}
+                              <td data-label="Alterado" style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}
                                 title={alt.dias == null
                                   ? "Data de alteração não informada pelo ML"
                                   : `${alt.dataHora} · ${alt.podeAlterar ? "já passou dos 3 dias, pode ajustar" : `${alt.dias} dia(s) desde então — espere 3 completos`}`}>
@@ -377,21 +377,21 @@ export default function AdsTab() {
                             );
                           })()}
                           {pub && <>
-                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.prints)}</td>
-                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.clicks)}</td>
-                            <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{num(ctr, 2)}%</td>
-                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtBRL(cpc)}</td>
+                            <td data-label="Impressões" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.prints)}</td>
+                            <td data-label="Cliques" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.clicks)}</td>
+                            <td data-label="CTR" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{num(ctr, 2)}%</td>
+                            <td data-label="CPC" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtBRL(cpc)}</td>
                           </>}
-                          <td style={{ textAlign: "right", color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(i.cost)}</td>
-                          <td style={{ textAlign: "right", color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(v)}</td>
-                          <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(un)}</td>
-                          {!pub && <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(pctAds, 0)}%</td>}
-                          <td style={{ textAlign: "right", color: corAcos(a, v > 0), fontWeight: 700, whiteSpace: "nowrap" }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
-                          <td style={{ textAlign: "right", color: corRoas(r), fontWeight: 700, whiteSpace: "nowrap" }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
+                          <td data-label="Investido" style={{ textAlign: "right", color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(i.cost)}</td>
+                          <td data-label={pub ? "Vendas diretas" : "Vendas totais"} style={{ textAlign: "right", color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(v)}</td>
+                          <td data-label="Unidades" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(un)}</td>
+                          {!pub && <td data-label="% via ads" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(pctAds, 0)}%</td>}
+                          <td data-label={pub ? "ACOS" : "TACOS"} style={{ textAlign: "right", color: corAcos(a, v > 0), fontWeight: 700, whiteSpace: "nowrap" }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
+                          <td data-label="ROAS" style={{ textAlign: "right", color: corRoas(r), fontWeight: 700, whiteSpace: "nowrap" }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
                           {pub && !i.diretoDisponivel ? (
-                            <td style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }} title="Sem venda vinculada no período pra calcular a margem do lucro direto — não é prejuízo, é falta de dado.">—</td>
+                            <td data-label="Lucro" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }} title="Sem venda vinculada no período pra calcular a margem do lucro direto — não é prejuízo, é falta de dado.">—</td>
                           ) : (
-                            <td style={{ textAlign: "right", color: (pub ? i.lucroDiretoLiquido : i.lucroLiquido) >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                            <td data-label="Lucro" style={{ textAlign: "right", color: (pub ? i.lucroDiretoLiquido : i.lucroLiquido) >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>
                               {fmtBRL(pub ? i.lucroDiretoLiquido : i.lucroLiquido)}
                             </td>
                           )}
@@ -432,13 +432,13 @@ export default function AdsTab() {
                   <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Diagnóstico de configuração (orçamento/ROAS/alterado/campanha) — {campanhasEncontradas} campanha(s) com investimento neste período</summary>
                   {cfgDiag.length > 0 && (
                     <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
-                      <table className="tbl-modern">
+                      <table className="tbl-modern tbl-cards">
                         <thead><tr><th style={{ textAlign: "left" }}>URL tentada</th><th style={{ textAlign: "right" }}>Status</th></tr></thead>
                         <tbody>
                           {cfgDiag.map((t, idx) => (
                             <tr key={`${t.url}-${idx}`}>
-                              <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem" }}>{t.url}</td>
-                              <td style={{ textAlign: "right", color: t.status === 200 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{t.status}</td>
+                              <td style={{ textAlign: "left", fontFamily: "monospace", fontSize: ".72rem", wordBreak: "break-all" }}>{t.url}</td>
+                              <td data-label="Status" style={{ textAlign: "right", color: t.status === 200 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{t.status}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -482,7 +482,7 @@ export default function AdsTab() {
                     </div>
                   )}
                   <div className="table-wrapper" style={{ marginTop: 6, border: "1px solid var(--border)" }}>
-                    <table className="tbl-modern">
+                    <table className="tbl-modern tbl-cards">
                       <thead>
                         <tr>
                           <th style={{ textAlign: "left" }}>Campanha</th>
@@ -495,9 +495,9 @@ export default function AdsTab() {
                         {campanhasResumo.map((c) => (
                           <tr key={c.id}>
                             <td style={{ textAlign: "left", fontWeight: 600 }} title={c.id}>{c.name}</td>
-                            <td style={{ textAlign: "left", color: "var(--muted)" }}>{c.status || "—"}</td>
-                            <td style={{ textAlign: "right", color: "var(--muted)" }}>{anunciosContagemFalhou ? "—" : c.totalAds}</td>
-                            <td style={{ textAlign: "right", color: c.gasto > 0 ? "var(--green)" : "var(--muted)", fontWeight: c.gasto > 0 ? 700 : 400 }}>
+                            <td data-label="Status ML" style={{ textAlign: "left", color: "var(--muted)" }}>{c.status || "—"}</td>
+                            <td data-label="Anúncios cadastrados" style={{ textAlign: "right", color: "var(--muted)" }}>{anunciosContagemFalhou ? "—" : c.totalAds}</td>
+                            <td data-label="Gasto no período" style={{ textAlign: "right", color: c.gasto > 0 ? "var(--green)" : "var(--muted)", fontWeight: c.gasto > 0 ? 700 : 400 }}>
                               {c.gasto > 0 ? fmtBRL(c.gasto) : "sem gasto no período"}
                             </td>
                           </tr>

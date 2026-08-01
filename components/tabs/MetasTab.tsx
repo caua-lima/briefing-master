@@ -35,9 +35,13 @@ export default function MetasTab({
 
   return (
     <div className="dash">
-      <div className="dash-top">
-        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Definição de Metas</h2></div>
-        {canEdit && <button type="button" className="btn btn-purple btn-sm" onClick={() => setOpenNew(true)}>＋ Nova Meta</button>}
+      <div className="tab-head">
+        <div className="tab-head-left"><h2 className="tab-title">Definição de Metas</h2></div>
+        {canEdit && (
+          <div className="tab-actions">
+            <button type="button" className="btn btn-purple btn-sm" onClick={() => setOpenNew(true)}>＋ Nova Meta</button>
+          </div>
+        )}
       </div>
 
       {/* Resumo da meta ativa */}
@@ -57,18 +61,19 @@ export default function MetasTab({
         </>
       )}
 
-      <div style={{ fontSize: ".8rem", color: "var(--muted)", background: "rgba(167,139,250,.07)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 8, padding: "10px 14px" }}>
+      <div className="note note-purple">
         Defina as metas de faturamento e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
       </div>
 
       <div className="panel">
         <div className="panel-title" style={{ marginBottom: 14 }}>Metas cadastradas</div>
         {data.goalEntries.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>
+          <div className="empty-state">
+            <span className="empty-ico">🎯</span>
             Nenhuma meta definida.<br />Clique em <strong>＋ Nova Meta</strong>.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="list-stack">
             {data.goalEntries.map((entry) => (
               <GoalEntryRow
                 key={entry.id}
@@ -104,35 +109,28 @@ function GoalEntryRow({
 }) {
   const chip = (label: string, valor: number | null, cor: string) =>
     valor ? (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: `${cor}1f`, border: `1px solid ${cor}`, color: cor, borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
+      <span className="chip" style={{ background: `${cor}1f`, borderColor: cor, color: cor }}>
         <span style={{ opacity: .7, fontWeight: 600 }}>{label}</span> {fmtBRL(valor)}
       </span>
     ) : null;
 
   return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
-      background: isActive ? "rgba(79,142,247,.06)" : "var(--surface2)",
-      border: `1px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
-      borderRadius: 10, padding: "12px 16px",
-    }}>
-      <div>
+    <div className={`list-row list-row-split${isActive ? " is-active" : ""}`}>
+      <div className="list-row-main">
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: ".95rem", textTransform: "capitalize" }}>{formatMesBR(entry.mes)}</span>
-          {isActive && <span style={{ fontSize: ".68rem", background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>ATIVA</span>}
+          {isActive && <span className="chip" style={{ background: "var(--accent)", borderColor: "var(--accent)", color: "#fff", fontSize: ".66rem" }}>ATIVA</span>}
           {entry.label && <span style={{ fontSize: ".78rem", color: "var(--muted)" }}>· {entry.label}</span>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           {chip("Meta 1", entry.meta1, "#4f8ef7")}
           {chip("Meta 2", entry.meta2, "#f7c948")}
           {chip("Meta 3", entry.meta3, "#a855f7")}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(34,197,94,.12)", border: "1px solid var(--green)", color: "var(--green)", borderRadius: 999, padding: "2px 10px", fontSize: ".76rem", fontWeight: 700 }}>
-            margem {entry.metaMargem ?? 10}%
-          </span>
+          <span className="chip chip-green">margem {entry.metaMargem ?? 10}%</span>
         </div>
       </div>
       {canEdit && (
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="row-actions">
           <button type="button" className="btn btn-warning btn-xs" onClick={onEdit}>Editar</button>
           <button type="button" className="btn btn-danger btn-xs" onClick={onDelete}>Excluir</button>
         </div>

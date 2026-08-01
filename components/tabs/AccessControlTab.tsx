@@ -160,8 +160,8 @@ export default function AccessControlTab({
 
   return (
     <div className="dash">
-      <div className="dash-top">
-        <div className="dash-top-left"><h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Controle de Acesso</h2></div>
+      <div className="tab-head">
+        <div className="tab-head-left"><h2 className="tab-title">Controle de Acesso</h2></div>
       </div>
 
       <div className="kpi-grid">
@@ -218,7 +218,7 @@ export default function AccessControlTab({
               </div>
             </div>
 
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+            <div className="form-grid">
               <div className="config-field" style={{ margin: 0 }}>
                 <label>Perfil</label>
                 <select
@@ -243,10 +243,10 @@ export default function AccessControlTab({
             </div>
 
             {error ? (
-              <div style={{ color: "#ef4444", fontSize: ".85rem" }}>{error}</div>
+              <div className="note note-danger" role="alert">{error}</div>
             ) : null}
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div className="row-actions">
               <button type="button" className="btn btn-success" onClick={saveEntry} disabled={!canEdit} style={{ opacity: canEdit ? 1 : 0.5 }}>
                 {editingEmail ? "Salvar alterações" : "＋ Adicionar e-mail"}
               </button>
@@ -260,21 +260,22 @@ export default function AccessControlTab({
           <div className="panel-head">
             <span className="panel-title">E-mails autorizados <span className="panel-sub">· {loading ? "…" : `${filteredEntries.length} registro(s)`}</span></span>
             <input
-              type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+              className="search-inp" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Filtrar por e-mail ou nome"
-              style={{ maxWidth: 260, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", color: "var(--text)", fontSize: ".85rem", outline: "none" }}
+              aria-label="Filtrar acessos"
+              style={{ maxWidth: 260 }}
             />
           </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
+          <div className="list-stack">
             {loading ? (
               <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>Carregando…</div>
             ) : filteredEntries.length ? (
               filteredEntries.map((entry) => (
-                <div key={entry.email} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 14px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                  <div>
+                <div key={entry.email} className="list-row list-row-split">
+                  <div className="list-row-main">
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 700 }}>{entry.email}</span>
+                      <span style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{entry.email}</span>
                       {roleBadge(entry.role)}
                     </div>
                     <div style={{ marginTop: 4, fontSize: ".8rem", color: "var(--muted)" }}>
@@ -283,7 +284,7 @@ export default function AccessControlTab({
                     </div>
                   </div>
                   {canEdit && (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <div className="row-actions">
                       <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>Editar</button>
                       <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>Remover</button>
                     </div>
@@ -291,7 +292,7 @@ export default function AccessControlTab({
                 </div>
               ))
             ) : (
-              <div style={{ color: "var(--muted)", fontSize: ".9rem", textAlign: "center", padding: 20 }}>Nenhum e-mail encontrado.</div>
+              <div className="empty-state"><span className="empty-ico">🔐</span>Nenhum e-mail encontrado.</div>
             )}
           </div>
         </div>

@@ -208,15 +208,15 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   return (
     <div className="dash">
       {/* Header */}
-      <div className="dash-top">
-        <div className="dash-top-left">
-          <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>Estoque de Produtos</h2>
+      <div className="tab-head">
+        <div className="tab-head-left">
+          <h2 className="tab-title">Estoque de Produtos</h2>
           <button type="button" className="btn btn-sm btn-ghost" onClick={carregarEstoque} disabled={loadingML}>
             {loadingML ? "Atualizando..." : "⟳ Atualizar Full (ML)"}
           </button>
         </div>
         {canEdit && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="tab-actions">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVincularSku(true)}>
               Vincular por SKU
             </button>
@@ -239,13 +239,12 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
       {/* Busca */}
       <input
-        type="text" placeholder="Buscar por nome, SKU ou código MLB…" value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "var(--text)", fontSize: ".9rem", outline: "none", boxSizing: "border-box" }}
+        className="search-inp" type="search" placeholder="Buscar por nome, SKU ou código MLB…" value={search}
+        onChange={(e) => setSearch(e.target.value)} aria-label="Buscar produto"
       />
 
       {reabastecer.length > 0 && (
-        <div style={{ padding: "9px 13px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".8rem", color: "#f7c948" }}>
+        <div className="note note-warn">
           <b>Full baixo</b> em {reabastecer.length} produto(s) — você tem unidades em casa pra enviar:{" "}
           {reabastecer.slice(0, 6).map((p) => p.name || "sem nome").join(", ")}{reabastecer.length > 6 ? "…" : ""}
         </div>
@@ -254,12 +253,13 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       {/* Lista */}
       <div className="panel">
         {filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+          <div className="empty-state">
+            <span className="empty-ico">📦</span>
             {search ? "Nenhum produto encontrado." : (<>Nenhum produto cadastrado.<br />Clique em <strong>＋ Novo Produto</strong>.</>)}
           </div>
         ) : (
           <div className="table-wrapper" style={{ border: "none" }}>
-            <table className="tbl-modern">
+            <table className="tbl-modern tbl-cards">
               <thead>
                 <tr>
                   <th style={{ textAlign: "left" }}>Produto</th>
@@ -392,24 +392,24 @@ function ProductRow({
             </div>
           </div>
         </td>
-        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
-        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
+        <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
+        <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>reabastecer</span>}
           {proprio > 0 && <span title="Disponível no anúncio próprio — é o mesmo estoque de casa exposto no ML, não soma ao total" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
         </td>
-        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
-        <td style={{ textAlign: "right", whiteSpace: "nowrap", color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
+        <td data-label="Total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
+        <td data-label="Custo médio" style={{ textAlign: "right", whiteSpace: "nowrap", color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
           {custoMedio > 0 ? fmtBRL(custoMedio) : "—"}
           {product.custoMedio == null && custoMedio > 0 && <span style={{ display: "block", fontSize: ".62rem", color: "var(--muted)" }}>manual</span>}
         </td>
-        <td style={{ textAlign: "right", color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
+        <td data-label="Preço venda" style={{ textAlign: "right", color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
           {precoMax > 0 ? (precoMin === precoMax ? fmtBRL(precoMax) : `${fmtBRL(precoMin)}–${fmtBRL(precoMax)}`) : "—"}
           {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#f7c948" }}>promoção</span>}
         </td>
-        <td style={{ textAlign: "right", whiteSpace: "nowrap", color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
-        <td>
-          <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
+        <td data-label="Imposto" style={{ textAlign: "right", whiteSpace: "nowrap", color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
+        <td data-label="Movimentar" data-cell="acoes">
+          <div className="row-actions" style={{ justifyContent: "center" }}>
             <button type="button" className="btn btn-success btn-xs" title="Entrada (compra)" onClick={() => onMov("entrada")}>＋ Entrada</button>
             <button type="button" className="btn btn-ghost btn-xs" title="Enviar de casa pro Full (baixa, não é venda)" onClick={() => onMov("saida_full")}>Enviar Full</button>
             {ehFull && full > 0 && (
@@ -424,8 +424,8 @@ function ProductRow({
             )}
           </div>
         </td>
-        <td>
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        <td data-label="Ações" data-cell="acoes">
+          <div className="row-actions" style={{ justifyContent: "flex-end" }}>
             <button type="button" className="btn btn-warning btn-xs" title="Editar produto" onClick={onEdit}>Editar</button>
             <button type="button" className="btn btn-danger btn-xs" title="Remover produto" onClick={() => { if (!confirm(`Remover "${product.name}"?`)) return; deleteProduct("", product.id).catch(() => {}); }}>Excluir</button>
           </div>
@@ -433,7 +433,7 @@ function ProductRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={9} style={{ background: "var(--bg)", padding: "10px 14px" }}>
+          <td colSpan={9} data-cell="full" style={{ background: "var(--bg)", padding: "10px 14px" }}>
             <MovimentosHistorico product={product} movs={movs} onMov={onMov} />
           </td>
         </tr>
@@ -457,7 +457,7 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
         <div style={{ color: "var(--muted)", fontSize: ".8rem", padding: "6px 0" }}>Nenhuma movimentação ainda. Use <b>＋ Entrada</b> para lançar a primeira compra.</div>
       ) : (
         <div className="table-wrapper" style={{ border: "1px solid var(--border)" }}>
-          <table className="tbl-modern">
+          <table className="tbl-modern tbl-cards">
             <thead>
               <tr><th>Data</th><th style={{ textAlign: "left" }}>Tipo</th><th>Qtd</th><th>Custo un.</th><th style={{ textAlign: "left" }}>Obs</th><th></th></tr>
             </thead>
@@ -469,11 +469,11 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
                 return (
                   <tr key={m.id}>
                     <td style={{ color: "var(--muted)" }}>{m.data}</td>
-                    <td style={{ textAlign: "left" }}><span style={{ color: cor, fontWeight: 700 }}>{TIPO_LABEL[m.tipo]}</span></td>
-                    <td style={{ color: cor, fontWeight: 700 }}>{sign}{Math.abs(m.quantidade)}</td>
-                    <td>{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
-                    <td style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
-                    <td>
+                    <td data-label="Tipo" style={{ textAlign: "left" }}><span style={{ color: cor, fontWeight: 700 }}>{TIPO_LABEL[m.tipo]}</span></td>
+                    <td data-label="Qtd" style={{ color: cor, fontWeight: 700 }}>{sign}{Math.abs(m.quantidade)}</td>
+                    <td data-label="Custo un.">{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
+                    <td data-label="Obs" style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
+                    <td data-cell="acoes">
                       <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => { if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return; deleteMovimento(m.id, product.id).catch(() => {}); }}>Excluir</button>
                     </td>
                   </tr>
@@ -640,7 +640,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
         <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>Nenhum produto cadastrado ainda.</div>
       ) : (
         <div className="table-wrapper" style={{ border: "none" }}>
-          <table className="tbl-modern">
+          <table className="tbl-modern tbl-cards">
             <thead>
               <tr>
                 <th style={{ textAlign: "left" }}>Produto</th>
@@ -670,11 +670,11 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                         </span>
                       ) : null}
                     </td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{f.precoMax > 0 ? (f.precoMin === f.precoMax ? fmtBRL(f.precoMax) : `${fmtBRL(f.precoMin)}–${fmtBRL(f.precoMax)}`) : "—"}</td>
-                    <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{f.total} un</td>
-                    <td style={{ textAlign: "right", color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
-                    <td style={{ textAlign: "right", color: cob.cor, fontWeight: 700 }}>{cob.txt}</td>
-                    <td style={{ textAlign: "right" }}>
+                    <td data-label="Preço ML" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{f.precoMax > 0 ? (f.precoMin === f.precoMax ? fmtBRL(f.precoMax) : `${fmtBRL(f.precoMin)}–${fmtBRL(f.precoMax)}`) : "—"}</td>
+                    <td data-label="Estoque total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{f.total} un</td>
+                    <td data-label="Vendas/dia" style={{ textAlign: "right", color: f.mediaDiaria > 0 ? "var(--text)" : "var(--muted)" }}>{f.mediaDiaria > 0 ? f.mediaDiaria.toFixed(1) : "—"}</td>
+                    <td data-label="Cobertura" style={{ textAlign: "right", color: cob.cor, fontWeight: 700 }}>{cob.txt}</td>
+                    <td data-label="Repor (Full)" style={{ textAlign: "right" }}>
                       {f.reporQtd > 0 ? (
                         <span style={{ color: "var(--yellow)", fontWeight: 700 }}>
                           {f.reporQtd} un
@@ -686,7 +686,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                         </span>
                       ) : <span style={{ color: "var(--muted)" }}>ok</span>}
                     </td>
-                    <td style={{ textAlign: "right", color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(f.valorPotencial)}</td>
+                    <td data-label="Venda potencial" style={{ textAlign: "right", color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(f.valorPotencial)}</td>
                   </tr>
                 );
               })}

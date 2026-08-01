@@ -245,16 +245,16 @@ function CurvaABC({ anuncios }: { anuncios: AnuncioResult[] }) {
         A = topo (até 80% do lucro) · B = 80–95% · C = restante / prejuízo
       </div>
       <div className="table-wrapper" style={{ border: "none" }}>
-        <table className="tbl-modern">
+        <table className="tbl-modern tbl-cards tbl-cards-plain">
           <thead><tr><th>Classe</th><th style={{ textAlign: "left" }}>Anúncio</th><th>Lucro</th><th>% do lucro</th><th>Acumulado</th></tr></thead>
           <tbody>
             {rows.map(({ a, share, acc: cum, classe }) => (
               <tr key={a.item_id}>
-                <td><span className="tag" style={{ background: "transparent", color: cor(classe), border: `1px solid ${cor(classe)}` }}>{classe}</span></td>
-                <td style={{ fontWeight: 600, textAlign: "left" }}>{a.title}</td>
-                <td style={{ color: a.lucro >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{fmtBRL(a.lucro)}</td>
-                <td style={{ color: "var(--muted)" }}>{share.toFixed(1)}%</td>
-                <td>
+                <td data-label="Classe"><span className="tag" style={{ background: "transparent", color: cor(classe), border: `1px solid ${cor(classe)}` }}>{classe}</span></td>
+                <td data-label="Anúncio" style={{ fontWeight: 600, textAlign: "left" }}>{a.title}</td>
+                <td data-label="Lucro" style={{ color: a.lucro >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{fmtBRL(a.lucro)}</td>
+                <td data-label="% do lucro" style={{ color: "var(--muted)" }}>{share.toFixed(1)}%</td>
+                <td data-label="Acumulado">
                   <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <div style={{ width: 60, height: 6, borderRadius: 99, background: "var(--surface2)", overflow: "hidden" }}>
                       <div style={{ width: `${Math.min(cum, 100)}%`, height: "100%", background: cor(classe) }} />
@@ -455,21 +455,21 @@ function DevolucoesPanel({ total, emAndamento, detalhe }: { total: number; emAnd
 
       {detalhe.length ? (
         <div className="table-wrapper" style={{ border: "none" }}>
-          <table className="tbl-modern">
+          <table className="tbl-modern tbl-cards tbl-cards-plain">
             <thead><tr><th>Data</th><th style={{ textAlign: "left" }}>Produto</th><th style={{ textAlign: "left" }}>Motivo</th><th style={{ textAlign: "left" }}>Situação</th><th>Valor</th></tr></thead>
             <tbody>
               {detalhe.map((d, i) => (
                 <tr key={d.order_id + i} style={{ opacity: d.emAndamento ? 0.7 : 1 }}>
-                  <td style={{ color: "var(--muted)" }}>{d.data}</td>
-                  <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{d.produto || "—"}</td>
-                  <td style={{ color: "var(--muted)", textAlign: "left" }}>{d.motivo || "—"}</td>
-                  <td style={{ textAlign: "left" }}>
+                  <td data-label="Data" style={{ color: "var(--muted)" }}>{d.data}</td>
+                  <td data-label="Produto" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{d.produto || "—"}</td>
+                  <td data-label="Motivo" style={{ color: "var(--muted)", textAlign: "left" }}>{d.motivo || "—"}</td>
+                  <td data-label="Situação" style={{ textAlign: "left" }}>
                     {d.emAndamento
                       ? <span style={{ color: "#f7c948", fontWeight: 600 }}>em disputa</span>
                       : <span style={{ color: "var(--muted)" }}>{tipoLabel(d.tipo)} · concluída</span>}
                     {d.status && <span style={{ display: "block", fontSize: ".64rem", color: "var(--muted)" }}>{d.status}</span>}
                   </td>
-                  <td style={{ color: d.emAndamento ? "#f7c948" : "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
+                  <td data-label="Valor" style={{ color: d.emAndamento ? "#f7c948" : "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
                 </tr>
               ))}
             </tbody>
@@ -623,7 +623,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
 
   return (
     <div className="table-wrapper" style={{ border: "none" }}>
-      <table className="tbl-modern">
+      <table className="tbl-modern tbl-cards">
         <thead>
           <tr>
             <th>Anúncio</th><th>Vendas</th><th>Un</th><th>Retorno</th><th>CMV</th><th>Frete</th>
@@ -640,37 +640,37 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
                   {a.semVenda && <span title="Anúncio gastou em ADS mas não vendeu neste período. Se você excluiu o anúncio, o gasto anterior continua aqui porque foi dinheiro real pago ao ML." style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, cursor: "help" }}>SÓ ADS</span>}
                   {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
                 </td>
-                <td style={{ fontWeight: 700 }}>{a.vendas || "—"}</td>
-                <td style={{ color: "var(--muted)" }}>{a.qty}</td>
-                <td style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
-                <td style={{ color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
-                <td style={{ color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
-                <td style={{ color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
-                <td style={{ color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
-                <td style={{ color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
-                <td style={{ color: roas.color, fontWeight: 700 }}>{roas.txt}</td>
-                <td style={{ color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
-                <td style={{ fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucro)}</td>
-                <td>{a.semVenda ? <span style={{ color: "var(--muted)" }}>—</span> : <span className={`tag ${margemTag(a.margem)}`}>{a.margem.toFixed(1)}%</span>}</td>
+                <td data-label="Vendas" style={{ fontWeight: 700 }}>{a.vendas || "—"}</td>
+                <td data-label="Un" style={{ color: "var(--muted)" }}>{a.qty}</td>
+                <td data-label="Retorno" style={{ color: "var(--green)", fontWeight: 600 }}>{fmtBRL(a.retorno)}</td>
+                <td data-label="CMV" style={{ color: "var(--red)" }}>{fmtBRL(a.custoProduto)}</td>
+                <td data-label="Frete" style={{ color: "var(--red)" }}>{fmtBRL(a.envioFull)}</td>
+                <td data-label="Taxa ML" style={{ color: "var(--red)" }}>{fmtBRL(a.taxaML)}</td>
+                <td data-label="Imposto" style={{ color: "var(--red)" }}>{fmtBRL(a.imposto)}</td>
+                <td data-label="ADS" style={{ color: "var(--red)" }}>{fmtBRL(a.ads)}</td>
+                <td data-label="ROAS" style={{ color: roas.color, fontWeight: 700 }}>{roas.txt}</td>
+                <td data-label="Lucro bruto" style={{ color: a.lucroBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucroBruto)}</td>
+                <td data-label="Lucro líq." style={{ fontWeight: 700, color: a.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(a.lucro)}</td>
+                <td data-label="Margem">{a.semVenda ? <span style={{ color: "var(--muted)" }}>—</span> : <span className={`tag ${margemTag(a.margem)}`}>{a.margem.toFixed(1)}%</span>}</td>
               </tr>
             );
           })}
         </tbody>
         <tfoot>
           <tr>
-            <td>Total</td>
-            <td style={{ fontWeight: 700 }}>{sum((a) => a.vendas)}</td>
-            <td style={{ color: "var(--muted)" }}>{sum((a) => a.qty)}</td>
-            <td style={{ color: "var(--green)" }}>{fmtBRL(totalRet)}</td>
-            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.custoProduto))}</td>
-            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.envioFull))}</td>
-            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.taxaML))}</td>
-            <td style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.imposto))}</td>
-            <td style={{ color: "var(--red)" }}>{fmtBRL(totalAds)}</td>
-            <td style={{ color: totalRoas.color }}>{totalRoas.txt}</td>
-            <td style={{ color: totalBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalBruto)}</td>
-            <td style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</td>
-            <td><span className={`tag ${margemTag(margemTotal)}`}>{margemTotal.toFixed(1)}%</span></td>
+            <td data-label="">Total</td>
+            <td data-label="Vendas" style={{ fontWeight: 700 }}>{sum((a) => a.vendas)}</td>
+            <td data-label="Un" style={{ color: "var(--muted)" }}>{sum((a) => a.qty)}</td>
+            <td data-label="Retorno" style={{ color: "var(--green)" }}>{fmtBRL(totalRet)}</td>
+            <td data-label="CMV" style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.custoProduto))}</td>
+            <td data-label="Frete" style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.envioFull))}</td>
+            <td data-label="Taxa ML" style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.taxaML))}</td>
+            <td data-label="Imposto" style={{ color: "var(--red)" }}>{fmtBRL(sum((a) => a.imposto))}</td>
+            <td data-label="ADS" style={{ color: "var(--red)" }}>{fmtBRL(totalAds)}</td>
+            <td data-label="ROAS" style={{ color: totalRoas.color }}>{totalRoas.txt}</td>
+            <td data-label="Lucro bruto" style={{ color: totalBruto >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalBruto)}</td>
+            <td data-label="Lucro líq." style={{ color: totalLucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(totalLucro)}</td>
+            <td data-label="Margem"><span className={`tag ${margemTag(margemTotal)}`}>{margemTotal.toFixed(1)}%</span></td>
           </tr>
         </tfoot>
       </table>
@@ -771,14 +771,14 @@ function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; fro
         <span className="panel-sub">{dias} dia(s) no período · {totalQty} un vendidas · média {(totalQty / dias).toFixed(1)}/dia</span>
       </div>
       <div className="table-wrapper" style={{ border: "none" }}>
-        <table className="tbl-modern">
+        <table className="tbl-modern tbl-cards">
           <thead><tr><th style={{ textAlign: "left" }}>Produto</th><th>Vendas no período</th><th>Média/dia</th></tr></thead>
           <tbody>
             {linhas.map((l, i) => (
               <tr key={l.title + i}>
                 <td style={{ textAlign: "left", fontWeight: 600 }}>{l.title}</td>
-                <td style={{ color: "var(--muted)" }}>{l.qty} un</td>
-                <td style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
+                <td data-label="Vendas no período" style={{ color: "var(--muted)" }}>{l.qty} un</td>
+                <td data-label="Média/dia" style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
               </tr>
             ))}
           </tbody>
