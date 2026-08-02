@@ -134,14 +134,21 @@ export default function AccessControlTab({
   async function deleteEntry(entryEmail: string) {
     if (!canEdit) return;
     const target = entries.find((entry) => entry.email === entryEmail) ?? null;
-    if (target?.role === "owner") {
-      setError("Owner não pode ser removido.");
+    const totalOwners = entries.filter((e) => e.role === "owner").length;
+    // Único bloqueio real: não pode sumir o último owner, senão ninguém mais
+    // consegue editar nada (nem esta própria tela) — trava o sistema.
+    if (target?.role === "owner" && totalOwners <= 1) {
+      setError("Este é o único Owner — remova antes de promover outra pessoa a Owner, senão ninguém mais consegue editar.");
       return;
     }
 
-    if (!confirm(`Remover acesso de ${entryEmail}?`)) return;
+    const aviso = target?.role === "owner"
+      ? `Remover o acesso de OWNER de ${entryEmail}? Essa pessoa perde acesso total ao sistema.`
+      : `Remover acesso de ${entryEmail}?`;
+    if (!confirm(aviso)) return;
 
     try {
+      setError("");
       await removeAccessEntry(entryEmail);
       if (editingEmail === entryEmail) {
         resetForm();
@@ -287,7 +294,13 @@ export default function AccessControlTab({
                   {canEdit && (
                     <div className="row-actions">
                       <button type="button" className="btn btn-warning btn-xs" onClick={() => startEdit(entry)}>Editar</button>
-                      <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)} disabled={entry.role === "owner"}>Remover</button>
+                      <button
+                        type="button" className="btn btn-danger btn-xs" onClick={() => deleteEntry(entry.email)}
+                        disabled={entry.role === "owner" && owners <= 1}
+                        title={entry.role === "owner" && owners <= 1 ? "Único Owner — não pode ser removido" : undefined}
+                      >
+                        Remover
+                      </button>
                     </div>
                   )}
                 </div>
