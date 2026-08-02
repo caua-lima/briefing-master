@@ -12,13 +12,17 @@ import CustosTab from "@/components/tabs/CustosTab";
 import EstoqueTab from "@/components/tabs/EstoqueTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import DreTab from "@/components/tabs/DreTab";
+import TarefasTab from "@/components/tabs/TarefasTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 import { ZxpMark } from "@/components/ZxpMark";
 
-type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "dre" | "acesso";
+type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "dre" | "tarefas" | "acesso";
 
-// Todos veem tudo. Só o owner edita (as regras do Firestore garantem isso).
+// Owner e colaborador veem tudo, exceto Acesso — essa é só do owner (a aba
+// nem aparece na navegação pra colaborador). Tarefas é a única aba em que o
+// colaborador também EDITA (ver isOwner mais abaixo) — as demais continuam
+// somente leitura pra ele, garantido pelas regras do Firestore.
 const NAV_ITEMS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "pedidos", label: "Pedidos" },
@@ -27,6 +31,7 @@ const NAV_ITEMS: { id: Tab; label: string }[] = [
   { id: "custos", label: "Custos" },
   { id: "estoque", label: "Estoque" },
   { id: "dre", label: "DRE" },
+  { id: "tarefas", label: "Tarefas" },
   { id: "acesso", label: "Acesso" },
 ];
 
@@ -39,6 +44,7 @@ const ICON_PATHS: Record<Tab, React.ReactNode> = {
   custos: (<><path d="M6 3h12v18l-2-1.3L14 21l-2-1.3L10 21l-2-1.3L6 21z" /><path d="M9 8.5h6M9 12h6" /></>),
   estoque: (<><path d="M3 8l9-4 9 4-9 4-9-4z" /><path d="M3 8v8l9 4 9-4V8" /><path d="M12 12v8" /></>),
   dre: (<><path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><path d="M8 13h8M8 17h5" /></>),
+  tarefas: (<><rect x="3" y="4" width="5" height="16" rx="1.2" /><rect x="9.5" y="4" width="5" height="10" rx="1.2" /><rect x="16" y="4" width="5" height="13" rx="1.2" /></>),
   acesso: (<><circle cx="12" cy="8" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>),
 };
 
@@ -87,8 +93,11 @@ function AppShell() {
 
   const data = useUserData(user?.uid);
   const { isOwner } = useAccess();
-  const navItems = NAV_ITEMS;          // todos veem todas as abas
-  const activeTab: Tab = tab;
+  // Acesso é só do owner — colaborador nem vê o item na navegação.
+  const navItems = isOwner ? NAV_ITEMS : NAV_ITEMS.filter((n) => n.id !== "acesso");
+  // Defesa extra: se por algum motivo o tab ativo for "acesso" sem ser owner
+  // (ex.: papel rebaixado com a aba já aberta), cai pro Dashboard.
+  const activeTab: Tab = tab === "acesso" && !isOwner ? "dashboard" : tab;
 
   if (!user) return null;
 
@@ -380,7 +389,9 @@ function AppShell() {
               </div>
             ) : (
               <>
-                {!isOwner && (
+                {/* Tarefas é a exceção: colaborador edita lá igual ao owner, então o
+                    aviso de "somente leitura" seria falso ali. */}
+                {!isOwner && activeTab !== "tarefas" && (
                   <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
                     Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
                   </div>
@@ -392,7 +403,8 @@ function AppShell() {
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
                 {activeTab === "dre" && <DreTab />}
-                {activeTab === "acesso" && <AccessControlTab uid={user.uid} data={data} />}
+                {activeTab === "tarefas" && <TarefasTab />}
+                {activeTab === "acesso" && isOwner && <AccessControlTab uid={user.uid} data={data} />}
               </>
             )}
           </main>

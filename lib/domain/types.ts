@@ -162,8 +162,35 @@ export type EstoqueMovimento = {
 
 export type AccessEntry = {
   email: string;
-  role: "owner" | "admin" | "user";
+  // "admin"/"user" são papéis legados (contas cadastradas antes desta versão)
+  // — continuam existindo em documentos antigos do Firestore, então o tipo
+  // aceita ler os dois, mas toda escrita nova usa só "owner"/"colaborador".
+  role: "owner" | "colaborador" | "admin" | "user";
   displayName?: string;
   photoURL?: string;
   addedAt?: number;
+};
+
+/** Rótulo de exibição do papel — normaliza os valores legados ("admin"/"user") para "Colaborador". */
+export function roleLabel(role: AccessEntry["role"]): "Owner" | "Colaborador" {
+  return role === "owner" ? "Owner" : "Colaborador";
+}
+
+// ── Tarefas (Kanban) ────────────────────────────────────────────
+export type TaskStatus = "todo" | "doing" | "done";
+
+export type Task = {
+  id: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  // E-mail (+ nome, como snapshot pra não depender de outra leitura) de quem
+  // deve executar a tarefa — é o que permite "eu peço pro meu sócio e vice-versa".
+  assignedTo?: string;
+  assignedToName?: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  dueDate?: string; // yyyy-mm-dd, opcional
 };

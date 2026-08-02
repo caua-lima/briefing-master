@@ -87,6 +87,12 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    // Tarefas (Kanban): owner e colaborador leem E escrevem igual — é o
+    // ponto do quadro, um atribui tarefa pro outro e vice-versa.
+    match /tarefas/{docId} {
+      allow read, write: if isAuthorized();
+    }
+
     // Legacy: Allow authorized users read old data, writes only own uid
     match /usuarios/{uid}/{document=**} {
       allow read: if isAuthorized();

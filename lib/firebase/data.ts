@@ -24,6 +24,7 @@ import type {
   GoalEntry,
   Goals,
   Product,
+  Task,
 } from "@/lib/domain/types";
 import { getFirebase } from "./client";
 
@@ -336,6 +337,30 @@ export async function saveFinanceiroSaidas(saidas: SaidaFin[]): Promise<void> {
     { saidas, updatedAt: Date.now(), updatedBy: email },
     { merge: true },
   );
+}
+
+// ── Tarefas (Kanban) ────────────────────────────────────────────
+// Coleção compartilhada, sem dono: owner e colaborador leem e escrevem igual
+// (ver firestore.rules) — é o que permite um atribuir tarefa pro outro.
+const TASK_COL = "tarefas";
+
+export function watchTasks(cb: (tasks: Task[]) => void): () => void {
+  return onSnapshot(query(sCol(TASK_COL), orderBy("createdAt", "desc")), (snap) => {
+    cb(snap.docs.map((d) => d.data() as Task));
+  });
+}
+
+export async function upsertTask(task: Task) {
+  const email = getCurrentUserEmail();
+  await setDoc(sDoc(TASK_COL, task.id), sanitizeUndefined({
+    ...task,
+    createdBy: task.createdBy ?? email,
+    updatedAt: Date.now(),
+  }));
+}
+
+export async function deleteTask(id: string) {
+  await deleteDoc(sDoc(TASK_COL, id));
 }
 
 // ── Access Control (global collection) ────────────────────────

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { AccessEntry } from "@/lib/domain/types";
+import { roleLabel, type AccessEntry } from "@/lib/domain/types";
 import {
   addAccessEntry,
   removeAccessEntry,
@@ -29,7 +29,7 @@ export default function AccessControlTab({
   const [search, setSearch] = useState("");
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<AccessEntry["role"]>("user");
+  const [role, setRole] = useState<AccessEntry["role"]>("colaborador");
   const [displayName, setDisplayName] = useState("");
   const [photoURL, setPhotoURL] = useState("");
   const [password, setPassword] = useState("");
@@ -63,7 +63,7 @@ export default function AccessControlTab({
   function resetForm() {
     setEditingEmail(null);
     setEmail("");
-    setRole("user");
+    setRole("colaborador");
     setDisplayName("");
     setPhotoURL("");
     setPassword("");
@@ -153,8 +153,9 @@ export default function AccessControlTab({
 
   const owners = entries.filter((e) => e.role === "owner").length;
   const roleBadge = (r: AccessEntry["role"]) => {
-    const map: Record<string, [string, string]> = { owner: ["Owner", "#a855f7"], admin: ["Legado", "#64748b"], user: ["Usuário", "#64748b"] };
-    const [txt, cor] = map[r] ?? map.user;
+    const isOwnerRole = r === "owner";
+    const cor = isOwnerRole ? "#a855f7" : "#4f8ef7";
+    const txt = roleLabel(r);
     return <span style={{ fontSize: ".7rem", fontWeight: 700, color: cor, background: `${cor}1f`, border: `1px solid ${cor}`, borderRadius: 6, padding: "1px 8px" }}>{txt}</span>;
   };
 
@@ -167,7 +168,7 @@ export default function AccessControlTab({
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Acessos</div><div className="k-val">{entries.length}</div></div>
         <div className="kpi k-pos"><div className="k-lbl">Owners</div><div className="k-val" style={{ color: "var(--green)" }}>{owners}</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Usuários (só leitura)</div><div className="k-val" style={{ color: "var(--yellow)" }}>{entries.length - owners}</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Colaboradores</div><div className="k-val" style={{ color: "var(--yellow)" }}>{entries.length - owners}</div></div>
       </div>
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr)" }}>
@@ -227,7 +228,7 @@ export default function AccessControlTab({
                   disabled={editingEntry?.role === "owner"}
                 >
                   <option value="owner">Owner (acesso total)</option>
-                  <option value="user">Usuário (somente leitura)</option>
+                  <option value="colaborador">Colaborador (vê tudo, exceto Acesso)</option>
                 </select>
               </div>
 
