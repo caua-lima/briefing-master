@@ -75,10 +75,10 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
         padding: ehSub ? "11px 12px" : "7px 12px 7px 26px",
         marginTop: ehSub ? 4 : 0,
         background: ehResultado
-          ? (valor >= 0 ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.1)")
+          ? (valor >= 0 ? "rgba(32,199,119,.1)" : "rgba(240,68,82,.1)")
           : tipo === "subtotal" ? "var(--surface2)" : undefined,
         border: ehResultado
-          ? `1px solid ${valor >= 0 ? "rgba(34,197,94,.4)" : "rgba(239,68,68,.4)"}`
+          ? `1px solid ${valor >= 0 ? "rgba(32,199,119,.4)" : "rgba(240,68,82,.4)"}`
           : undefined,
       }}
     >

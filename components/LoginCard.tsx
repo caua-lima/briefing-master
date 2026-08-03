@@ -53,13 +53,7 @@ export default function LoginCard() {
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
           <ZxpMark size={46} />
         </div>
-        <h2
-          style={{
-            fontWeight: 800, letterSpacing: ".03em",
-            background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-          }}
-        >
+        <h2 className="font-display" style={{ fontWeight: 700, letterSpacing: ".03em", color: "var(--text)" }}>
           ZXP SOLUTIONS
         </h2>
         <p style={{ marginBottom: 2 }}>Dashboard Mercado Livre</p>

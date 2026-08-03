@@ -47,22 +47,22 @@ export default function RevenueLineChart({ days, windowDays }: Props) {
       {
         label: "Faturamento",
         data: fatData,
-        borderColor: "#4f8ef7",
-        backgroundColor: "rgba(79,142,247,.12)",
+        borderColor: "#3483FA",
+        backgroundColor: "rgba(52,131,250,.12)",
         fill: true,
         tension: 0.35,
         pointRadius: 4,
-        pointBackgroundColor: "#4f8ef7",
+        pointBackgroundColor: "#3483FA",
       },
       {
         label: "Lucro Liquido",
         data: liqData,
-        borderColor: "#22c55e",
-        backgroundColor: "rgba(34,197,94,.08)",
+        borderColor: "#20C777",
+        backgroundColor: "rgba(32,199,119,.08)",
         fill: true,
         tension: 0.35,
         pointRadius: 4,
-        pointBackgroundColor: "#22c55e",
+        pointBackgroundColor: "#20C777",
       },
     ],
   };
@@ -73,14 +73,14 @@ export default function RevenueLineChart({ days, windowDays }: Props) {
     interaction: { mode: "index" as const, intersect: false },
     plugins: {
       legend: {
-        labels: { color: "#64748b", font: { size: 11 } },
+        labels: { color: "#AAB4C3", font: { size: 11 } },
       },
       tooltip: {
-        backgroundColor: "#1a1d27",
-        borderColor: "#2e3350",
+        backgroundColor: "#171B22",
+        borderColor: "#2C3440",
         borderWidth: 1,
-        titleColor: "#e2e8f0",
-        bodyColor: "#64748b",
+        titleColor: "#F5F7FA",
+        bodyColor: "#AAB4C3",
         callbacks: {
           label: (ctx: TooltipItem<"line">) => {
             const v = (ctx.parsed.y as number | null) ?? 0;
@@ -94,17 +94,17 @@ export default function RevenueLineChart({ days, windowDays }: Props) {
     },
     scales: {
       x: {
-        ticks: { color: "#64748b", font: { size: 10 } },
-        grid: { color: "#2e3350" },
+        ticks: { color: "#AAB4C3", font: { size: 10 } },
+        grid: { color: "#2C3440" },
       },
       y: {
         ticks: {
-          color: "#64748b",
+          color: "#AAB4C3",
           font: { size: 10 },
           callback: (v: number | string) =>
             `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`,
         },
-        grid: { color: "#2e3350" },
+        grid: { color: "#2C3440" },
       },
     },
   };

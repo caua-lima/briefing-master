@@ -48,12 +48,12 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
         backgroundColor: [
           "rgba(99,102,241,.8)",
           "rgba(59,130,246,.8)",
-          "rgba(245,158,11,.8)",
+          "rgba(255,159,28,.8)",
           "rgba(234,179,8,.8)",
-          "rgba(239,68,68,.8)",
-          "rgba(167,139,250,.8)",
+          "rgba(240,68,82,.8)",
+          "rgba(155,107,255,.8)",
         ],
-        borderColor: "#1a1d27",
+        borderColor: "#171B22",
         borderWidth: 2,
       },
     ],
@@ -66,14 +66,14 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
     plugins: {
       legend: {
         position: "bottom" as const,
-        labels: { color: "#64748b", font: { size: 10 }, padding: 10 },
+        labels: { color: "#AAB4C3", font: { size: 10 }, padding: 10 },
       },
       tooltip: {
-        backgroundColor: "#1a1d27",
-        borderColor: "#2e3350",
+        backgroundColor: "#171B22",
+        borderColor: "#2C3440",
         borderWidth: 1,
-        titleColor: "#e2e8f0",
-        bodyColor: "#64748b",
+        titleColor: "#F5F7FA",
+        bodyColor: "#AAB4C3",
         callbacks: {
           label: (ctx: TooltipItem<"doughnut">) => {
             const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : "0";

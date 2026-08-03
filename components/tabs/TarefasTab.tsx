@@ -158,7 +158,7 @@ function KanbanColuna({ status, label, dot, count, children }: {
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
-    <div className="kanban-col" ref={setNodeRef} style={isOver ? { borderColor: "var(--accent)", background: "rgba(79,142,247,.05)" } : undefined}>
+    <div className="kanban-col" ref={setNodeRef} style={isOver ? { borderColor: "var(--accent)", background: "rgba(52,131,250,.05)" } : undefined}>
       <div className="kanban-col-head">
         <span className="kanban-col-title">
           <span className="kanban-dot" style={{ background: dot }} />{label} ({count})

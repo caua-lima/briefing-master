@@ -193,14 +193,12 @@ function AppShell() {
               <ZxpMark size={30} />
               <div style={{ lineHeight: 1.15 }}>
                 <div
+                  className="font-display"
                   style={{
-                    fontWeight: 800,
+                    fontWeight: 700,
                     fontSize: ".92rem",
                     letterSpacing: ".02em",
-                    background: "linear-gradient(135deg,#4f8ef7,#a78bfa)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    backgroundClip: "text",
+                    color: "var(--text)",
                   }}
                 >
                   ZXP SOLUTIONS
@@ -235,9 +233,9 @@ function AppShell() {
                     padding: "10px 12px",
                     borderRadius: 9,
                     border: "none",
-                    background: active ? "rgba(79,142,247,.13)" : "transparent",
-                    color: active ? "var(--accent)" : "var(--muted)",
-                    boxShadow: active ? "inset 3px 0 0 var(--accent)" : "none",
+                    background: active ? "var(--surface2)" : "transparent",
+                    color: active ? "var(--text)" : "var(--muted)",
+                    boxShadow: active ? "inset 3px 0 0 var(--meli-yellow)" : "none",
                     fontSize: ".9rem",
                     fontWeight: active ? 700 : 500,
                     cursor: "pointer",
@@ -257,7 +255,9 @@ function AppShell() {
                     }
                   }}
                 >
-                  <NavIcon id={item.id} />
+                  <span style={{ color: active ? "var(--meli-yellow)" : "inherit", display: "inline-flex" }}>
+                    <NavIcon id={item.id} />
+                  </span>
                   <span>{item.label}</span>
                 </button>
               );
@@ -397,7 +397,7 @@ function AppShell() {
                 {/* Tarefas é a exceção: colaborador edita lá igual ao owner, então o
                     aviso de "somente leitura" seria falso ali. */}
                 {!isOwner && activeTab !== "tarefas" && (
-                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(100,116,139,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
+                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(170,180,195,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
                     Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
                   </div>
                 )}

@@ -101,10 +101,10 @@ type Devolucao = {
 const COST_COLORS = {
   cmv:  "rgba(99,102,241,.9)",
   full: "rgba(59,130,246,.9)",
-  taxa: "rgba(245,158,11,.9)",
+  taxa: "rgba(255,159,28,.9)",
   imp:  "rgba(234,179,8,.9)",
-  ads:  "rgba(239,68,68,.9)",
-  op:   "rgba(167,139,250,.9)",
+  ads:  "rgba(240,68,82,.9)",
+  op:   "rgba(155,107,255,.9)",
 };
 
 // throttle da sincronização automática (compartilhado entre montagens)
@@ -217,7 +217,7 @@ function LastUpdated({ at }: { at: number | null }) {
   const txt = mins <= 0 ? "agora" : mins === 1 ? "há 1 min" : `há ${mins} min`;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: ".72rem", color: "var(--muted)", whiteSpace: "nowrap" }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 0 3px rgba(34,197,94,.15)" }} />
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 0 3px rgba(32,199,119,.15)" }} />
       Atualizado {txt} · auto 15min
     </span>
   );
@@ -312,7 +312,7 @@ function ConferenciaMP({ reconc }: { reconc?: { count: number; nosso: number; re
       {ok ? (
         <div style={{
           padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
-          background: "rgba(34,197,94,.1)", border: "1px solid rgba(34,197,94,.35)", color: "var(--green)",
+          background: "rgba(32,199,119,.1)", border: "1px solid rgba(32,199,119,.35)", color: "var(--green)",
         }}>
           <b>Bate.</b> O que a gente calcula como repasse do ML confere com o que o Mercado Pago
           liberou. Não há custo de venda escapando — a margem está confiável.
@@ -320,7 +320,7 @@ function ConferenciaMP({ reconc }: { reconc?: { count: number; nosso: number; re
       ) : (
         <div style={{
           padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
-          background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.4)", color: "#f7a8a8",
+          background: "rgba(240,68,82,.1)", border: "1px solid rgba(240,68,82,.4)", color: "#F7A0A8",
         }}>
           <b>Há {fmtBRL(Math.abs(gap))} de diferença</b> ({fmtBRL(Math.abs(media))} por pedido).{" "}
           {gap > 0
@@ -446,7 +446,7 @@ function DevolucoesPanel({ total, emAndamento, detalhe }: { total: number; emAnd
       {(emAndamento ?? 0) > 0 && (
         <div style={{
           marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: ".8rem", lineHeight: 1.5,
-          background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", color: "#f7c948",
+          background: "rgba(255,159,28,.1)", border: "1px solid rgba(255,159,28,.35)", color: "#FF9F1C",
         }}>
           <b>{fmtBRL(emAndamento ?? 0)}</b> em {nEmAndamento} devolução(ões) <b>ainda em disputa</b> —
           seguem contando como venda no lucro até o Mercado Livre concluir. Só desconto quando fecha.
@@ -465,11 +465,11 @@ function DevolucoesPanel({ total, emAndamento, detalhe }: { total: number; emAnd
                   <td data-label="Motivo" style={{ color: "var(--muted)", textAlign: "left" }}>{d.motivo || "—"}</td>
                   <td data-label="Situação" style={{ textAlign: "left" }}>
                     {d.emAndamento
-                      ? <span style={{ color: "#f7c948", fontWeight: 600 }}>em disputa</span>
+                      ? <span style={{ color: "#FF9F1C", fontWeight: 600 }}>em disputa</span>
                       : <span style={{ color: "var(--muted)" }}>{tipoLabel(d.tipo)} · concluída</span>}
                     {d.status && <span style={{ display: "block", fontSize: ".64rem", color: "var(--muted)" }}>{d.status}</span>}
                   </td>
-                  <td data-label="Valor" style={{ color: d.emAndamento ? "#f7c948" : "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
+                  <td data-label="Valor" style={{ color: d.emAndamento ? "#FF9F1C" : "var(--red)", fontWeight: 700 }}>{fmtBRL(d.valor)}</td>
                 </tr>
               ))}
             </tbody>
@@ -573,7 +573,7 @@ function MetaDiariaCard({
           {!mesBatido && metaPlana != null && diasRestantes != null && (
             <div style={{ marginTop: 10, textAlign: "center", fontSize: ".72rem", lineHeight: 1.5 }}>
               {atrasado && (
-                <span style={{ color: "#f7c948" }}>
+                <span style={{ color: "#FF9F1C" }}>
                   ↑ subiu de <b>{fmtBRL(metaPlana)}</b> — você está atrás do ritmo
                 </span>
               )}
@@ -637,7 +637,7 @@ function TabelaAnuncios({ anuncios }: { anuncios: AnuncioResult[] }) {
               <tr key={a.item_id} style={a.semVenda ? { opacity: 0.72 } : undefined}>
                 <td>
                   <span title={a.title} style={{ fontWeight: 600 }}>{a.title}</span>
-                  {a.semVenda && <span title="Anúncio gastou em ADS mas não vendeu neste período. Se você excluiu o anúncio, o gasto anterior continua aqui porque foi dinheiro real pago ao ML." style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#f7c948", background: "rgba(247,201,72,.12)", padding: "1px 6px", borderRadius: 5, cursor: "help" }}>SÓ ADS</span>}
+                  {a.semVenda && <span title="Anúncio gastou em ADS mas não vendeu neste período. Se você excluiu o anúncio, o gasto anterior continua aqui porque foi dinheiro real pago ao ML." style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#FF9F1C", background: "rgba(255,159,28,.12)", padding: "1px 6px", borderRadius: 5, cursor: "help" }}>SÓ ADS</span>}
                   {a.item_id && <span style={{ display: "block", fontSize: ".7rem", color: "var(--muted)" }}>{a.item_id}</span>}
                 </td>
                 <td data-label="Vendas" style={{ fontWeight: 700 }}>{a.vendas || "—"}</td>
@@ -1026,7 +1026,7 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
       <AvisoRemessasFull onVerEstoque={onVerEstoque} />
 
       {adsFalhou && (
-        <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.45)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
+        <div style={{ padding: "10px 14px", background: "rgba(255,159,28,.12)", border: "1px solid rgba(255,159,28,.45)", borderRadius: 8, fontSize: ".82rem", color: "#FF9F1C" }}>
           <b>Atenção: o gasto com ADS não veio do Mercado Livre neste período.</b>{" "}
           Não estou mostrando R$ 0,00 para não te dar número errado — mas isso significa que o{" "}
           <b>lucro e a margem abaixo estão otimistas</b> (falta descontar o ADS). O resto dos números está correto.
@@ -1038,7 +1038,7 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
         const blocked = !!d && (d.advertisersStatus === 401 || d.advertisersStatus === 403 || d.advertiserId == null);
         if (!blocked) return null;
         return (
-          <div style={{ padding: "10px 14px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 8, fontSize: ".82rem", color: "#f7c948" }}>
+          <div style={{ padding: "10px 14px", background: "rgba(255,159,28,.1)", border: "1px solid rgba(255,159,28,.35)", borderRadius: 8, fontSize: ".82rem", color: "#FF9F1C" }}>
             <b>ADS não autorizado (HTTP {d?.advertisersStatus ?? "—"}).</b> O token do Mercado Livre não tem permissão de Publicidade.{" "}
             Reconecte o ML em <b>Trocar conta ML</b> concedendo acesso a <b>Publicidade / Mercado Ads</b> para o gasto com Ads voltar a aparecer.
           </div>
@@ -1114,7 +1114,7 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
           />
 
           {(mlMetrics?.pedidosSemVinculo ?? 0) > 0 && (
-            <div style={{ padding: "8px 12px", background: "rgba(247,201,72,.1)", border: "1px solid rgba(247,201,72,.3)", borderRadius: 8, fontSize: ".78rem", color: "#f7c948" }}>
+            <div style={{ padding: "8px 12px", background: "rgba(255,159,28,.1)", border: "1px solid rgba(255,159,28,.3)", borderRadius: 8, fontSize: ".78rem", color: "#FF9F1C" }}>
               {mlMetrics?.pedidosSemVinculo} pedido(s) sem produto vinculado — cadastre o SKU/MLB no Estoque para o lucro ficar completo.
             </div>
           )}
@@ -1127,12 +1127,12 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
                 <div key={r.label} className="cost-row">
                   <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
                   {r.indisponivel
-                    ? <span title="O Mercado Livre não retornou o gasto com ADS. Não mostro R$ 0,00 para não te dar número errado." style={{ color: "#f7c948", fontWeight: 700, fontSize: ".82rem" }}>indisponível</span>
+                    ? <span title="O Mercado Livre não retornou o gasto com ADS. Não mostro R$ 0,00 para não te dar número errado." style={{ color: "#FF9F1C", fontWeight: 700, fontSize: ".82rem" }}>indisponível</span>
                     : <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>}
                 </div>
               ))}
               <div className="cost-total">
-                <span>Total de custos{adsFalhou && <span style={{ color: "#f7c948", fontWeight: 400, fontSize: ".72rem" }}> (sem ADS)</span>}</span>
+                <span>Total de custos{adsFalhou && <span style={{ color: "#FF9F1C", fontWeight: 400, fontSize: ".72rem" }}> (sem ADS)</span>}</span>
                 <span style={{ color: "var(--red)" }}>{fmtBRL(totalCustos)}</span>
               </div>
             </div>

@@ -1,6 +1,6 @@
 // Gera app/favicon.ico (32x32, 32bpp com alpha) desenhando o mesmo logomark
-// usado em components/ZxpMark.tsx e app/icon.tsx: quadrado arredondado em
-// gradiente (#4f8ef7 -> #a78bfa) com um "Z" branco geométrico.
+// usado em components/ZxpMark.tsx e app/icon.tsx: quadrado amarelo
+// institucional do ML (#FFE600) com um "Z" grafite geométrico (#0F1115).
 //
 // Existe porque Next.js não gera favicon.ico a partir de código (só icon.tsx,
 // que produz PNG); browsers/OS que buscam /favicon.ico direto ainda precisam
@@ -41,17 +41,8 @@ function roundedRectInside(x, y, r) {
   return Math.sqrt(dx * dx + dy * dy) <= r || (x >= r && x <= 100 - r) || (y >= r && y <= 100 - r);
 }
 
-function gradientColor(x, y) {
-  // Aproxima linear-gradient(135deg, #4f8ef7, #a78bfa): diagonal canto sup-esq -> inf-dir.
-  const t = (x + y) / 200;
-  const c1 = [0x4f, 0x8e, 0xf7];
-  const c2 = [0xa7, 0x8b, 0xfa];
-  return [
-    Math.round(c1[0] + (c2[0] - c1[0]) * t),
-    Math.round(c1[1] + (c2[1] - c1[1]) * t),
-    Math.round(c1[2] + (c2[2] - c1[2]) * t),
-  ];
-}
+const BG_COLOR = [0xff, 0xe6, 0x00]; // #FFE600 — amarelo institucional, cor sólida
+const Z_COLOR = [0x0f, 0x11, 0x15]; // #0F1115 — grafite
 
 // Renderiza em alta resolução (RGBA por pixel, alpha 0 ou 255)
 const hiPixels = new Uint8ClampedArray(HI * HI * 4);
@@ -64,12 +55,8 @@ for (let py = 0; py < HI; py++) {
       hiPixels[idx] = 0; hiPixels[idx + 1] = 0; hiPixels[idx + 2] = 0; hiPixels[idx + 3] = 0;
       continue;
     }
-    if (pointInPolygon(x, y, Z_POLY)) {
-      hiPixels[idx] = 255; hiPixels[idx + 1] = 255; hiPixels[idx + 2] = 255; hiPixels[idx + 3] = 255;
-    } else {
-      const [r, g, b] = gradientColor(x, y);
-      hiPixels[idx] = r; hiPixels[idx + 1] = g; hiPixels[idx + 2] = b; hiPixels[idx + 3] = 255;
-    }
+    const [r, g, b] = pointInPolygon(x, y, Z_POLY) ? Z_COLOR : BG_COLOR;
+    hiPixels[idx] = r; hiPixels[idx + 1] = g; hiPixels[idx + 2] = b; hiPixels[idx + 3] = 255;
   }
 }
 

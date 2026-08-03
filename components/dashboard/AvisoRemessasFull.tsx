@@ -43,8 +43,8 @@ export default function AvisoRemessasFull({ onVerEstoque }: { onVerEstoque?: () 
     <div style={{
       display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", justifyContent: "space-between",
       padding: "11px 14px", marginBottom: 14, borderRadius: 10,
-      background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.4)",
-      fontSize: ".84rem", color: "#f7c948", lineHeight: 1.5,
+      background: "rgba(255,159,28,.1)", border: "1px solid rgba(255,159,28,.4)",
+      fontSize: ".84rem", color: "#FF9F1C", lineHeight: 1.5,
     }}>
       <div>
         <b>

@@ -161,7 +161,7 @@ export default function AccessControlTab({
   const owners = entries.filter((e) => e.role === "owner").length;
   const roleBadge = (r: AccessEntry["role"]) => {
     const isOwnerRole = r === "owner";
-    const cor = isOwnerRole ? "#a855f7" : "#4f8ef7";
+    const cor = isOwnerRole ? "#9B6BFF" : "#3483FA";
     const txt = roleLabel(r);
     return <span style={{ fontSize: ".7rem", fontWeight: 700, color: cor, background: `${cor}1f`, border: `1px solid ${cor}`, borderRadius: 6, padding: "1px 8px" }}>{txt}</span>;
   };
