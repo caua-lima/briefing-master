@@ -15,31 +15,19 @@ function maisNovo(a: Registro, b: Registro): [Registro, string] {
 }
 
 /**
- * Manda a mesma notificação pra TODOS os dispositivos registrados
- * (owner e colaborador, cada celular/navegador que ativou) — uma venda é
- * informação do time inteiro, não só de quem tá logado no momento.
- *
- * `tag` (e `collapseKey`) fazem o aparelho SUBSTITUIR uma notificação já
- * existente do mesmo pedido em vez de empilhar outra. É a rede de segurança:
- * mesmo que algo mande dois pushes do mesmo evento, o usuário vê um aviso só.
+ * Um aparelho podia ter VÁRIOS registros vivos: antes o documento era
+ * identificado pelo próprio token do FCM, e o token rotaciona — cada rotação
+ * criava um documento novo sem apagar o antigo. Como o token velho segue
+ * válido por um tempo, o mesmo celular recebia a notificação duplicada.
+ * Agrupa por dispositivo e fica só com o registro mais recente; os antigos
+ * (`duplicados`) são devolvidos pra quem chamar apagar.
  */
-export async function sendPushToAll(title: string, body: string, dedupeKey?: string): Promise<void> {
-  const db = getAdminDb();
-  const snap = await db.collection("pushTokens").get();
-
-  /**
-   * Um aparelho podia ter VÁRIOS registros vivos: antes o documento era
-   * identificado pelo próprio token do FCM, e o token rotaciona — cada
-   * rotação criava um documento novo sem apagar o antigo. Como o token velho
-   * segue válido por um tempo, o mesmo celular recebia a notificação
-   * duplicada. Aqui agrupamos por dispositivo e ficamos só com o registro
-   * mais recente; os antigos são apagados.
-   */
+function deduplicarPorDispositivo(docs: FirebaseFirestore.QueryDocumentSnapshot[]): { envio: Registro[]; duplicados: string[] } {
   const duplicados: string[] = [];
   const comDevice: Registro[] = [];
   const legados: Registro[] = [];
 
-  for (const d of snap.docs) {
+  for (const d of docs) {
     const data = d.data() ?? {};
     const token = String(data.token ?? d.id); // legado: doc antigo tinha o token como id
     if (!token) continue;
@@ -87,18 +75,24 @@ export async function sendPushToAll(title: string, body: string, dedupeKey?: str
   // acontecer o FCM entregaria duas vezes — corta aqui também.
   const vistos = new Set<string>();
   const envio = registros.filter((r) => (vistos.has(r.token) ? false : (vistos.add(r.token), true)));
+  return { envio, duplicados };
+}
 
-  if (duplicados.length > 0) {
-    const batch = db.batch();
-    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
-    await batch.commit();
-  }
-  if (envio.length === 0) return;
-
-  const tag = dedupeKey ? `venda-${dedupeKey}` : undefined;
+/**
+ * Manda `title`/`body` pros dispositivos em `registros`, com dedupe de
+ * `tag`/`collapseKey` (o aparelho SUBSTITUI uma notificação já existente com
+ * a mesma tag em vez de empilhar outra — rede de segurança extra, mesmo que
+ * algo mande dois pushes do mesmo evento o usuário vê um aviso só). Limpa
+ * token morto (app desinstalado, permissão revogada) sozinho.
+ * Retorna quantos dispositivos realmente receberam.
+ */
+async function enviarPara(registros: Registro[], title: string, body: string, dedupeKey?: string): Promise<number> {
+  if (registros.length === 0) return 0;
+  const db = getAdminDb();
+  const tag = dedupeKey ? `${dedupeKey}` : undefined;
   const messaging = getAdminMessaging();
   const resp = await messaging.sendEachForMulticast({
-    tokens: envio.map((r) => r.token),
+    tokens: registros.map((r) => r.token),
     notification: { title, body },
     android: tag ? { collapseKey: tag, notification: { tag } } : undefined,
     webpush: {
@@ -108,14 +102,11 @@ export async function sendPushToAll(title: string, body: string, dedupeKey?: str
     },
   });
 
-  // Token morto (app desinstalado, permissão revogada, navegador nunca mais
-  // aberto) — limpa da lista, senão ela só cresce e o próximo envio continua
-  // tentando bater numa porta fechada pra sempre.
   const mortos: string[] = [];
   resp.responses.forEach((r, i) => {
     const code = r.error?.code;
     if (!r.success && (code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token")) {
-      mortos.push(envio[i].docId);
+      mortos.push(registros[i].docId);
     }
   });
   if (mortos.length > 0) {
@@ -123,4 +114,48 @@ export async function sendPushToAll(title: string, body: string, dedupeKey?: str
     mortos.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
     await batch.commit();
   }
+  return resp.successCount;
+}
+
+/**
+ * Manda a mesma notificação pra TODOS os dispositivos registrados
+ * (owner e colaborador, cada celular/navegador que ativou) — uma venda é
+ * informação do time inteiro, não só de quem tá logado no momento.
+ *
+ * `dedupeKey` normalmente é o id do pedido — ver `enviarPara`.
+ */
+export async function sendPushToAll(title: string, body: string, dedupeKey?: string): Promise<void> {
+  const db = getAdminDb();
+  const snap = await db.collection("pushTokens").get();
+  const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
+
+  if (duplicados.length > 0) {
+    const batch = db.batch();
+    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    await batch.commit();
+  }
+
+  await enviarPara(envio, title, body, dedupeKey ? `venda-${dedupeKey}` : undefined);
+}
+
+/**
+ * Manda uma notificação só pros dispositivos de UM e-mail — usado pelo botão
+ * "Enviar teste": prova que o pipeline inteiro funciona (token salvo no
+ * Firestore → FCM aceita → aparelho de fato mostra o aviso) sem incomodar o
+ * resto do time. Retorna quantos dispositivos desse usuário receberam, pra
+ * UI poder dizer "nenhum dispositivo seu está registrado" quando for 0.
+ */
+export async function sendPushToUser(email: string, title: string, body: string): Promise<{ enviados: number }> {
+  const db = getAdminDb();
+  const snap = await db.collection("pushTokens").where("email", "==", email).get();
+  const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
+
+  if (duplicados.length > 0) {
+    const batch = db.batch();
+    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    await batch.commit();
+  }
+
+  const enviados = await enviarPara(envio, title, body);
+  return { enviados };
 }
