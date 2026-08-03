@@ -1,8 +1,46 @@
 "use client";
 
 import { useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { ZxpMark } from "@/components/ZxpMark";
+
+/**
+ * Traduz o código de erro do Firebase Auth pra algo que ajuda a diagnosticar
+ * de verdade — a versão anterior mostrava "E-mail ou senha inválidos" pra
+ * QUALQUER falha (senha errada, conta que nunca foi criada, provedor de
+ * e-mail/senha desligado no console, limite de tentativas), o que escondia
+ * a causa real tanto do usuário quanto de quem for investigar depois.
+ *
+ * `auth/invalid-credential` (SDKs recentes) e `auth/wrong-password` /
+ * `auth/user-not-found` (mais antigos) são tratados juntos de propósito: o
+ * Firebase não diferencia "senha errada" de "essa conta não existe" por
+ * segurança, então a mensagem cobre os dois casos em vez de inventar certeza
+ * que a gente não tem.
+ */
+function mensagemErroLogin(err: unknown): string {
+  const code = err instanceof FirebaseError ? err.code : "";
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "E-mail ou senha incorretos — ou essa conta de e-mail/senha ainda não foi criada. Peça pro owner conferir em Acesso.";
+    case "auth/operation-not-allowed":
+      return "Login por e-mail/senha está desativado nas configurações do Firebase (Authentication → Sign-in method). Precisa habilitar lá.";
+    case "auth/user-disabled":
+      return "Essa conta foi desativada no Firebase.";
+    case "auth/too-many-requests":
+      return "Muitas tentativas seguidas — o Firebase bloqueou temporariamente. Espere alguns minutos e tente de novo.";
+    case "auth/invalid-email":
+      return "E-mail em formato inválido.";
+    case "auth/network-request-failed":
+      return "Falha de conexão — confira a internet e tente de novo.";
+    default:
+      // Erro não mapeado: mostra o código cru em vez de esconder — é o que
+      // permite diagnosticar um caso novo sem precisar adivinhar de novo.
+      return code ? `Falha no login (${code}).` : "Falha no login.";
+  }
+}
 
 export default function LoginCard() {
   const { signIn, signInWithAccountSelection, signInWithEmail } = useAuth();
@@ -34,8 +72,8 @@ export default function LoginCard() {
     setErr(null);
     try {
       await signInWithEmail(email, password);
-    } catch {
-      setErr("E-mail ou senha inválidos.");
+    } catch (e) {
+      setErr(mensagemErroLogin(e));
     } finally {
       setBusy(false);
     }
