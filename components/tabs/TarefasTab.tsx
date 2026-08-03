@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors,
+  type DragEndEvent, type DragStartEvent,
+} from "@dnd-kit/core";
 import Modal from "@/components/Modal";
 import type { AccessEntry, Task, TaskStatus } from "@/lib/domain/types";
 import { deleteTask, upsertTask, watchAccessList, watchTasks } from "@/lib/firebase/data";
@@ -53,6 +57,7 @@ export default function TarefasTab() {
   const porColuna = (status: TaskStatus) => visiveis.filter((t) => t.status === status);
 
   async function mover(t: Task, status: TaskStatus) {
+    if (t.status === status) return;
     await upsertTask({ ...t, status }).catch(() => {});
   }
 
@@ -64,6 +69,25 @@ export default function TarefasTab() {
   const minhas = tasks.filter((t) => t.assignedTo === email).length;
   const criadas = tasks.filter((t) => t.createdBy === email).length;
   const abertas = tasks.filter((t) => t.status !== "done").length;
+
+  // Distância mínima antes de considerar arrasto (não clique) — sem isso, um
+  // toque simples pra abrir "Editar" já dispararia um drag. PointerSensor
+  // cobre mouse e toque igual, então funciona no celular também.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [draggingTask, setDraggingTask] = useState<Task | null>(null);
+
+  function onDragStart(e: DragStartEvent) {
+    const t = tasks.find((x) => x.id === e.active.id) ?? null;
+    setDraggingTask(t);
+  }
+
+  async function onDragEnd(e: DragEndEvent) {
+    setDraggingTask(null);
+    const overStatus = e.over?.id as TaskStatus | undefined;
+    const t = tasks.find((x) => x.id === e.active.id);
+    if (!t || !overStatus) return;
+    await mover(t, overStatus);
+  }
 
   return (
     <div className="dash">
@@ -89,31 +113,33 @@ export default function TarefasTab() {
       {loading ? (
         <div className="empty-state">Carregando…</div>
       ) : (
-        <div className="kanban-board">
-          {COLS.map((col) => (
-            <div className="kanban-col" key={col.status}>
-              <div className="kanban-col-head">
-                <span className="kanban-col-title"><span className="kanban-dot" style={{ background: col.dot }} />{col.label}</span>
-                <span className="kanban-count">{porColuna(col.status).length}</span>
-              </div>
-              <div className="kanban-cards">
-                {porColuna(col.status).length === 0 ? (
-                  <div className="kanban-empty">Nenhuma tarefa aqui</div>
-                ) : (
-                  porColuna(col.status).map((t) => (
-                    <TaskCard
-                      key={t.id}
-                      task={t}
-                      onMover={(s) => mover(t, s)}
-                      onEditar={() => setEditTask(t)}
-                      onExcluir={() => excluir(t)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+          <div className="kanban-board">
+            {COLS.map((col) => {
+              const itens = porColuna(col.status);
+              return (
+                <KanbanColuna key={col.status} status={col.status} label={col.label} dot={col.dot} count={itens.length}>
+                  {itens.length === 0 ? (
+                    <div className="kanban-empty">Nenhuma tarefa aqui{draggingTask ? " · solte pra mover" : ""}</div>
+                  ) : (
+                    itens.map((t) => (
+                      <DraggableTaskCard
+                        key={t.id}
+                        task={t}
+                        onMover={(s) => mover(t, s)}
+                        onEditar={() => setEditTask(t)}
+                        onExcluir={() => excluir(t)}
+                      />
+                    ))
+                  )}
+                </KanbanColuna>
+              );
+            })}
+          </div>
+          <DragOverlay>
+            {draggingTask ? <TaskCard task={draggingTask} onMover={() => {}} onEditar={() => {}} onExcluir={() => {}} arrastando /> : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {openNew && (
@@ -126,16 +152,66 @@ export default function TarefasTab() {
   );
 }
 
-function TaskCard({ task, onMover, onEditar, onExcluir }: {
+/** Coluna do quadro — é o alvo do "solte aqui" do drag-and-drop. */
+function KanbanColuna({ status, label, dot, count, children }: {
+  status: TaskStatus; label: string; dot: string; count: number; children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: status });
+  return (
+    <div className="kanban-col" ref={setNodeRef} style={isOver ? { borderColor: "var(--accent)", background: "rgba(79,142,247,.05)" } : undefined}>
+      <div className="kanban-col-head">
+        <span className="kanban-col-title">
+          <span className="kanban-dot" style={{ background: dot }} />{label} ({count})
+        </span>
+      </div>
+      <div className="kanban-cards">{children}</div>
+    </div>
+  );
+}
+
+/** Envolve o card com o arrasto — só o "grip" no topo inicia o drag, então
+ *  clicar em Editar/Excluir/mover continua funcionando normalmente. */
+function DraggableTaskCard({ task, onMover, onEditar, onExcluir }: {
   task: Task;
   onMover: (s: TaskStatus) => void;
   onEditar: () => void;
   onExcluir: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  return (
+    <div ref={setNodeRef} style={{ opacity: isDragging ? 0.35 : 1 }}>
+      <TaskCard task={task} onMover={onMover} onEditar={onEditar} onExcluir={onExcluir} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
+function TaskCard({ task, onMover, onEditar, onExcluir, dragHandleProps, arrastando }: {
+  task: Task;
+  onMover: (s: TaskStatus) => void;
+  onEditar: () => void;
+  onExcluir: () => void;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+  arrastando?: boolean;
+}) {
   const idx = COLS.findIndex((c) => c.status === task.status);
   const atrasada = isAtrasada(task);
   return (
-    <div className={`kanban-card pri-${task.status}`}>
+    <div className={`kanban-card pri-${task.status}`} style={arrastando ? { boxShadow: "0 10px 30px rgba(0,0,0,.45)", cursor: "grabbing" } : undefined}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+        {dragHandleProps && (
+          <span
+            {...dragHandleProps}
+            title="Arraste pra mover"
+            style={{ cursor: "grab", color: "var(--muted)", flexShrink: 0, marginTop: 2, padding: "2px 2px", touchAction: "none" }}
+          >
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden>
+              <circle cx="3" cy="2" r="1.4" /><circle cx="9" cy="2" r="1.4" />
+              <circle cx="3" cy="8" r="1.4" /><circle cx="9" cy="8" r="1.4" />
+              <circle cx="3" cy="14" r="1.4" /><circle cx="9" cy="14" r="1.4" />
+            </svg>
+          </span>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
       <div className="kanban-card-title">{task.title}</div>
       {task.description && <div className="kanban-card-desc">{task.description}</div>}
       <div className="kanban-card-meta">
@@ -153,6 +229,8 @@ function TaskCard({ task, onMover, onEditar, onExcluir }: {
           </div>
           <button type="button" className="btn btn-warning btn-xs" onClick={onEditar}>Editar</button>
           <button type="button" className="btn btn-danger btn-xs" onClick={onExcluir}>Excluir</button>
+        </div>
+      </div>
         </div>
       </div>
     </div>
