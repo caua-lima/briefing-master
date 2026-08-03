@@ -21,6 +21,13 @@ const fmtBRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency"
  * notificação push na transição pra "paid" que ainda não tinha sido vista
  * (dedupe via `notifiedPush` no Firestore) — as outras chamadas só mantêm o
  * pedido atualizado no dashboard, sem pingar de novo.
+ *
+ * O check+set do `notifiedPush` roda dentro de uma transação — o ML costuma
+ * mandar o mesmo evento em duas chamadas quase simultâneas (reenvio/retry), e
+ * um "lê depois grava" comum tem uma janela onde as duas chamadas leem
+ * "ainda não notificado" antes de qualquer uma escrever, e a notificação sai
+ * duplicada. A transação serializa isso: a segunda chamada só é processada
+ * depois que a primeira já commitou, então já enxerga `notifiedPush: true`.
  */
 export async function POST(req: Request) {
   let body: { resource?: string; topic?: string } | null = null;
@@ -55,16 +62,21 @@ export async function POST(req: Request) {
 
     const db = getAdminDb();
     const ref = db.collection("ml_orders").doc(orderId);
-    const before = await ref.get();
-    const jaEstavaPago = before.exists && before.data()?.status === "paid";
-    const jaNotificado = before.exists && before.data()?.notifiedPush === true;
 
-    // Grava o essencial pra já aparecer no dashboard na hora — a sincronização
-    // completa (custo de frete, repasse líquido do Mercado Pago) continua vindo
-    // do cron diário e do botão de sincronizar manual, então não duplica aquele
-    // trabalho pesado aqui a cada notificação recebida.
-    await ref.set(
-      {
+    // Transação: decide "deve notificar" e já marca notifiedPush=true no
+    // mesmo commit atômico, fechando a janela de corrida entre chamadas
+    // concorrentes do mesmo evento.
+    const deveNotificar = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const jaEstavaPago = snap.exists && snap.data()?.status === "paid";
+      const jaNotificado = snap.exists && snap.data()?.notifiedPush === true;
+      const notificarAgora = status === "paid" && !jaEstavaPago && !jaNotificado;
+
+      // Grava o essencial pra já aparecer no dashboard na hora — a sincronização
+      // completa (custo de frete, repasse líquido do Mercado Pago) continua vindo
+      // do cron diário e do botão de sincronizar manual, então não duplica aquele
+      // trabalho pesado aqui a cada notificação recebida.
+      const patch: Record<string, unknown> = {
         order_id: orderId,
         status: order.status ?? null,
         date_created: String(order.date_created ?? ""),
@@ -73,12 +85,14 @@ export async function POST(req: Request) {
         items: mapOrderItems(order),
         pack_id: order.pack_id ? String(order.pack_id) : null,
         updatedAt: new Date().toISOString(),
-      },
-      { merge: true },
-    );
+      };
+      if (notificarAgora) patch.notifiedPush = true;
 
-    if (status === "paid" && !jaEstavaPago && !jaNotificado) {
-      await ref.set({ notifiedPush: true }, { merge: true });
+      tx.set(ref, patch, { merge: true });
+      return notificarAgora;
+    });
+
+    if (deveNotificar) {
       const itens = mapOrderItems(order);
       const primeiro = itens[0]?.title || "Pedido";
       const resumo = itens.length > 1 ? `${primeiro} + ${itens.length - 1} item(ns)` : primeiro;
