@@ -2,6 +2,7 @@ import "server-only";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+import { getMessaging } from "firebase-admin/messaging";
 
 function formatPrivateKey(key?: string) {
   if (!key) return undefined;
@@ -36,4 +37,9 @@ export function getAdminDb() {
 export function getAdminAuth() {
   ensureAdminApp();
   return getAuth();
+}
+
+export function getAdminMessaging() {
+  ensureAdminApp();
+  return getMessaging();
 }

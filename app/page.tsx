@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { initForegroundPush } from "@/lib/firebase/push";
+import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import { useUserData } from "@/components/useUserData";
 import { AccessGuard, useAccess } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
@@ -94,6 +96,14 @@ function AppShell() {
 
   const data = useUserData(user?.uid);
   const { isOwner } = useAccess();
+
+  // Sem isto, uma venda que chega com o app ABERTO não mostra notificação
+  // nenhuma — o navegador só faz isso sozinho quando o app está em segundo
+  // plano (via Service Worker). Idempotente, sem custo chamar de novo.
+  useEffect(() => {
+    initForegroundPush();
+  }, []);
+
   // Acesso é só do owner — colaborador nem vê o item na navegação.
   const navItems = isOwner ? NAV_ITEMS : NAV_ITEMS.filter((n) => n.id !== "acesso");
   // Defesa extra: se por algum motivo o tab ativo for "acesso" sem ser owner
@@ -364,6 +374,7 @@ function AppShell() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+            <PushNotificationToggle />
             <MlAccountStatus />
         </div>
           </header>

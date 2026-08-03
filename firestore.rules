@@ -107,6 +107,16 @@ service cloud.firestore {
       allow read, write: if isAuthorized();
     }
 
+    // Tokens de notificação push (um doc por dispositivo, id = o próprio
+    // token). Cada usuário só mexe no que é dele — o servidor lê a lista
+    // inteira pra mandar aviso de venda, mas isso é via Admin SDK, que
+    // ignora estas regras (não precisa de allow list aqui pra isso).
+    match /pushTokens/{token} {
+      allow read: if isAuthorized() && resource.data.email == request.auth.token.email;
+      allow create, update: if isAuthorized() && request.resource.data.email == request.auth.token.email;
+      allow delete: if isAuthorized() && resource.data.email == request.auth.token.email;
+    }
+
     // Legacy: Allow authorized users read old data, writes only own uid
     match /usuarios/{uid}/{document=**} {
       allow read: if isAuthorized();
