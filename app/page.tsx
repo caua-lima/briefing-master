@@ -397,7 +397,7 @@ function AppShell() {
                 {/* Tarefas é a exceção: colaborador edita lá igual ao owner, então o
                     aviso de "somente leitura" seria falso ali. */}
                 {!isOwner && activeTab !== "tarefas" && (
-                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(169,180,208,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
+                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(185,181,166,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
                     Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
                   </div>
                 )}

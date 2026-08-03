@@ -123,9 +123,9 @@ function GoalEntryRow({
           {entry.label && <span style={{ fontSize: ".78rem", color: "var(--muted)" }}>· {entry.label}</span>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          {chip("Meta 1", entry.meta1, "#7C3AED")}
-          {chip("Meta 2", entry.meta2, "#FBBF24")}
-          {chip("Meta 3", entry.meta3, "#8B5CF6")}
+          {chip("Meta 1", entry.meta1, "#E9A92D")}
+          {chip("Meta 2", entry.meta2, "#F4B942")}
+          {chip("Meta 3", entry.meta3, "#F4B942")}
           <span className="chip chip-green">margem {entry.metaMargem ?? 10}%</span>
         </div>
       </div>

@@ -378,14 +378,14 @@ function ProductRow({
               <div style={{ fontWeight: 600 }}>{product.name || <em style={{ color: "var(--muted)" }}>Sem nome</em>}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
                 {product.sku
-                  ? <span style={{ background: "rgba(124,58,237,.12)", color: "#7C3AED", padding: "1px 7px", borderRadius: 6, fontWeight: 700, fontSize: ".7rem" }}>SKU {product.sku}</span>
+                  ? <span style={{ background: "rgba(233,169,45,.12)", color: "#E9A92D", padding: "1px 7px", borderRadius: 6, fontWeight: 700, fontSize: ".7rem" }}>SKU {product.sku}</span>
                   : <span style={{ color: "var(--red)", fontSize: ".7rem" }}>sem SKU</span>}
                 {anuncios.map(({ mlb, item }) => (
                   <span key={mlb} style={{ fontSize: ".7rem", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, color: "var(--muted)" }}>
                     {mlb}
                     {item && item.price > 0 && <b style={{ color: "var(--green)", marginLeft: 4 }}>{fmtBRL(item.price)}</b>}
-                    {item && item.hasPromo && <span style={{ marginLeft: 4, fontSize: ".62rem", color: "#FBBF24", fontWeight: 700 }}>promo</span>}
-                    {item && <span style={{ marginLeft: 4, color: ehFullLogistic(item.logistic) ? "#7C3AED" : "var(--muted)" }}>{ehFullLogistic(item.logistic) ? "Full" : "próprio"}</span>}
+                    {item && item.hasPromo && <span style={{ marginLeft: 4, fontSize: ".62rem", color: "#F4B942", fontWeight: 700 }}>promo</span>}
+                    {item && <span style={{ marginLeft: 4, color: ehFullLogistic(item.logistic) ? "#E9A92D" : "var(--muted)" }}>{ehFullLogistic(item.logistic) ? "Full" : "próprio"}</span>}
                   </span>
                 ))}
               </div>
@@ -395,7 +395,7 @@ function ProductRow({
         <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
         <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
-          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#FBBF24" }}>reabastecer</span>}
+          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#F4B942" }}>reabastecer</span>}
           {proprio > 0 && <span title="Disponível no anúncio próprio — é o mesmo estoque de casa exposto no ML, não soma ao total" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
         </td>
         <td data-label="Total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
@@ -405,7 +405,7 @@ function ProductRow({
         </td>
         <td data-label="Preço venda" style={{ textAlign: "right", color: precoMax > 0 ? "var(--green)" : "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>
           {precoMax > 0 ? (precoMin === precoMax ? fmtBRL(precoMax) : `${fmtBRL(precoMin)}–${fmtBRL(precoMax)}`) : "—"}
-          {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#FBBF24" }}>promoção</span>}
+          {temPromo && <span style={{ display: "block", fontSize: ".62rem", color: "#F4B942" }}>promoção</span>}
         </td>
         <td data-label="Imposto" style={{ textAlign: "right", whiteSpace: "nowrap", color: imposto > 0 ? "var(--red)" : "var(--muted)" }}>{imposto > 0 ? `${imposto.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}</td>
         <td data-label="Movimentar" data-cell="acoes">
@@ -578,7 +578,7 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
       )}
 
       {isSaldo && (
-        <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(124,58,237,.08)", border: "1px solid rgba(124,58,237,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
+        <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(233,169,45,.08)", border: "1px solid rgba(233,169,45,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
           {full > 0
             ? <>O ML mostra <b>{full} un</b> deste produto no Full sem custo lançado. Informe quanto você pagou por unidade — isso <b>entra no custo médio</b> pra o lucro sair certo quando elas venderem. Não soma no “em casa” (já estão fora).</>
             : <>Use pra custear unidades que <b>já estavam no estoque</b> antes de você começar a lançar (ex.: o que está no Full). Entra na média do custo, mas <b>não soma no “em casa”</b>.</>}
@@ -586,7 +586,7 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
       )}
 
       {tipo === "saida_full" && (
-        <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(251,191,36,.08)", border: "1px solid rgba(251,191,36,.25)", fontSize: ".78rem", color: "var(--muted)" }}>
+        <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(244,185,66,.08)", border: "1px solid rgba(244,185,66,.25)", fontSize: ".78rem", color: "var(--muted)" }}>
           Baixa por <b>envio ao Full</b> — sai de casa e vai pro Full, mas <b>não é venda</b>. Não afeta o lucro; o custo só entra quando o produto vende.
         </div>
       )}
@@ -661,7 +661,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                     <td style={{ textAlign: "left", fontWeight: 600 }}>
                       {p.name || "Sem nome"}
                       {mlbsDe(p).length === 0 ? (
-                        <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "#FBBF24" }}>
+                        <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "#F4B942" }}>
                           sem anúncio vinculado — use “Vincular por SKU”
                         </span>
                       ) : f.total === 0 && f.mediaDiaria === 0 ? (
@@ -801,7 +801,7 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
         </div>
       </div>
 
-      <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(124,58,237,.08)", border: "1px solid rgba(124,58,237,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
+      <div style={{ margin: "4px 0 12px", padding: "8px 12px", borderRadius: 8, background: "rgba(233,169,45,.08)", border: "1px solid rgba(233,169,45,.2)", fontSize: ".78rem", color: "var(--muted)" }}>
         <strong>Preço de venda</strong> e <strong>retorno</strong>, além de ADS e Envio Full, são puxados automaticamente do Mercado Livre — não precisa cadastrar.
       </div>
 
@@ -929,13 +929,13 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
       ) : erro ? (
         <div style={{
           margin: "12px 0", padding: 10, borderRadius: 8,
-          background: "rgba(251,113,133,.12)", border: "1px solid rgba(251,113,133,.4)",
+          background: "rgba(214,90,74,.12)", border: "1px solid rgba(214,90,74,.4)",
           fontFamily: "ui-monospace, monospace", fontSize: ".72rem", whiteSpace: "pre-wrap",
         }}>{erro}</div>
       ) : concluido ? (
         <div style={{
           margin: "12px 0", padding: "12px 14px", borderRadius: 8,
-          background: "rgba(52,211,153,.1)", border: "1px solid rgba(52,211,153,.4)",
+          background: "rgba(54,179,126,.1)", border: "1px solid rgba(54,179,126,.4)",
           color: "var(--green)", fontSize: ".86rem",
         }}>
           <b>{feito} produto{feito === 1 ? "" : "s"} vinculado{feito === 1 ? "" : "s"}.</b> Os dados do ML
@@ -965,7 +965,7 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
                 </span>
               )}
               {resumo.aproximados > 0 && (
-                <span style={{ background: "rgba(251,191,36,.12)", border: "1px solid rgba(251,191,36,.4)", borderRadius: 6, padding: "4px 9px", color: "#FBBF24" }}>
+                <span style={{ background: "rgba(244,185,66,.12)", border: "1px solid rgba(244,185,66,.4)", borderRadius: 6, padding: "4px 9px", color: "#F4B942" }}>
                   {resumo.aproximados} aproximado(s) — confira antes
                 </span>
               )}
@@ -999,8 +999,8 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
                       <label key={n.mlb} style={{
                         display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6,
                         padding: "6px 8px", borderRadius: 6, cursor: "pointer",
-                        background: on ? "rgba(52,211,153,.08)" : "var(--surface2)",
-                        border: `1px solid ${on ? "rgba(52,211,153,.35)" : "var(--border)"}`,
+                        background: on ? "rgba(54,179,126,.08)" : "var(--surface2)",
+                        border: `1px solid ${on ? "rgba(54,179,126,.35)" : "var(--border)"}`,
                       }}>
                         <input
                           type="checkbox" checked={on} onChange={() => alterna(chave)}
@@ -1009,7 +1009,7 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
                         <span style={{ minWidth: 0 }}>
                           <span style={{ fontFamily: "monospace", fontSize: ".76rem", color: "var(--text)" }}>{n.mlb}</span>
                           {!n.exato && (
-                            <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#FBBF24", background: "rgba(251,191,36,.12)", padding: "1px 5px", borderRadius: 4 }}>
+                            <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 5px", borderRadius: 4 }}>
                               APROXIMADO
                             </span>
                           )}
@@ -1144,13 +1144,13 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
             return (
               <label key={p.id} style={{
                 display: "flex", gap: 8, alignItems: "center", padding: "6px 8px",
-                borderRadius: 6, cursor: "pointer", background: on ? "rgba(124,58,237,.1)" : undefined,
+                borderRadius: 6, cursor: "pointer", background: on ? "rgba(233,169,45,.1)" : undefined,
               }}>
                 <input type="checkbox" checked={on} onChange={() => alterna(p.id)} style={{ flexShrink: 0 }} />
                 <span style={{ flex: 1, minWidth: 0, fontSize: ".84rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {p.name || "Sem nome"}
                 </span>
-                <span style={{ fontSize: ".74rem", color: atual > 0 ? "#FBBF24" : "var(--muted)", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: ".74rem", color: atual > 0 ? "#F4B942" : "var(--muted)", whiteSpace: "nowrap" }}>
                   {atual > 0 ? `hoje ${atual}%` : "sem imposto"}
                 </span>
               </label>
@@ -1166,7 +1166,7 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
         Vai aplicar <b>{pct}%</b> em <b>{alvos.length} produto{alvos.length === 1 ? "" : "s"}</b>
         {escopoBusca ? <> — a lista mostra só os da busca “{escopoBusca}”.</> : <>.</>}
         {jaTem.length > 0 && (
-          <div style={{ marginTop: 6, color: "#FBBF24" }}>
+          <div style={{ marginTop: 6, color: "#F4B942" }}>
             {jaTem.length === 1
               ? "1 deles já tem imposto e será sobrescrito."
               : `${jaTem.length} deles já têm imposto e serão sobrescritos.`}
@@ -1176,7 +1176,7 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
 
       <div style={{
         marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: ".82rem", lineHeight: 1.55,
-        background: "rgba(52,211,153,.1)", border: "1px solid rgba(52,211,153,.35)", color: "var(--green)",
+        background: "rgba(54,179,126,.1)", border: "1px solid rgba(54,179,126,.35)", color: "var(--green)",
       }}>
         Vendas <b>antes de {desde.split("-").reverse().join("/")}</b> continuam sem esse imposto —
         o lucro dos meses já fechados não muda.
@@ -1301,7 +1301,7 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
       {erro && (
         <div style={{
           marginTop: 10, padding: 8, borderRadius: 6,
-          background: "rgba(251,113,133,.12)", border: "1px solid rgba(251,113,133,.4)",
+          background: "rgba(214,90,74,.12)", border: "1px solid rgba(214,90,74,.4)",
           fontFamily: "ui-monospace, monospace", fontSize: ".7rem", whiteSpace: "pre-wrap",
         }}>{erro}</div>
       )}
@@ -1372,7 +1372,7 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
                   {feita ? (
                     <span style={{
                       color: "var(--green)", fontSize: ".75rem", fontWeight: 700,
-                      background: "rgba(52,211,153,.12)", border: "1px solid rgba(52,211,153,.35)",
+                      background: "rgba(54,179,126,.12)", border: "1px solid rgba(54,179,126,.35)",
                       borderRadius: 999, padding: "3px 10px",
                     }}>✓ baixa dada</span>
                   ) : (
@@ -1404,7 +1404,7 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
                             ? <span style={{ color: "var(--green)" }}>✓ já baixado: {movExistente.quantidade} un</span>
                             : p.productId
                               ? <>ML recebeu {p.qtd} un{dif !== 0 && (
-                                  <span style={{ color: "#FBBF24", fontWeight: 600 }}>
+                                  <span style={{ color: "#F4B942", fontWeight: 600 }}>
                                     {" · "}{dif > 0 ? `+${dif}` : dif} a mais que o recebido
                                   </span>
                                 )}</>
@@ -1418,7 +1418,7 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
                         style={{
                           width: 84, fontSize: 16, textAlign: "right", padding: "7px 9px",
                           background: p.productId ? "var(--surface)" : "transparent",
-                          border: `1px solid ${dif !== 0 && !movExistente && p.productId ? "rgba(251,191,36,.5)" : "var(--border)"}`,
+                          border: `1px solid ${dif !== 0 && !movExistente && p.productId ? "rgba(244,185,66,.5)" : "var(--border)"}`,
                           borderRadius: 8, color: "var(--text)", outline: "none",
                         }}
                         value={valor}
@@ -1431,8 +1431,8 @@ function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
 
                 {!!semCadastro.length && (
                   <div style={{
-                    fontSize: ".75rem", color: "#FBBF24", marginTop: 10, padding: "7px 10px",
-                    background: "rgba(251,191,36,.1)", borderRadius: 8, lineHeight: 1.5,
+                    fontSize: ".75rem", color: "#F4B942", marginTop: 10, padding: "7px 10px",
+                    background: "rgba(244,185,66,.1)", borderRadius: 8, lineHeight: 1.5,
                   }}>
                     {semCadastro.length === 1 ? "Um produto desta remessa não está" : `${semCadastro.length} produtos desta remessa não estão`}
                     {" "}no Estoque. A baixa vai cobrir só o resto.

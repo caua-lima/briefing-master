@@ -119,7 +119,7 @@ export function MLConnectButton() {
         alignItems: "center",
         gap: 6,
         background: connecting ? "var(--surface2)" : "var(--brand)",
-        color: connecting ? "var(--muted)" : "#0B1020",
+        color: connecting ? "var(--muted)" : "#10100E",
         fontWeight: 700,
         fontSize: ".78rem",
         padding: "5px 12px",

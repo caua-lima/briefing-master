@@ -95,7 +95,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
           nota: `margem de ${p.margem.toFixed(1)}% sobre a venda`,
         })}
         {!p.vinculado && (
-          <div style={{ marginTop: 8, fontSize: ".74rem", color: "#FBBF24", lineHeight: 1.5 }}>
+          <div style={{ marginTop: 8, fontSize: ".74rem", color: "#F4B942", lineHeight: 1.5 }}>
             Produto sem cadastro no Estoque: o custo entra como zero, então esse
             lucro está <b>maior do que o real</b>.
           </div>
@@ -333,7 +333,7 @@ export default function PedidosTab() {
                   <tr key={r.mlb || r.produto} style={{ boxShadow: `inset 3px 0 0 ${r.lucro >= 0 ? "var(--green)" : "var(--red)"}` }}>
                     <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       <span style={{ fontWeight: 600 }} title={r.produto}>{r.produto}</span>
-                      {r.semCadastro && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#FBBF24", background: "rgba(251,191,36,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                      {r.semCadastro && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
                       {r.mlb && <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{r.mlb}</span>}
                     </td>
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{r.nVendas}</td>
@@ -424,7 +424,7 @@ export default function PedidosTab() {
                       <tr
                         onClick={() => setDetalhe(aberto ? null : p.order_id)}
                         style={{
-                          background: aberto ? "var(--surface2)" : prej ? "rgba(251,113,133,.05)" : undefined,
+                          background: aberto ? "var(--surface2)" : prej ? "rgba(214,90,74,.05)" : undefined,
                           boxShadow: `inset 3px 0 0 ${prej ? "var(--red)" : "var(--green)"}`,
                           cursor: "pointer",
                         }}
@@ -434,9 +434,9 @@ export default function PedidosTab() {
                         </td>
                         <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
-                          {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#FBBF24", background: "rgba(251,191,36,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                          {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
                           {(p.itens?.length ?? 0) > 1 && (
-                            <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--accent)", background: "rgba(124,58,237,.14)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
+                            <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--accent)", background: "rgba(233,169,45,.14)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
                               {p.itens?.length} PRODUTOS
                             </span>
                           )}

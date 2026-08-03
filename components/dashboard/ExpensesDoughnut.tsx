@@ -49,14 +49,14 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
         // barra de composição de custos e este gráfico mostram os mesmos
         // valores, então a cor de cada custo tem que bater nos dois.
         backgroundColor: [
-          "#8B5CF6", // Produto (CMV)
-          "#22D3EE", // Frete (envio)
-          "#38BDF8", // Taxas ML
-          "#FBBF24", // Imposto
-          "#F472B6", // Ads
-          "#FB7185", // Operacional
+          "#F4B942", // Produto (CMV)
+          "#5B8DEF", // Frete (envio)
+          "#C98218", // Taxas ML
+          "#B9B5A6", // Imposto
+          "#9B6BCE", // Ads
+          "#D65A4A", // Operacional
         ],
-        borderColor: "#171F3A",
+        borderColor: "#10100E",
         borderWidth: 2,
       },
     ],
@@ -69,14 +69,14 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
     plugins: {
       legend: {
         position: "bottom" as const,
-        labels: { color: "#A9B4D0", font: { size: 10 }, padding: 10 },
+        labels: { color: "#B9B5A6", font: { size: 10 }, padding: 10 },
       },
       tooltip: {
-        backgroundColor: "#171F3A",
-        borderColor: "#2D3A61",
+        backgroundColor: "#22221C",
+        borderColor: "#3B392A",
         borderWidth: 1,
-        titleColor: "#F3F6FF",
-        bodyColor: "#A9B4D0",
+        titleColor: "#F6F3E8",
+        bodyColor: "#B9B5A6",
         callbacks: {
           label: (ctx: TooltipItem<"doughnut">) => {
             const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : "0";

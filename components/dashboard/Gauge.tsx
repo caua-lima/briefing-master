@@ -15,7 +15,7 @@ export default function Gauge({
   footer?: React.ReactNode;
 }) {
   const p = clamp(pct, 0, 100);
-  const zone = p >= 70 ? "#34D399" : p >= 40 ? "#FBBF24" : "#FB7185";
+  const zone = p >= 70 ? "#36B37E" : p >= 40 ? "#F4B942" : "#D65A4A";
   const angle = 180 - (p / 100) * 180;
   const rad = (angle * Math.PI) / 180;
   const nx = 100 + 54 * Math.cos(rad);
@@ -30,9 +30,9 @@ export default function Gauge({
       <svg viewBox="0 0 200 150" style={{ width: "100%" }}>
         <defs>
           <linearGradient id={`grad-${gid}`} x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="#FB7185" />
-            <stop offset="50%" stopColor="#FBBF24" />
-            <stop offset="100%" stopColor="#34D399" />
+            <stop offset="0%" stopColor="#D65A4A" />
+            <stop offset="50%" stopColor="#F4B942" />
+            <stop offset="100%" stopColor="#36B37E" />
           </linearGradient>
         </defs>
         {/* trilha + arco colorido */}
