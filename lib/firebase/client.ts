@@ -14,6 +14,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from "firebase/firestore";
+import { type FirebaseStorage, getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -27,6 +28,7 @@ const firebaseConfig = {
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
+let storage: FirebaseStorage | null = null;
 
 export function getFirebase() {
   if (typeof window === "undefined") {
@@ -48,7 +50,10 @@ export function getFirebase() {
       /* no-op: persistence may already be set */
     });
   }
-  return { app, db, auth };
+  if (!storage) {
+    storage = getStorage(app);
+  }
+  return { app, db, auth, storage };
 }
 
 export const googleProvider = new GoogleAuthProvider();

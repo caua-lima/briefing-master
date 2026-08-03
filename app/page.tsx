@@ -16,6 +16,7 @@ import TarefasTab from "@/components/tabs/TarefasTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 import { ZxpMark } from "@/components/ZxpMark";
+import { AvatarUpload } from "@/components/AvatarUpload";
 
 type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "dre" | "tarefas" | "acesso";
 
@@ -268,14 +269,7 @@ function AppShell() {
                 marginBottom: 10,
               }}
             >
-              {user.photoURL ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={user.photoURL}
-                  alt=""
-                  style={{ width: 28, height: 28, borderRadius: "50%" }}
-                />
-              ) : null}
+              <AvatarUpload size={28} />
               <span
                 style={{
                   fontSize: ".75rem",

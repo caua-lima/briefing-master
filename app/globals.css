@@ -208,6 +208,8 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .user-chip{display:inline-flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 10px 4px 4px;font-size:.78rem;color:var(--muted)}
 .user-chip img{width:24px;height:24px;border-radius:50%}
 
+@keyframes spin{to{transform:rotate(360deg)}}
+
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}

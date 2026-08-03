@@ -68,9 +68,9 @@ export default function MetasGauge({
         <Card label="Faturamento" value={fmtBRL(fatBruto)} />
         <Card label={`Meta ${metaIndex}`} value={fmtBRL(activeMeta)} />
         <Card
-          label="Ideal do dia"
+          label="Acumulado ideal até hoje"
           value={fmtBRL(idealDia)}
-          sub={`${deltaIdeal >= 0 ? "+" : "−"}${fmtBRL(Math.abs(deltaIdeal))} vs ideal`}
+          sub={deltaIdeal >= 0 ? `${fmtBRL(deltaIdeal)} acima do ritmo` : `${fmtBRL(Math.abs(deltaIdeal))} abaixo do ritmo`}
           subColor={deltaIdeal >= 0 ? "var(--green)" : "var(--red)"}
         />
         <Card
