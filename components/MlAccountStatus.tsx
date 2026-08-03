@@ -78,7 +78,7 @@ export function MlAccountStatus() {
         {feedback && (
           <div style={{
             fontSize: '.75rem',
-            color: feedback.type === 'success' ? '#20C777' : '#F04452',
+            color: feedback.type === 'success' ? '#34D399' : '#FB7185',
             fontWeight: 600
           }}>
             {feedback.message}

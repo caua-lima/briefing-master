@@ -45,15 +45,18 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
     datasets: [
       {
         data: [produto, envio, taxasML, imposto, ads, operacional],
+        // MESMA ordem e MESMAS cores de COST_COLORS em Dashboard.tsx — a
+        // barra de composição de custos e este gráfico mostram os mesmos
+        // valores, então a cor de cada custo tem que bater nos dois.
         backgroundColor: [
-          "rgba(99,102,241,.8)",
-          "rgba(59,130,246,.8)",
-          "rgba(255,159,28,.8)",
-          "rgba(234,179,8,.8)",
-          "rgba(240,68,82,.8)",
-          "rgba(155,107,255,.8)",
+          "#8B5CF6", // Produto (CMV)
+          "#22D3EE", // Frete (envio)
+          "#38BDF8", // Taxas ML
+          "#FBBF24", // Imposto
+          "#F472B6", // Ads
+          "#FB7185", // Operacional
         ],
-        borderColor: "#171B22",
+        borderColor: "#171F3A",
         borderWidth: 2,
       },
     ],
@@ -66,14 +69,14 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
     plugins: {
       legend: {
         position: "bottom" as const,
-        labels: { color: "#AAB4C3", font: { size: 10 }, padding: 10 },
+        labels: { color: "#A9B4D0", font: { size: 10 }, padding: 10 },
       },
       tooltip: {
-        backgroundColor: "#171B22",
-        borderColor: "#2C3440",
+        backgroundColor: "#171F3A",
+        borderColor: "#2D3A61",
         borderWidth: 1,
-        titleColor: "#F5F7FA",
-        bodyColor: "#AAB4C3",
+        titleColor: "#F3F6FF",
+        bodyColor: "#A9B4D0",
         callbacks: {
           label: (ctx: TooltipItem<"doughnut">) => {
             const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : "0";

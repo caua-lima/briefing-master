@@ -25,11 +25,11 @@ type AdItem = {
 };
 
 const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {
-  ativo: { label: "Ativa", cor: "var(--green)", bg: "rgba(32,199,119,.12)" },
-  pausado: { label: "Pausada", cor: "#FF9F1C", bg: "rgba(255,159,28,.12)" },
-  sem_campanha: { label: "Sem campanha", cor: "var(--muted)", bg: "rgba(170,180,195,.14)" },
+  ativo: { label: "Ativa", cor: "var(--green)", bg: "rgba(52,211,153,.12)" },
+  pausado: { label: "Pausada", cor: "#FBBF24", bg: "rgba(251,191,36,.12)" },
+  sem_campanha: { label: "Sem campanha", cor: "var(--muted)", bg: "rgba(169,180,208,.14)" },
   // Sabemos o id da campanha, mas o ML não devolveu a configuração dela.
-  config_indisponivel: { label: "Campanha ?", cor: "#FF9F1C", bg: "rgba(255,159,28,.12)" },
+  config_indisponivel: { label: "Campanha ?", cor: "#FBBF24", bg: "rgba(251,191,36,.12)" },
 };
 
 function StatusTag({ item }: { item: AdItem }) {
@@ -227,7 +227,7 @@ export default function AdsTab() {
       )}
 
       {erro ? (
-        <div style={{ padding: "12px 14px", background: "rgba(240,68,82,.08)", border: "1px solid rgba(240,68,82,.3)", borderRadius: 8, fontSize: ".8rem", color: "var(--red)" }}>
+        <div style={{ padding: "12px 14px", background: "rgba(251,113,133,.08)", border: "1px solid rgba(251,113,133,.3)", borderRadius: 8, fontSize: ".8rem", color: "var(--red)" }}>
           {(() => {
             const adv = diag?.advertisersStatus;
             const it = diag?.itemsStatus;
@@ -238,7 +238,7 @@ export default function AdsTab() {
 
           {/* Sonda por recurso — o dado que importa, visível sem rolar JSON */}
           {diag?.tentativas?.length ? (
-            <div className="table-wrapper" style={{ marginTop: 10, border: "1px solid rgba(240,68,82,.25)" }}>
+            <div className="table-wrapper" style={{ marginTop: 10, border: "1px solid rgba(251,113,133,.25)" }}>
               <table className="tbl-modern tbl-cards">
                 <thead><tr>
                   <th style={{ textAlign: "left" }}>Recurso do ML</th>
@@ -365,7 +365,7 @@ export default function AdsTab() {
                           <td data-label="ROAS alvo" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{i.roasTarget > 0 ? `${num(i.roasTarget, 1)}x` : "—"}</td>
                           {(() => {
                             const alt = alteracaoInfo(i.lastUpdated);
-                            const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#FF9F1C";
+                            const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#FBBF24";
                             return (
                               <td data-label="Alterado" style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}
                                 title={alt.dias == null
@@ -408,7 +408,7 @@ export default function AdsTab() {
                     sem venda vinculada no período pra calcular a margem — não conta como prejuízo na soma do topo.</>
                 : "Vendas totais = tudo que o item vendeu (ads + orgânico) · TACOS = investido ÷ vendas totais (quanto menor, mais o ads se paga no geral)."}
               <div style={{ marginTop: 4 }}>
-                <b>Alterado</b> = data/hora de <code>last_updated</code> da campanha no ML. <span style={{ color: "#FF9F1C" }}>⏳</span> = menos de 3 dias,
+                <b>Alterado</b> = data/hora de <code>last_updated</code> da campanha no ML. <span style={{ color: "#FBBF24" }}>⏳</span> = menos de 3 dias,
                 espere completar antes de ajustar de novo. <b>Atenção:</b> este campo pode não significar &quot;você editou a campanha&quot; —
                 se aparecer &quot;hoje&quot; em campanha que você não mexeu, é provável que o ML atualize esse timestamp sozinho quando a
                 campanha gasta ou recalcula métrica; use a data exata mostrada pra julgar, não confie só no ⏳. <b>Orç/dia</b> e
@@ -421,7 +421,7 @@ export default function AdsTab() {
                 Passe o mouse na etiqueta pra ver o nome da campanha.
               </div>
               {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0 && !i.lastUpdated) && (
-                <div style={{ marginTop: 8, color: "#FF9F1C" }}>
+                <div style={{ marginTop: 8, color: "#FBBF24" }}>
                   <b>Orç/dia, ROAS alvo e Alterado vieram vazios em todos os anúncios</b>
                   {campanhasEncontradas === 0 ? " — nenhuma campanha com investimento neste período foi encontrada" : ` (${campanhasEncontradas} campanha(s) com investimento encontrada(s), mas sem cruzar com os anúncios)`}.
                   Abra &quot;Diagnóstico de configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
@@ -446,7 +446,7 @@ export default function AdsTab() {
                     </div>
                   )}
                   {!!cfgAmostra?.campanhaOrfa && (
-                    <div style={{ marginTop: 8, fontSize: ".7rem", color: "#FF9F1C" }}>
+                    <div style={{ marginTop: 8, fontSize: ".7rem", color: "#FBBF24" }}>
                       Campanha que faltava na lista, recuperada pelo id — compare com a campanha normal abaixo pra ver qual
                       campo (status, channel…) explica ela não vir na busca:
                       <pre style={{ marginTop: 4, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 240, overflow: "auto" }}>
@@ -467,7 +467,7 @@ export default function AdsTab() {
                     Todas as campanhas da conta ({campanhasTotal}{anunciosContagemFalhou ? "" : `, ${anunciosTotal} anúncio(s) cadastrado(s)`}) — conferir se nada sumiu da tabela
                   </summary>
                   {anunciosContagemFalhou ? (
-                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "#FF9F1C" }}>
+                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "#FBBF24" }}>
                       Não conseguimos contar os anúncios cadastrados por campanha — nenhuma das URLs de listagem respondeu
                       com dados (veja os status &quot;[contagem]&quot; no diagnóstico acima). A coluna &quot;Anúncios cadastrados&quot;
                       abaixo está vazia de propósito, pra não mostrar 0 como se fosse um fato — o gasto por campanha continua
@@ -506,7 +506,7 @@ export default function AdsTab() {
                     </table>
                   </div>
                   {(gastoOrfao > 0 || gastoSemVinculo > 0) && (
-                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "#FF9F1C" }}>
+                    <div style={{ marginTop: 6, fontSize: ".7rem", color: "#FBBF24" }}>
                       <b>{fmtBRL(gastoOrfao + gastoSemVinculo)} de investimento não caiu em nenhuma campanha desta lista</b> —
                       por isso a soma da coluna &quot;Gasto no período&quot; fica menor que o Investimento do topo ({fmtBRL(t.cost)}).
                       {gastoOrfao > 0 && <> {fmtBRL(gastoOrfao)} são de anúncios que declaram uma campanha que o ML não devolveu

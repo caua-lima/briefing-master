@@ -1,6 +1,6 @@
 // Gera app/favicon.ico (32x32, 32bpp com alpha) desenhando o mesmo logomark
 // usado em components/ZxpMark.tsx e app/icon.tsx: quadrado amarelo
-// institucional do ML (#FFE600) com um "Z" grafite geométrico (#0F1115).
+// violeta elétrico da marca (#8B5CF6) com um "Z" branco frio (#F3F6FF).
 //
 // Existe porque Next.js não gera favicon.ico a partir de código (só icon.tsx,
 // que produz PNG); browsers/OS que buscam /favicon.ico direto ainda precisam
@@ -41,8 +41,8 @@ function roundedRectInside(x, y, r) {
   return Math.sqrt(dx * dx + dy * dy) <= r || (x >= r && x <= 100 - r) || (y >= r && y <= 100 - r);
 }
 
-const BG_COLOR = [0xff, 0xe6, 0x00]; // #FFE600 — amarelo institucional, cor sólida
-const Z_COLOR = [0x0f, 0x11, 0x15]; // #0F1115 — grafite
+const BG_COLOR = [0x8b, 0x5c, 0xf6]; // #8B5CF6 — violeta elétrico (marca)
+const Z_COLOR = [0xf3, 0xf6, 0xff]; // #F3F6FF — branco frio
 
 // Renderiza em alta resolução (RGBA por pixel, alpha 0 ou 255)
 const hiPixels = new Uint8ClampedArray(HI * HI * 4);

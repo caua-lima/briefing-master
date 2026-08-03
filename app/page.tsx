@@ -169,7 +169,7 @@ function AppShell() {
           style={{
             width: 220,
             flexShrink: 0,
-            background: "var(--surface)",
+            background: "var(--sidebar)",
             borderRight: "1px solid var(--border)",
             display: "flex",
             flexDirection: "column",
@@ -235,7 +235,7 @@ function AppShell() {
                     border: "none",
                     background: active ? "var(--surface2)" : "transparent",
                     color: active ? "var(--text)" : "var(--muted)",
-                    boxShadow: active ? "inset 3px 0 0 var(--meli-yellow)" : "none",
+                    boxShadow: active ? "inset 3px 0 0 var(--brand)" : "none",
                     fontSize: ".9rem",
                     fontWeight: active ? 700 : 500,
                     cursor: "pointer",
@@ -255,7 +255,7 @@ function AppShell() {
                     }
                   }}
                 >
-                  <span style={{ color: active ? "var(--meli-yellow)" : "inherit", display: "inline-flex" }}>
+                  <span style={{ color: active ? "var(--brand)" : "inherit", display: "inline-flex" }}>
                     <NavIcon id={item.id} />
                   </span>
                   <span>{item.label}</span>
@@ -397,7 +397,7 @@ function AppShell() {
                 {/* Tarefas é a exceção: colaborador edita lá igual ao owner, então o
                     aviso de "somente leitura" seria falso ali. */}
                 {!isOwner && activeTab !== "tarefas" && (
-                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(170,180,195,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
+                  <div style={{ marginBottom: 14, padding: "8px 14px", background: "rgba(169,180,208,.12)", border: "1px solid var(--border)", borderRadius: 8, fontSize: ".8rem", color: "var(--muted)" }}>
                     Modo <b>somente leitura</b> — você pode ver tudo, mas alterações são permitidas apenas ao owner.
                   </div>
                 )}
