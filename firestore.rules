@@ -21,6 +21,17 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
     }
 
+    // Autorizado (owner OU colaborador) mexendo só no próprio `photoURL` — é
+    // o que permite a foto de perfil funcionar pra colaborador também, sem
+    // abrir a porta pra ele mudar o próprio `role` ou qualquer outro campo.
+    function isSelfPhotoUpdate(email) {
+      return isAuthorized()
+        && request.auth.token.email == email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photoURL'])
+        && request.resource.data.photoURL is string
+        && request.resource.data.photoURL.size() < 900000;
+    }
+
     match /controleAcessoMeta/{docId} {
       allow read: if signedIn();
       allow create: if signedIn()
@@ -39,7 +50,10 @@ service cloud.firestore {
           && request.resource.data.role == "owner")
         || isOwner()
       );
-      allow update, delete: if isOwner() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
+      allow update: if isOwner()
+        || (signedIn() && request.auth.token.email == email && resource.data.role == "owner")
+        || isSelfPhotoUpdate(email);
+      allow delete: if isOwner() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
     }
 
     // Coleções do time: leitura por autorizados, escrita só do owner.

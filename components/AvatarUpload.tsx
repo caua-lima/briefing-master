@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { uploadProfilePhoto } from "@/lib/firebase/avatar";
+import { watchAccessEntry } from "@/lib/firebase/data";
 
 /**
  * Avatar da barra lateral com um botão "+" no canto que abre o seletor
@@ -10,23 +11,39 @@ import { uploadProfilePhoto } from "@/lib/firebase/avatar";
  * celular o navegador oferece Câmera, Galeria E Arquivos; no PC abre o
  * explorador de arquivos direto — cobre os dois pedidos sem precisar de UI
  * própria pra escolher a origem.
+ *
+ * A foto fica salva no Firestore (não no Firebase Auth) — este projeto não
+ * tem Cloud Storage habilitado, então a fonte de verdade é o registro de
+ * acesso do usuário, acompanhado em tempo real. Sem foto customizada ainda,
+ * cai pra foto do Google (se houver).
  */
 export function AvatarUpload({ size = 28 }: { size?: number }) {
-  const { user, refreshUserPhoto } = useAuth();
+  const { user } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const email = user?.email?.toLowerCase();
+    if (!email) { setPhotoURL(null); return; }
+    return watchAccessEntry(email, (entry) => {
+      setPhotoURL(entry?.photoURL || user?.photoURL || null);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois, se precisar
-    if (!file || !user?.email) return;
+    const email = user?.email?.toLowerCase();
+    if (!file || !email) return;
 
     setUploading(true);
     setError("");
     try {
-      const url = await uploadProfilePhoto(user.uid, user.email.toLowerCase(), file);
-      refreshUserPhoto(url);
+      const url = await uploadProfilePhoto(email, file);
+      setPhotoURL(url); // feedback imediato; o listener do Firestore confirma logo em seguida
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao enviar a foto.");
     } finally {
@@ -39,10 +56,10 @@ export function AvatarUpload({ size = 28 }: { size?: number }) {
 
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      {user?.photoURL ? (
+      {photoURL ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={user.photoURL}
+          src={photoURL}
           alt=""
           style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", display: "block", opacity: uploading ? 0.5 : 1 }}
         />

@@ -1,39 +1,60 @@
 "use client";
 
-import { updateProfile } from "firebase/auth";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { getFirebase } from "./client";
 import { updateAccessEntry } from "./data";
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB — evita foto gigante de celular travando o upload
-const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+// Sem Cloud Storage (este projeto está no plano Spark, e o Storage passou a
+// exigir o plano pago Blaze só pra criar o bucket) — a foto vira um recorte
+// quadrado pequeno, comprimido em JPEG e guardada como data URI direto no
+// campo `photoURL` do Firestore. 160px é de sobra pro avatar de ~28px da
+// barra lateral, e o tamanho final fica bem abaixo do limite de 1MiB por
+// documento do Firestore.
+const MAX_DIM = 160;
+const QUALITIES = [0.72, 0.5, 0.35, 0.2];
+const MAX_DATA_URL_CHARS = 250_000; // ~250KB, folga grande sobre o limite do doc
+
+function readFileAsImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Não consegui ler essa imagem.")); };
+    img.src = url;
+  });
+}
+
+/** Recorta o centro em quadrado e redesenha em MAX_DIM×MAX_DIM antes de comprimir. */
+function toSquareDataUrl(img: HTMLImageElement, quality: number): string {
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const sx = (img.naturalWidth - side) / 2;
+  const sy = (img.naturalHeight - side) / 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = MAX_DIM;
+  canvas.height = MAX_DIM;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Este navegador não suporta processar imagem (canvas indisponível).");
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, MAX_DIM, MAX_DIM);
+  return canvas.toDataURL("image/jpeg", quality);
+}
 
 /**
- * Sobe a foto de perfil pro Storage (sempre no mesmo caminho por uid, então
- * trocar de foto substitui a anterior em vez de acumular lixo) e atualiza o
- * `photoURL` do usuário no Firebase Auth — é essa fonte que a barra lateral
- * já lê (`user.photoURL`), então não precisa de mais nada pra aparecer.
- * Também tenta sincronizar o registro de acesso (best-effort: colaborador não
- * tem permissão de escrever ali, então essa parte pode falhar em silêncio
- * sem quebrar o essencial, que é o Auth).
+ * Comprime a foto escolhida e grava como data URI no registro de acesso do
+ * usuário — tenta qualidades decrescentes até caber num tamanho seguro.
  */
-export async function uploadProfilePhoto(uid: string, email: string, file: File): Promise<string> {
-  if (!ALLOWED.includes(file.type)) {
-    throw new Error("Formato não suportado. Use JPG, PNG, WEBP ou GIF.");
-  }
-  if (file.size > MAX_BYTES) {
-    throw new Error("Imagem muito grande (máx. 5MB).");
+export async function uploadProfilePhoto(email: string, file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Escolha um arquivo de imagem.");
   }
 
-  const { storage, auth } = getFirebase();
-  const fileRef = ref(storage, `avatars/${uid}`);
-  await uploadBytes(fileRef, file, { contentType: file.type });
-  const url = await getDownloadURL(fileRef);
-
-  if (auth.currentUser) {
-    await updateProfile(auth.currentUser, { photoURL: url });
+  const img = await readFileAsImage(file);
+  let dataUrl = "";
+  for (const q of QUALITIES) {
+    dataUrl = toSquareDataUrl(img, q);
+    if (dataUrl.length <= MAX_DATA_URL_CHARS) break;
   }
-  await updateAccessEntry(email, { photoURL: url }).catch(() => {});
+  if (dataUrl.length > MAX_DATA_URL_CHARS) {
+    throw new Error("Não consegui comprimir essa imagem o suficiente. Tente uma foto mais simples.");
+  }
 
-  return url;
+  await updateAccessEntry(email, { photoURL: dataUrl });
+  return dataUrl;
 }

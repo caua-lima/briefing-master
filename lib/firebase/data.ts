@@ -409,6 +409,16 @@ export async function checkAccess(email: string): Promise<AccessEntry | null> {
   return snap.exists() ? (snap.data() as AccessEntry) : null;
 }
 
+/** Acompanha em tempo real o registro de acesso de UM e-mail (ex.: a própria foto de perfil). */
+export function watchAccessEntry(
+  email: string,
+  cb: (entry: AccessEntry | null) => void,
+): () => void {
+  return onSnapshot(aDoc(email), (snap) => {
+    cb(snap.exists() ? (snap.data() as AccessEntry) : null);
+  });
+}
+
 export async function getAccessBootstrap(): Promise<{ ownerEmail: string } | null> {
   const snap = await getDoc(accessMetaDoc());
   return snap.exists() ? (snap.data() as { ownerEmail: string }) : null;

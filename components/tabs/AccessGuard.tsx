@@ -121,13 +121,14 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        // Sincroniza o nome de exibição do Google — mas NÃO a foto: o usuário
+        // pode ter subido uma foto customizada (comprimida, guardada no
+        // Firestore), e sincronizar a do Google aqui sobrescreveria ela toda
+        // vez que a sessão recarregasse.
         if (cached?.granted) {
-          if (u.displayName || u.photoURL) {
+          if (u.displayName) {
             import("@/lib/firebase/data").then(({ updateAccessEntry }) =>
-              updateAccessEntry(email, {
-                displayName: u.displayName ?? undefined,
-                photoURL: u.photoURL ?? undefined,
-              }),
+              updateAccessEntry(email, { displayName: u.displayName ?? undefined }),
             );
           }
         }
@@ -137,12 +138,9 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
 
         if (!cancelled) {
           if (found) {
-            if (u.displayName || u.photoURL) {
+            if (u.displayName) {
               import("@/lib/firebase/data").then(({ updateAccessEntry }) =>
-                updateAccessEntry(email, {
-                  displayName: u.displayName ?? undefined,
-                  photoURL: u.photoURL ?? undefined,
-                }),
+                updateAccessEntry(email, { displayName: u.displayName ?? undefined }),
               );
             }
             const nextAccess = { email, granted: true, entry: found };

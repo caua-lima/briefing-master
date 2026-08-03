@@ -17,14 +17,6 @@ type AuthState = {
   signInWithAccountSelection: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  /**
-   * `updateProfile()` do Firebase Auth muda `auth.currentUser` no mesmo
-   * objeto (mesma referência) — sem isso, o React não percebe que o
-   * `photoURL` mudou e a barra lateral continuaria com a foto antiga até
-   * um refresh de página. Clona preservando o protótipo (métodos como
-   * `getIdToken` continuam funcionando) só pra forçar o re-render.
-   */
-  refreshUserPhoto: (photoURL: string) => void;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -62,12 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await firebaseSignOut(auth);
   }
 
-  function refreshUserPhoto(photoURL: string) {
-    setUser((cur) => (cur ? Object.assign(Object.create(Object.getPrototypeOf(cur)), cur, { photoURL }) : cur));
-  }
-
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signInWithAccountSelection, signInWithEmail, signOut, refreshUserPhoto }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signInWithAccountSelection, signInWithEmail, signOut }}>
       {children}
     </AuthContext.Provider>
   );
