@@ -325,21 +325,9 @@ function AppShell() {
           }}
           className="app-main"
         >
-          {/* Topbar */}
-          <header
-            style={{
-              background: "var(--surface)",
-              borderBottom: "1px solid var(--border)",
-              padding: "12px 24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              position: "sticky",
-              top: 0,
-              zIndex: 30,
-            }}
-          >
+          {/* Topbar — layout em classe (não style inline) porque precisa de
+              media query pra compactar no celular; ver .topbar em globals.css */}
+          <header className="topbar">
             {/* Hamburger for mobile */}
             <button
               type="button"
@@ -363,20 +351,17 @@ function AppShell() {
 
             {/* flex:1 + minWidth:0 para truncar em vez de empurrar o status
                 da conta ML pra fora da tela em telas bem estreitas. */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 9, fontWeight: 700, fontSize: ".95rem",
-              flex: "1 1 auto", minWidth: 0, overflow: "hidden",
-            }}>
-              <span style={{ color: "var(--accent)", display: "inline-flex", flexShrink: 0 }}><NavIcon id={activeTab} /></span>
+            <div className="topbar-title">
+              <span style={{ color: "var(--brand)", display: "inline-flex", flexShrink: 0 }}><NavIcon id={activeTab} /></span>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
               </span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-            <PushNotificationToggle />
-            <MlAccountStatus />
-        </div>
+            <div className="topbar-actions">
+              <PushNotificationToggle />
+              <MlAccountStatus />
+            </div>
           </header>
 
           {/* Tab content */}

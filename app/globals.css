@@ -700,6 +700,31 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .kanban-empty{text-align:center;padding:22px 10px;color:var(--muted);font-size:.78rem;border:1px dashed var(--border);border-radius:10px}
 .kanban-overdue{color:var(--red)!important;font-weight:700}
 
+/* =========================================================================
+   Topbar — barra fixa do topo (hamburger, marca, título da aba, ações)
+   Estava com style inline e o bloco de ações travado em flex-shrink:0, o
+   que empurrava "Reconectar ML" pra fora da tela no celular e criava
+   rolagem horizontal. Em classe, dá pra compactar por media query.
+   ========================================================================= */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:30;min-width:0;max-width:100%}
+.topbar-title{display:flex;align-items:center;gap:9px;font-weight:700;font-size:.95rem;flex:1 1 auto;min-width:0;overflow:hidden}
+.topbar-actions{display:flex;align-items:center;gap:10px;min-width:0}
+
+@media(max-width:720px){
+  .topbar{padding:10px 12px;gap:8px}
+  /* PODE encolher aqui — era o flex-shrink:0 que estourava a largura */
+  .topbar-actions{gap:6px;min-width:0}
+  /* nickname/e-mail já estão no rodapé da sidebar; no topo só ocupavam espaço */
+  .acct-text{display:none!important}
+  /* botões viram só ícone: sino e tomada continuam legíveis sem o rótulo */
+  .push-label,.acct-btn-label{display:none}
+  .topbar .btn-xs{padding:6px 9px}
+}
+@media(max-width:380px){
+  /* telas muito estreitas: o título da aba cede espaço pros controles */
+  .topbar-title{font-size:.85rem}
+}
+
 /* ---- Abas roláveis quando não couberem (evita quebrar em 3 linhas) ---- */
 @media(max-width:520px){
   .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}

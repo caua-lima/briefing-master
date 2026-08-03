@@ -56,24 +56,29 @@ export function MlAccountStatus() {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-      <div style={{ textAlign: 'right', fontSize: '.8rem' }}>
-        <div style={{ fontWeight: 700 }}>{data.user?.nickname || data.user_id}</div>
-        <div style={{ color: 'var(--muted)', fontSize: '.72rem' }}>{data.user?.email || data.user?.site_id || ''}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+      {/* No celular some (.acct-text): o nickname e o e-mail já aparecem no
+          rodapé da sidebar, e aqui só empurravam o botão pra fora da tela. */}
+      <div className="acct-text" style={{ textAlign: 'right', fontSize: '.8rem', minWidth: 0 }}>
+        <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.user?.nickname || data.user_id}</div>
+        <div style={{ color: 'var(--muted)', fontSize: '.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.user?.email || data.user?.site_id || ''}</div>
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
         <button
           onClick={swapAccount}
           disabled={swapLoading}
           className="btn btn-xs btn-primary"
           title="Reconectar o Mercado Livre (renova permissões, inclusive Publicidade)"
+          aria-label="Reconectar Mercado Livre"
           style={{
-            padding: '6px 10px', borderRadius: 8,
+            padding: '6px 10px', borderRadius: 8, flexShrink: 0,
             opacity: swapLoading ? 0.6 : 1,
             cursor: swapLoading ? 'not-allowed' : 'pointer'
           }}
         >
-          {swapLoading ? '⏳ Reconectando...' : '🔌 Reconectar ML'}
+          {swapLoading
+            ? <><span aria-hidden>⏳</span><span className="acct-btn-label">Reconectando...</span></>
+            : <><span aria-hidden>🔌</span><span className="acct-btn-label">Reconectar ML</span></>}
         </button>
         {feedback && (
           <div style={{
