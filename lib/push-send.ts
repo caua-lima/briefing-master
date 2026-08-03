@@ -6,9 +6,6 @@ type Registro = {
   deviceId: string; email: string; userAgent: string;
 };
 
-/** Assinatura do aparelho que TANTO o registro novo quanto o legado conseguem produzir. */
-const assinatura = (r: Registro) => `${r.email}|${r.userAgent}`;
-
 /** Fica com o mais recente entre dois registros do mesmo aparelho. */
 function maisNovo(a: Registro, b: Registro): [Registro, string] {
   return b.updatedAt > a.updatedAt ? [b, a.docId] : [a, b.docId];
@@ -21,6 +18,22 @@ function maisNovo(a: Registro, b: Registro): [Registro, string] {
  * válido por um tempo, o mesmo celular recebia a notificação duplicada.
  * Agrupa por dispositivo e fica só com o registro mais recente; os antigos
  * (`duplicados`) são devolvidos pra quem chamar apagar.
+ *
+ * A 1ª correção tentou casar o registro LEGADO (sem deviceId) com o novo
+ * comparando e-mail+navegador — e continuou falhando no iOS: o
+ * `navigator.userAgent` do Safari em aba normal é DIFERENTE do mesmo Safari
+ * rodando como app instalado na Tela de Início (partições de
+ * armazenamento/contexto distintas). Alguém que ativou antes de instalar o
+ * app e reabriu depois como instalado batia num userAgent diferente, o
+ * legado nunca era reconhecido como duplicata, e os dois continuavam vivos.
+ *
+ * Correção: não depende mais de bater navegador nenhum. Qualquer registro
+ * LEGADO de um e-mail que já tem PELO MENOS UM registro no formato novo é
+ * considerado superado e apagado, sem exceção — não existe cenário em que
+ * isso apague algo legítimo, porque é um app web: o deploy troca o código
+ * de todo mundo de uma vez, não tem "alguém ainda no código antigo depois
+ * do deploy". Se sobrarem só legados (ninguém reativou desde o deploy
+ * ainda), eles continuam recebendo normal até serem substituídos.
  */
 function deduplicarPorDispositivo(docs: FirebaseFirestore.QueryDocumentSnapshot[]): { envio: Registro[]; duplicados: string[] } {
   const duplicados: string[] = [];
@@ -51,26 +64,23 @@ function deduplicarPorDispositivo(docs: FirebaseFirestore.QueryDocumentSnapshot[
     duplicados.push(sai);
   }
 
-  /**
-   * 2) Registros LEGADOS (sem deviceId, criados quando o doc era identificado
-   * pelo token). Se já existe um registro novo do MESMO aparelho — mesma
-   * assinatura e-mail+navegador —, o legado é sobra da migração e vira
-   * duplicata: sem este passo, o aparelho continuaria recebendo dois avisos
-   * mesmo depois da correção.
-   */
-  const assinaturasNovas = new Set(Array.from(porDevice.values()).map(assinatura));
-  const porLegado = new Map<string, Registro>();
+  // 2) Legados: se o e-mail já tem QUALQUER registro novo, todo legado dele
+  // é sobra — apaga sem tentar casar navegador. Só entram no envio os
+  // legados de e-mail que ainda não migrou nenhum dispositivo.
+  const emailsMigrados = new Set(Array.from(porDevice.values()).map((r) => r.email));
+  const porEmailLegado = new Map<string, Registro>();
   for (const r of legados) {
-    const sig = assinatura(r);
-    if (assinaturasNovas.has(sig)) { duplicados.push(r.docId); continue; }
-    const atual = porLegado.get(sig);
-    if (!atual) { porLegado.set(sig, r); continue; }
+    if (emailsMigrados.has(r.email)) { duplicados.push(r.docId); continue; }
+    // Sem deviceId pra diferenciar aparelhos do mesmo e-mail no formato
+    // antigo — mantém só o mais recente, igual ao comportamento anterior.
+    const atual = porEmailLegado.get(r.email);
+    if (!atual) { porEmailLegado.set(r.email, r); continue; }
     const [fica, sai] = maisNovo(atual, r);
-    porLegado.set(sig, fica);
+    porEmailLegado.set(r.email, fica);
     duplicados.push(sai);
   }
 
-  const registros = [...porDevice.values(), ...porLegado.values()];
+  const registros = [...porDevice.values(), ...porEmailLegado.values()];
   // Mesmo token em dispositivos distintos não deveria acontecer, mas se
   // acontecer o FCM entregaria duas vezes — corta aqui também.
   const vistos = new Set<string>();
@@ -89,17 +99,17 @@ function deduplicarPorDispositivo(docs: FirebaseFirestore.QueryDocumentSnapshot[
 async function enviarPara(registros: Registro[], title: string, body: string, dedupeKey?: string): Promise<number> {
   if (registros.length === 0) return 0;
   const db = getAdminDb();
-  const tag = dedupeKey ? `${dedupeKey}` : undefined;
   const messaging = getAdminMessaging();
   const resp = await messaging.sendEachForMulticast({
     tokens: registros.map((r) => r.token),
-    notification: { title, body },
-    android: tag ? { collapseKey: tag, notification: { tag } } : undefined,
-    webpush: {
-      headers: tag ? { Topic: tag } : undefined,
-      notification: { icon: "/manifest-icon-192", badge: "/manifest-icon-192", tag },
-      fcmOptions: { link: "/" },
-    },
+    // SÓ "data", sem "notification" no topo — de propósito. Com um campo
+    // "notification" presente, o próprio SDK do Firebase pode exibir a
+    // notificação sozinho ALÉM do showNotification() manual que o Service
+    // Worker já faz (ver app/firebase-messaging-sw.js/route.ts) — duas
+    // exibições pra um push só. Só "data" garante que a exibição acontece
+    // uma vez, sempre pelo nosso código.
+    data: { title, body, tag: dedupeKey ?? "" },
+    webpush: { fcmOptions: { link: "/" } },
   });
 
   const mortos: string[] = [];

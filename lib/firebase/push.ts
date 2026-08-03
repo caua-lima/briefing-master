@@ -127,11 +127,14 @@ export async function initForegroundPush(): Promise<void> {
   const messaging = getMessaging(app);
   onMessage(messaging, (payload) => {
     if (Notification.permission !== "granted") return;
-    const title = payload.notification?.title ?? "Nova venda!";
-    const bodyText = payload.notification?.body ?? "";
+    // Lê de "data", não "notification" — o envio manda só "data" de
+    // propósito (ver lib/push-send.ts) pra nunca correr o risco do próprio
+    // Firebase exibir a notificação em paralelo com este código.
+    const title = payload.data?.title ?? "Nova venda!";
+    const bodyText = payload.data?.body ?? "";
     // Mesma `tag` do Service Worker: com o app aberto E um aviso do mesmo
     // pedido já na tela, o sistema substitui em vez de mostrar dois.
-    const tag = (payload.notification as { tag?: string } | undefined)?.tag;
+    const tag = payload.data?.tag || undefined;
     new Notification(title, { body: bodyText, icon: "/manifest-icon-192", tag });
   });
 }

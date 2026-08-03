@@ -23,17 +23,23 @@ firebase.initializeApp(${JSON.stringify(firebaseConfig)});
 const messaging = firebase.messaging();
 
 // Notificação chegando com o app FECHADO ou em segundo plano.
+//
+// O envio manda só "data" (não "notification") DE PROPÓSITO: se a mensagem
+// tem um campo "notification" no topo, o próprio SDK do Firebase pode
+// exibir a notificação sozinho, em paralelo com o showNotification() manual
+// abaixo — duas exibições pra um push só. É um problema conhecido e
+// documentado do FCM web. Com "data" puro, só este código decide o que
+// aparece na tela; nunca duplica.
 messaging.onBackgroundMessage((payload) => {
-  const n = payload.notification || {};
-  const title = n.title || "Nova venda!";
+  const d = payload.data || {};
+  const title = d.title || "Nova venda!";
   // A "tag" faz o sistema SUBSTITUIR um aviso já existente do mesmo pedido
   // em vez de empilhar outro — rede de segurança contra push duplicado.
-  const tag = n.tag || (payload.fcmOptions && payload.fcmOptions.analyticsLabel) || undefined;
   const options = {
-    body: n.body || "",
+    body: d.body || "",
     icon: "/manifest-icon-192",
     badge: "/manifest-icon-192",
-    tag: tag,
+    tag: d.tag || undefined,
     renotify: false,
   };
   self.registration.showNotification(title, options);
