@@ -24,11 +24,17 @@ const messaging = firebase.messaging();
 
 // Notificação chegando com o app FECHADO ou em segundo plano.
 messaging.onBackgroundMessage((payload) => {
-  const title = (payload.notification && payload.notification.title) || "Nova venda!";
+  const n = payload.notification || {};
+  const title = n.title || "Nova venda!";
+  // A "tag" faz o sistema SUBSTITUIR um aviso já existente do mesmo pedido
+  // em vez de empilhar outro — rede de segurança contra push duplicado.
+  const tag = n.tag || (payload.fcmOptions && payload.fcmOptions.analyticsLabel) || undefined;
   const options = {
-    body: (payload.notification && payload.notification.body) || "",
+    body: n.body || "",
     icon: "/manifest-icon-192",
     badge: "/manifest-icon-192",
+    tag: tag,
+    renotify: false,
   };
   self.registration.showNotification(title, options);
 });

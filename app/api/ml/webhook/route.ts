@@ -96,7 +96,9 @@ export async function POST(req: Request) {
       const itens = mapOrderItems(order);
       const primeiro = itens[0]?.title || "Pedido";
       const resumo = itens.length > 1 ? `${primeiro} + ${itens.length - 1} item(ns)` : primeiro;
-      await sendPushToAll("🎉 Nova venda!", `${resumo} — ${fmtBRL(Number(order.total_amount ?? 0))}`);
+      // orderId como chave: se dois pushes do mesmo pedido escaparem, o
+      // aparelho substitui a notificação em vez de empilhar duas.
+      await sendPushToAll("🎉 Nova venda!", `${resumo} — ${fmtBRL(Number(order.total_amount ?? 0))}`, orderId);
     }
 
     return NextResponse.json({ ok: true });

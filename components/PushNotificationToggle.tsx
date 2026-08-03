@@ -21,7 +21,7 @@ export function PushNotificationToggle() {
     setError("");
     try {
       if (status === "on") {
-        await disablePushNotifications();
+        await disablePushNotifications(user.email.toLowerCase());
         setStatus("off");
       } else {
         const res = await enablePushNotifications(user.email.toLowerCase());
