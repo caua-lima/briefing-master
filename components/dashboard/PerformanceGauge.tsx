@@ -70,8 +70,14 @@ function pointOnArc(pct: number) {
 function arcPath(fromPct: number, toPct: number) {
   const a = pointOnArc(fromPct);
   const b = pointOnArc(toPct);
-  const largeArc = toPct - fromPct > 50 ? 1 : 0;
-  return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 ${largeArc} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
+  // Flag "arco maior" do SVG é sobre GRAUS (>180°), não sobre a escala 0-100
+  // daqui — nosso range inteiro (0 a 100%) já é só 180° de varredura, então
+  // nenhum trecho dele passa de 180° e a flag é sempre 0 (arco menor/curto).
+  // Com `toPct - fromPct > 50` (comparando pontos percentuais com o limiar
+  // errado de graus) o SVG desenhava o arco pelo lado LONGO sempre que o
+  // progresso passava de 50%, e o traço saía bem maior que a barrinha real
+  // — por isso um trecho "flutuava" separado do marcador do valor.
+  return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 0 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
 }
 
 /** Ponto de corte entre faixas de status — vira uma marca (tick) na trilha, não um arco colorido cheio. */
