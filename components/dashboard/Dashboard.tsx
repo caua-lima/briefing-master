@@ -19,6 +19,7 @@ import AvisoRemessasFull from "./AvisoRemessasFull";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, getRevenuePaceLabel, getRevenuePaceStatus, rawGoalPercent, selectActiveGoal } from "@/lib/domain/gauge";
 import ActionCenter from "./ActionCenter";
+import ExecutiveKpis, { Delta } from "./ExecutiveKpis";
 
 type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void; onNavigate?: (tab: string) => void };
 
@@ -158,29 +159,6 @@ function prevPeriod(from: string, to: string): { from: string; to: string } {
   return { from: isoUTC(prevFrom), to: isoUTC(prevTo) };
 }
 
-// ── Delta vs período anterior (seta ↑/↓ colorida) ──────────────
-function Delta({ current, previous, mode }: { current: number; previous: number | null | undefined; mode: "pct" | "points" }) {
-  if (previous == null) return null;
-  const diff = current - previous;
-  const flat = mode === "points"
-    ? Math.abs(diff) < 0.05
-    : Math.abs(diff) < 0.005 * Math.max(Math.abs(previous), 1);
-  const up = diff > 0;
-  const color = flat ? "var(--muted)" : up ? "var(--green)" : "var(--red)";
-  const arrow = flat ? "→" : up ? "↑" : "↓";
-  let text: string;
-  if (mode === "points") {
-    text = `${diff >= 0 ? "+" : "-"}${Math.abs(diff).toFixed(1)} p.p.`;
-  } else {
-    const pct = previous !== 0 ? (diff / Math.abs(previous)) * 100 : (current !== 0 ? 100 : 0);
-    text = `${pct >= 0 ? "+" : "-"}${Math.abs(pct).toFixed(1)}%`;
-  }
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, fontSize: ".72rem", fontWeight: 700, color }}>
-      <span>{arrow}</span><span>{text}</span>
-    </div>
-  );
-}
 
 // ── KPI ────────────────────────────────────────────────────────
 function Kpi({
@@ -1074,6 +1052,10 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
     return (variavel / diaAtual) * totalDias - (mlMetrics.custosOperacionais ?? 0);
   }, [isMesAtual, mlMetrics, mes]);
 
+  // Meta ativa do mês (1, 2 ou 3) — única fonte, usada pelo resumo executivo,
+  // pelo gauge de metas e pela Central de Atenção.
+  const { activeMeta, metaIndex } = selectActiveGoal(fatLiquido, goals?.meta1 ?? 0, goals?.meta2 ?? null, goals?.meta3 ?? null);
+
   // ── Meta diária DINÂMICA ──────────────────────────────────────
   // Plana = meta do mês ÷ dias do mês (só referência de "ritmo ideal").
   const metaDiariaPlana = goals?.meta1 ? goals.meta1 / diasNoMes(mes) : null;
@@ -1175,6 +1157,52 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
         <div style={{ padding: 60, textAlign: "center", color: "var(--muted)" }}>Carregando dados…</div>
       ) : (
         <>
+          {/* Resumo executivo — as 4 perguntas "quanto vendi e quanto lucrei", em texto grande */}
+          {mlMetrics && (
+            <ExecutiveKpis
+              items={[
+                {
+                  key: "fatLiquido",
+                  label: "Faturamento líquido",
+                  value: fatLiquido,
+                  format: "currency",
+                  tone: "acc",
+                  tooltip: "Faturamento bruto do período menos vendas canceladas e devoluções concluídas.",
+                  delta: { current: fatLiquido, previous: prevMetrics?.faturamentoLiquido, mode: "pct" },
+                },
+                {
+                  key: "lucroLiquido",
+                  label: "Lucro líquido operacional",
+                  value: lucroLiquido,
+                  format: "currency",
+                  tone: lucroLiquido >= 0 ? "pos" : "neg",
+                  tooltip: "Retorno − CMV (custo médio) − frete − taxas ML − imposto − ADS − custos operacionais do Dashboard.",
+                  delta: { current: lucroLiquido, previous: prevMetrics?.lucroComCustos, mode: "pct" },
+                },
+                {
+                  key: "margemLiquida",
+                  label: "Margem líquida",
+                  value: mlMetrics.margemComCustos ?? 0,
+                  format: "percent",
+                  tone: (mlMetrics.margemComCustos ?? 0) >= (goals?.metaMargem ?? 10) ? "pos" : "warn",
+                  tooltip: "Lucro líquido dividido pelo faturamento líquido do período.",
+                  delta: { current: mlMetrics.margemComCustos ?? 0, previous: prevMetrics?.margemComCustos, mode: "points" },
+                },
+                {
+                  key: "projecaoMes",
+                  label: goals?.meta1 ? `Projeção do mês (Meta ${metaIndex})` : "Projeção do mês",
+                  value: projecao,
+                  format: "currency",
+                  tone: !goals?.meta1 ? "acc" : projecao >= activeMeta ? "pos" : "warn",
+                  tooltip: "Estimativa de fechamento do mês baseada no ritmo atual (faturamento líquido ÷ dia atual × dias do mês). Não é garantia de resultado.",
+                  ctaLabel: onVerMetas ? "Ver metas" : undefined,
+                  onClick: onVerMetas,
+                  indisponivel: !isMesAtual,
+                },
+              ]}
+            />
+          )}
+
           {/* Acompanhamento das metas (topo, modo mês) */}
           {isMesAtual && (
             <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1228,29 +1256,26 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
           </section>
 
           {/* Central de Atenção — abaixo dos KPIs, acima das tabelas secundárias */}
-          {mlMetrics && (() => {
-            const { activeMeta, metaIndex } = selectActiveGoal(fatLiquido, goals?.meta1 ?? 0, goals?.meta2 ?? null, goals?.meta3 ?? null);
-            return (
-              <ActionCenter
-                anuncios={mlMetrics.anuncios ?? []}
-                margemAtual={mlMetrics.margemComCustos ?? 0}
-                metaMargem={goals?.metaMargem ?? 10}
-                totalAds={mlMetrics.totalAds ?? 0}
-                adsFalhou={adsFalhou}
-                vendasCanceladas={mlMetrics.vendasCanceladas ?? 0}
-                vendasDevolvidas={mlMetrics.vendasDevolvidas ?? 0}
-                faturamentoBruto={fatBruto}
-                projecao={projecao}
-                activeMeta={activeMeta}
-                metaIndex={metaIndex}
-                faturamentoHoje={mlMetrics.faturamentoHoje ?? 0}
-                metaDiariaAtiva={metaDiariaAtiva}
-                pedidosHoje={mlMetrics.pedidosHoje ?? 0}
-                produtos={data.products}
-                onNavigate={onNavigate}
-              />
-            );
-          })()}
+          {mlMetrics && (
+            <ActionCenter
+              anuncios={mlMetrics.anuncios ?? []}
+              margemAtual={mlMetrics.margemComCustos ?? 0}
+              metaMargem={goals?.metaMargem ?? 10}
+              totalAds={mlMetrics.totalAds ?? 0}
+              adsFalhou={adsFalhou}
+              vendasCanceladas={mlMetrics.vendasCanceladas ?? 0}
+              vendasDevolvidas={mlMetrics.vendasDevolvidas ?? 0}
+              faturamentoBruto={fatBruto}
+              projecao={projecao}
+              activeMeta={activeMeta}
+              metaIndex={metaIndex}
+              faturamentoHoje={mlMetrics.faturamentoHoje ?? 0}
+              metaDiariaAtiva={metaDiariaAtiva}
+              pedidosHoje={mlMetrics.pedidosHoje ?? 0}
+              produtos={data.products}
+              onNavigate={onNavigate}
+            />
+          )}
 
           {/* Meta diária de hoje */}
           <MetaDiariaCard
