@@ -27,6 +27,7 @@ function mesAteHoje() {
 const num = (n: number, d = 0) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const corRoas = (r: number) => (r >= 3 ? "var(--green)" : r >= 1.5 ? "var(--yellow)" : "var(--red)");
 const corAcos = (a: number, tem: boolean) => (!tem ? "var(--muted)" : a <= 25 ? "var(--green)" : a <= 45 ? "var(--yellow)" : "var(--red)");
+const corMargem = (m: number) => (m >= 15 ? "var(--green)" : m >= 0 ? "var(--yellow)" : "var(--red)");
 
 export default function AdsTab() {
   const [range, setRange] = useState(() => mesAteHoje());
@@ -189,6 +190,7 @@ export default function AdsTab() {
                         <th style={{ textAlign: "right" }}>ACOS</th>
                         <th style={{ textAlign: "right" }}>ROAS</th>
                         <th style={{ textAlign: "right" }}>Lucro</th>
+                        <th style={{ textAlign: "right" }}>Margem</th>
                       </tr>
                     ) : (
                       <tr>
@@ -200,6 +202,7 @@ export default function AdsTab() {
                         <th style={{ textAlign: "right" }}>TACOS</th>
                         <th style={{ textAlign: "right" }}>ROAS</th>
                         <th style={{ textAlign: "right" }}>Lucro</th>
+                        <th style={{ textAlign: "right" }}>Margem</th>
                       </tr>
                     )}
                   </thead>
@@ -231,6 +234,9 @@ export default function AdsTab() {
                           <td style={{ textAlign: "right", color: corAcos(a, v > 0), fontWeight: 700, whiteSpace: "nowrap" }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
                           <td style={{ textAlign: "right", color: corRoas(r), fontWeight: 700, whiteSpace: "nowrap" }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
                           <td style={{ textAlign: "right", color: i.lucroLiquido >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(i.lucroLiquido)}</td>
+                          <td style={{ textAlign: "right", color: v > 0 ? corMargem((i.lucroLiquido / v) * 100) : "var(--muted)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                            {v > 0 ? `${num((i.lucroLiquido / v) * 100, 1)}%` : "—"}
+                          </td>
                         </tr>
                       );
                     })}
