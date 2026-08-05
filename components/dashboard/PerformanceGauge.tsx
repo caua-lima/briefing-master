@@ -168,8 +168,10 @@ export default function PerformanceGauge({
                 strokeLinecap="round"
                 style={{ transition: reducedMotion ? "none" : "d 600ms cubic-bezier(.4,0,.2,1), stroke 300ms ease" }}
               />
-              {/* marcas discretas nos limites de faixa (não um degradê cheio) */}
-              {ticks.map((t) => {
+              {/* marcas discretas nos limites de faixa — só no gauge detalhado;
+                  no compact o raio é menor e a marca de ~90% quase encosta no
+                  marcador do valor atual, duplicando visualmente o mesmo ponto */}
+              {!compact && ticks.map((t) => {
                 const { x1, y1, x2, y2 } = tickLine(t);
                 return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--border-strong)" strokeWidth="2" strokeLinecap="round" />;
               })}
