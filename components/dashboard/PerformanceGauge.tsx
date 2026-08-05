@@ -74,17 +74,19 @@ function arcPath(fromPct: number, toPct: number) {
   return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 ${largeArc} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
 }
 
-/** Bandas de referência (sutis, no fundo) — fixas por tipo de meta, não configuráveis. */
-const REVENUE_BANDS: { from: number; to: number; tone: GaugeTone }[] = [
-  { from: 0, to: 59, tone: "danger" },
-  { from: 59, to: 89, tone: "warning" },
-  { from: 89, to: 100, tone: "neutral" },
-];
-const MARGIN_BANDS: { from: number; to: number; tone: GaugeTone }[] = [
-  { from: 0, to: 70, tone: "danger" },
-  { from: 70, to: 99, tone: "warning" },
-  { from: 99, to: 100, tone: "success" },
-];
+/** Ponto de corte entre faixas de status — vira uma marca (tick) na trilha, não um arco colorido cheio. */
+const REVENUE_TICKS = [59, 89];
+const MARGIN_TICKS = [70, 99];
+
+function tickLine(pct: number) {
+  const angle = 180 - (pct / 100) * 180;
+  const rad = (angle * Math.PI) / 180;
+  const dx = Math.cos(rad), dy = -Math.sin(rad);
+  return {
+    x1: (CX + (R - 8) * dx).toFixed(2), y1: (CY + (R - 8) * dy).toFixed(2),
+    x2: (CX + (R + 8) * dx).toFixed(2), y2: (CY + (R + 8) * dy).toFixed(2),
+  };
+}
 
 export default function PerformanceGauge({
   title, eyebrow, value, max, valueLabel, minLabel = "0", maxLabel,
@@ -102,7 +104,7 @@ export default function PerformanceGauge({
   const toneVar = TONE_VAR[tone];
   const needleTip = pointOnArc(clamped);
   const markerPos = pointOnArc(clamped);
-  const bands = title.toLowerCase().includes("margem") ? MARGIN_BANDS : REVENUE_BANDS;
+  const ticks = title.toLowerCase().includes("margem") ? MARGIN_TICKS : REVENUE_TICKS;
 
   const percentText = `${raw >= 0 ? Math.round(raw) : 0}%`;
   const a11ySummary = `${title}: ${valueLabel}${target != null ? `, meta ${targetLabel ?? target}` : ""}. ${percentText} da meta. ${helperText ?? ""}`.trim();
@@ -157,18 +159,6 @@ export default function PerformanceGauge({
               <title id={titleId}>{a11ySummary}</title>
               {/* trilha base */}
               <path d={arcPath(0, 100)} fill="none" stroke="var(--border)" strokeWidth="10" strokeLinecap="round" />
-              {/* bandas de referência, sutis */}
-              {bands.map((b) => (
-                <path
-                  key={b.from}
-                  d={arcPath(b.from, b.to)}
-                  fill="none"
-                  stroke={TONE_VAR[b.tone]}
-                  strokeWidth="10"
-                  strokeLinecap="butt"
-                  opacity={0.22}
-                />
-              ))}
               {/* progresso real — cor única do status atual */}
               <path
                 d={arcPath(0, clamped)}
@@ -178,6 +168,11 @@ export default function PerformanceGauge({
                 strokeLinecap="round"
                 style={{ transition: reducedMotion ? "none" : "d 600ms cubic-bezier(.4,0,.2,1), stroke 300ms ease" }}
               />
+              {/* marcas discretas nos limites de faixa (não um degradê cheio) */}
+              {ticks.map((t) => {
+                const { x1, y1, x2, y2 } = tickLine(t);
+                return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--border-strong)" strokeWidth="2" strokeLinecap="round" />;
+              })}
               {/* marcador de meta (alvo intermediário, se houver) */}
               {target != null && max > 0 && target !== max && (() => {
                 const tp = pointOnArc(clampGaugePercent(target, max));

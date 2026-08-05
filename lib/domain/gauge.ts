@@ -55,6 +55,36 @@ export function getGaugeStatusLabel(kind: GaugeKind, rawPct: number, tone: Gauge
   return "Margem abaixo da meta";
 }
 
+/**
+ * Status do RITMO de faturamento do mês (usado no gauge "Meta do Mês N").
+ *
+ * Antes o tom vinha de `getGaugeStatus("revenue", fatBruto/meta*100)` — ou
+ * seja, comparava o faturamento contra a META INTEIRA do mês. Isso é errado
+ * pra "ritmo": no dia 5 de um mês de 31 dias, mesmo faturando EXATAMENTE no
+ * ritmo ideal, só dá pra ter ~16% da meta batida — o que caía direto na
+ * faixa "abaixo do ritmo" (<60%) mesmo estando em dia. "Ritmo" tem que
+ * comparar contra o IDEAL ACUMULADO ATÉ HOJE (`idealDia` = meta ÷ dias do
+ * mês × dia atual), não contra a meta inteira — só assim o início do mês
+ * não fica sempre vermelho por definição.
+ */
+export function getRevenuePaceStatus(fatBruto: number, activeMeta: number, idealDia: number): GaugeTone {
+  if (activeMeta > 0 && fatBruto >= activeMeta) return "success";
+  if (idealDia <= 0) return "neutral";
+  const pctDoIdeal = (fatBruto / idealDia) * 100;
+  if (pctDoIdeal >= 100) return "neutral"; // no ritmo ou à frente — dourado, não é "sucesso" ainda (meta não bateu)
+  if (pctDoIdeal >= 85) return "warning";
+  return "danger";
+}
+
+/** Texto do pill de ritmo — mesma lógica de comparação contra o ideal-até-hoje. */
+export function getRevenuePaceLabel(fatBruto: number, activeMeta: number, tone: GaugeTone): string {
+  if (activeMeta > 0 && fatBruto > activeMeta) return "Meta superada";
+  if (activeMeta > 0 && fatBruto >= activeMeta) return "Meta atingida";
+  if (tone === "neutral") return "No ritmo da meta";
+  if (tone === "warning") return "Atenção ao ritmo";
+  return "Abaixo do ritmo";
+}
+
 function fmtBRLLocal(v: number): string {
   return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

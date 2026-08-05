@@ -17,7 +17,7 @@ import PerformanceGauge from "./PerformanceGauge";
 import DateRangePicker from "./DateRangePicker";
 import AvisoRemessasFull from "./AvisoRemessasFull";
 import { authedFetch } from "@/lib/api/authed-fetch";
-import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, rawGoalPercent } from "@/lib/domain/gauge";
+import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, getRevenuePaceLabel, getRevenuePaceStatus, rawGoalPercent } from "@/lib/domain/gauge";
 
 type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void };
 
@@ -645,9 +645,11 @@ function MetasOverviewCard({
   const diasRestantes = Math.max(totalDias - diaAtual + 1, 1);
   const ritmoDiaNecessario = falta > 0 ? falta / diasRestantes : undefined;
 
-  const pctMesRaw = rawGoalPercent(fatBruto, activeMeta);
-  const toneRevenue = getGaugeStatus("revenue", pctMesRaw);
-  const revenueStatusLabel = getGaugeStatusLabel("revenue", pctMesRaw, toneRevenue);
+  // Ritmo compara contra o IDEAL até hoje, não contra a meta inteira — ver
+  // comentário em getRevenuePaceStatus (era a causa do "Abaixo do ritmo"
+  // aparecer sempre no início do mês, mesmo em dia).
+  const toneRevenue = getRevenuePaceStatus(fatBruto, activeMeta, idealDia);
+  const revenueStatusLabel = getRevenuePaceLabel(fatBruto, activeMeta, toneRevenue);
   const insightRevenue = getGoalInsight("revenue", { falta, ritmoDiaNecessario, projecao, metaLabel: `Meta ${metaIndex}` });
 
   const pctMargemRaw = rawGoalPercent(margemAtual, metaMargem);
@@ -664,6 +666,26 @@ function MetasOverviewCard({
         </div>
         <div className="goals-card-updated">Projeção de lucro do mês: <b style={{ color: projecaoLucro >= 0 ? "var(--success)" : "var(--danger)" }}>{fmtBRL(projecaoLucro)}</b></div>
       </div>
+
+      {/* Progressão M1→M2→M3: a próxima meta já libera sozinha assim que a
+          anterior é batida (ver `activeMeta` acima) — este stepper só torna
+          isso visível, não muda o comportamento. */}
+      {metas.length > 1 && (
+        <div className="goals-tier-stepper" role="list" aria-label="Progressão das metas do mês">
+          {metas.map((m, i) => {
+            const idx = i + 1;
+            const done = fatBruto >= m;
+            const current = m === activeMeta;
+            return (
+              <span key={idx} role="listitem" className={`goals-tier ${done ? "goals-tier-done" : current ? "goals-tier-current" : "goals-tier-locked"}`}>
+                <span aria-hidden="true">{done ? "✓" : current ? "●" : "○"}</span> Meta {idx}
+                {done && " batida"}
+                {current && !done && " (atual)"}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       <div className="pg-row">
         <PerformanceGauge

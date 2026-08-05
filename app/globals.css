@@ -794,6 +794,12 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .goals-card-sub{font-size:.78rem;color:var(--text-secondary);margin-top:2px}
 .goals-card-updated{font-size:.7rem;color:var(--text-muted);white-space:nowrap}
 
+.goals-tier-stepper{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.goals-tier{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:8px;border:1px solid var(--border)}
+.goals-tier-done{color:var(--success);background:var(--success-soft);border-color:rgba(60,203,131,.3)}
+.goals-tier-current{color:var(--brand);background:var(--brand-soft);border-color:rgba(244,185,66,.35)}
+.goals-tier-locked{color:var(--text-muted)}
+
 .pg-row{display:grid;grid-template-columns:1fr 1fr;gap:0}
 .pg-row .pg-card:first-child{border-right:1px solid var(--border);padding-right:24px}
 .pg-row .pg-card:last-child{padding-left:24px}
