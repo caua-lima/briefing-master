@@ -363,6 +363,37 @@ export async function deleteTask(id: string) {
   await deleteDoc(sDoc(TASK_COL, id));
 }
 
+// ── Central de Atenção: alertas dispensados ────────────────────
+// Cada dispensa é por (usuário, chave do alerta) — um doc por par, igual ao
+// padrão de pushTokens. Guarda o `valorRef` de quando foi dispensado pra dar
+// pra comparar depois: se o número piorou, o alerta volta a aparecer sozinho
+// (ver alertShouldReappear em lib/domain/alerts.ts) em vez de ficar escondido
+// pra sempre.
+const ALERTS_COL = "alertasDispensados";
+
+export type AlertDismissEntry = { chave: string; email: string; valorRef: number; dispensadoEm: number };
+
+function alertDismissDocId(email: string, chave: string): string {
+  return `${email.replace(/\//g, "_")}__${chave}`;
+}
+
+export function watchDismissedAlerts(email: string, cb: (entries: AlertDismissEntry[]) => void): () => void {
+  const q = query(sCol(ALERTS_COL), where("email", "==", email));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => d.data() as AlertDismissEntry));
+  });
+}
+
+export async function dismissAlert(email: string, chave: string, valorRef: number): Promise<void> {
+  await setDoc(sDoc(ALERTS_COL, alertDismissDocId(email, chave)), {
+    email, chave, valorRef, dispensadoEm: Date.now(),
+  });
+}
+
+export async function undismissAlert(email: string, chave: string): Promise<void> {
+  await deleteDoc(sDoc(ALERTS_COL, alertDismissDocId(email, chave)));
+}
+
 // ── Access Control (global collection) ────────────────────────
 export function watchAccessList(
   cb: (entries: AccessEntry[]) => void,

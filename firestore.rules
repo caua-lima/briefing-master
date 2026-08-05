@@ -117,6 +117,14 @@ service cloud.firestore {
       allow delete: if isAuthorized() && resource.data.email == request.auth.token.email;
     }
 
+    // Central de Atenção: um doc por (usuário, chave do alerta) — cada um só
+    // mexe nos próprios alertas dispensados, igual ao padrão de pushTokens.
+    match /alertasDispensados/{docId} {
+      allow read: if isAuthorized() && resource.data.email == request.auth.token.email;
+      allow create, update: if isAuthorized() && request.resource.data.email == request.auth.token.email;
+      allow delete: if isAuthorized() && resource.data.email == request.auth.token.email;
+    }
+
     // Legacy: Allow authorized users read old data, writes only own uid
     match /usuarios/{uid}/{document=**} {
       allow read: if isAuthorized();

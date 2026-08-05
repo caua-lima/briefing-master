@@ -17,9 +17,10 @@ import PerformanceGauge from "./PerformanceGauge";
 import DateRangePicker from "./DateRangePicker";
 import AvisoRemessasFull from "./AvisoRemessasFull";
 import { authedFetch } from "@/lib/api/authed-fetch";
-import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, getRevenuePaceLabel, getRevenuePaceStatus, rawGoalPercent } from "@/lib/domain/gauge";
+import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, getRevenuePaceLabel, getRevenuePaceStatus, rawGoalPercent, selectActiveGoal } from "@/lib/domain/gauge";
+import ActionCenter from "./ActionCenter";
 
-type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void };
+type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void; onNavigate?: (tab: string) => void };
 
 type AnuncioResult = {
   item_id:      string;
@@ -635,9 +636,7 @@ function MetasOverviewCard({
   metaMargem: number;
   onVerMetas?: () => void;
 }) {
-  const metas = [meta1, meta2, meta3].filter((v): v is number => !!v && v > 0);
-  const activeMeta = metas.find((v) => fatBruto < v) ?? metas[metas.length - 1] ?? meta1;
-  const metaIndex = Math.max(1, metas.indexOf(activeMeta) + 1);
+  const { activeMeta, metaIndex, metas } = selectActiveGoal(fatBruto, meta1, meta2, meta3);
   const idealDia = activeMeta > 0 ? (activeMeta / totalDias) * diaAtual : 0;
   const deltaIdeal = fatBruto - idealDia;
 
@@ -915,7 +914,7 @@ function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; fro
 }
 
 // ── Dashboard principal ────────────────────────────────────────
-export default function Dashboard({ data, onVerEstoque, onVerMetas }: Props) {
+export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }: Props) {
   const mes = mesAtual();
 
   const [range, setRange] = useState<{ from: string; to: string }>(() => monthRange(mes));
@@ -1227,6 +1226,31 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas }: Props) {
               <Kpi label="Devoluções" value={mlMetrics?.vendasDevolvidas ?? 0} tone="neg" sub="0 a 0 (produto volta ao estoque)" />
             </div>
           </section>
+
+          {/* Central de Atenção — abaixo dos KPIs, acima das tabelas secundárias */}
+          {mlMetrics && (() => {
+            const { activeMeta, metaIndex } = selectActiveGoal(fatLiquido, goals?.meta1 ?? 0, goals?.meta2 ?? null, goals?.meta3 ?? null);
+            return (
+              <ActionCenter
+                anuncios={mlMetrics.anuncios ?? []}
+                margemAtual={mlMetrics.margemComCustos ?? 0}
+                metaMargem={goals?.metaMargem ?? 10}
+                totalAds={mlMetrics.totalAds ?? 0}
+                adsFalhou={adsFalhou}
+                vendasCanceladas={mlMetrics.vendasCanceladas ?? 0}
+                vendasDevolvidas={mlMetrics.vendasDevolvidas ?? 0}
+                faturamentoBruto={fatBruto}
+                projecao={projecao}
+                activeMeta={activeMeta}
+                metaIndex={metaIndex}
+                faturamentoHoje={mlMetrics.faturamentoHoje ?? 0}
+                metaDiariaAtiva={metaDiariaAtiva}
+                pedidosHoje={mlMetrics.pedidosHoje ?? 0}
+                produtos={data.products}
+                onNavigate={onNavigate}
+              />
+            );
+          })()}
 
           {/* Meta diária de hoje */}
           <MetaDiariaCard

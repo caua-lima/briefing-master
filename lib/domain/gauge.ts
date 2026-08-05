@@ -56,6 +56,25 @@ export function getGaugeStatusLabel(kind: GaugeKind, rawPct: number, tone: Gauge
 }
 
 /**
+ * Qual meta (1, 2 ou 3) está ativa agora — a primeira ainda não batida.
+ * Bater a Meta 1 libera a Meta 2 automaticamente (e assim por diante) só
+ * por causa de `.find`: ele pula qualquer meta já superada por `fatBruto`.
+ * Única fonte de verdade — usada pelo gauge de metas e pela Central de
+ * Atenção, pra não ter duas contas divergentes de "qual é a meta atual".
+ */
+export function selectActiveGoal(
+  fatBruto: number,
+  meta1: number,
+  meta2: number | null,
+  meta3: number | null,
+): { activeMeta: number; metaIndex: number; metas: number[] } {
+  const metas = [meta1, meta2, meta3].filter((v): v is number => !!v && v > 0);
+  const activeMeta = metas.find((v) => fatBruto < v) ?? metas[metas.length - 1] ?? meta1;
+  const metaIndex = Math.max(1, metas.indexOf(activeMeta) + 1);
+  return { activeMeta, metaIndex, metas };
+}
+
+/**
  * Status do RITMO de faturamento do mês (usado no gauge "Meta do Mês N").
  *
  * Antes o tom vinha de `getGaugeStatus("revenue", fatBruto/meta*100)` — ou
