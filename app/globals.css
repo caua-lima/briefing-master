@@ -27,6 +27,52 @@
   --meli:#FFE600;            /* amarelo ML: SÓ pra marcar origem/integração */
   --radius:12px;--shadow:0 4px 24px rgba(0,0,0,0.55);
 }
+
+/* ── Tokens semânticos novos (aditivos) ──────────────────────────────────
+   Não substituem --surface/--border/--green/--red/--accent etc. acima —
+   dezenas de componentes já dependem deles, então trocar os nomes seria um
+   refactor grande e arriscado de uma vez só. Estes tokens são para
+   componentes NOVOS (Central de atenção, badges de severidade, etc.) que
+   querem uma hierarquia mais disciplinada de superfícies/texto/estado sem
+   mexer no que já está em produção. Convergir os dois sistemas é uma
+   decisão separada, futura e deliberada — não algo pra fazer de passagem.
+*/
+:root{
+  --surface-raised:#24251D;
+  --surface-hover:#2A2B21;
+  --border-strong:#50513A;
+
+  --text-primary:#F7F3E8;
+  --text-secondary:#B5B2A6;
+  --text-muted:#838278;
+
+  --brand-strong:#E8A91D;
+  --brand-soft:rgba(244,185,66,0.12);
+
+  --success:#3CCB83;--success-soft:rgba(60,203,131,0.12);
+  --warning:#F2A93B;--warning-soft:rgba(242,169,59,0.12);
+  --danger:#EF6658;--danger-soft:rgba(239,102,88,0.12);
+  --info-2:#6E9DF8;--info-2-soft:rgba(110,157,248,0.12);
+
+  --radius-card:12px;--radius-control:10px;--radius-chip:8px;
+  --transition-fast:150ms ease;--transition-base:200ms ease;
+}
+
+/* Valor monetário: algarismos de largura fixa, pra colunas de R$ alinharem
+   verticalmente em vez de "dançar" conforme o dígito (1 é mais estreito que 8
+   em fontes proporcionais). */
+.money,.tabular-nums{font-variant-numeric:tabular-nums}
+
+/* Chip de severidade — pensado para a Central de Atenção (Fase 1), mas
+   genérico o bastante pra qualquer selo de estado novo. Cor nunca é o único
+   sinal: sempre usado junto de ícone/texto, nunca isolado. */
+.severity-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--radius-chip);font-size:.72rem;font-weight:700;white-space:nowrap;border:1px solid transparent}
+.severity-critical{background:var(--danger-soft);color:var(--danger);border-color:rgba(239,102,88,.35)}
+.severity-warning{background:var(--warning-soft);color:var(--warning);border-color:rgba(242,169,59,.35)}
+.severity-opportunity{background:var(--brand-soft);color:var(--brand);border-color:rgba(244,185,66,.35)}
+.severity-success{background:var(--success-soft);color:var(--success);border-color:rgba(60,203,131,.35)}
+.severity-info{background:var(--info-2-soft);color:var(--info-2);border-color:rgba(110,157,248,.35)}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   /* --font-inter/--font-sora são as variáveis que o next/font injeta no
