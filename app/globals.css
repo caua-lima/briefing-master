@@ -777,3 +777,79 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
   .tabs::-webkit-scrollbar{display:none}
   .tab-btn{flex:0 0 auto}
 }
+
+/* =========================================================================
+   Acompanhamento de metas — card + PerformanceGauge (velocímetro premium)
+   Usa os tokens semânticos novos (--text-primary/secondary, --surface-raised,
+   --success/warning/danger) declarados no topo do arquivo, sem tocar nas
+   variáveis antigas usadas no resto do app.
+   ========================================================================= */
+.goals-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:22px 24px;position:relative;overflow:hidden;
+}
+.goals-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--brand);opacity:.55}
+.goals-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.goals-card-title{font-size:1rem;font-weight:700;color:var(--text-primary);font-family:var(--font-display)}
+.goals-card-sub{font-size:.78rem;color:var(--text-secondary);margin-top:2px}
+.goals-card-updated{font-size:.7rem;color:var(--text-muted);white-space:nowrap}
+
+.pg-row{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.pg-row .pg-card:first-child{border-right:1px solid var(--border);padding-right:24px}
+.pg-row .pg-card:last-child{padding-left:24px}
+@media(max-width:720px){
+  .pg-row{grid-template-columns:1fr;gap:22px}
+  .pg-row .pg-card:first-child{border-right:none;border-bottom:1px solid var(--border);padding-right:0;padding-bottom:20px}
+  .pg-row .pg-card:last-child{padding-left:0}
+}
+
+.pg-card{display:flex;flex-direction:column;min-width:0}
+.pg-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.pg-eyebrow{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-secondary);font-weight:700}
+.pg-info{position:relative;display:inline-flex;color:var(--text-muted);cursor:help;font-size:.72rem;line-height:1;border-radius:50%}
+.pg-info:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.pg-tooltip{
+  position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:var(--surface-raised);border:1px solid var(--border-strong);border-radius:8px;
+  padding:8px 10px;font-size:.72rem;font-weight:400;color:var(--text-secondary);line-height:1.45;
+  width:210px;visibility:hidden;opacity:0;transition:opacity var(--transition-fast,150ms ease);
+  pointer-events:none;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+.pg-info:hover .pg-tooltip,.pg-info:focus .pg-tooltip{visibility:visible;opacity:1}
+
+.pg-body{display:flex;flex-direction:column;align-items:center;text-align:center;background:none;border:none;padding:0;width:100%;font:inherit;color:inherit}
+.pg-clickable{cursor:pointer;border-radius:10px;transition:background var(--transition-fast,150ms ease)}
+.pg-clickable:hover{background:var(--surface-hover)}
+.pg-clickable:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+
+.pg-svg{width:100%;max-width:260px;height:auto}
+.pg-center{display:flex;flex-direction:column;align-items:center;gap:3px;margin-top:-18px}
+.pg-percent{font-family:var(--font-display);font-size:clamp(1.75rem,4.5vw,2.6rem);font-weight:800;line-height:1}
+.pg-value{font-size:.86rem;color:var(--text-secondary)}
+.pg-value-current{color:var(--text-primary);font-weight:700}
+.pg-status-pill{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:8px;margin-top:4px}
+.pg-insight{font-size:.76rem;color:var(--text-secondary);line-height:1.4;margin-top:6px;max-width:230px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pg-cta{display:inline-block;margin-top:8px;font-size:.76rem;font-weight:700;color:var(--brand);text-decoration:none}
+.pg-clickable:hover .pg-cta{text-decoration:underline}
+.pg-scale{display:flex;justify-content:space-between;width:100%;max-width:230px;font-size:.68rem;color:var(--text-muted);margin-top:2px}
+.pg-comparison{font-size:.72rem;margin-top:6px}
+.pg-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* compact: usado na Meta Diária secundária — sem ponteiro, sem insight/escala */
+.pg-compact .pg-svg{max-width:190px}
+.pg-compact .pg-center{margin-top:-14px}
+.pg-compact .pg-percent{font-size:clamp(1.4rem,4vw,1.9rem)}
+
+.pg-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:28px 10px;color:var(--text-secondary);font-size:.82rem}
+.pg-empty-icon{font-size:1.6rem;color:var(--text-muted)}
+
+.pg-skeleton{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;padding:10px 0}
+.pg-skeleton-arc{width:200px;height:100px;border-radius:200px 200px 0 0;background:var(--surface-raised);animation:pgPulse 1.4s ease-in-out infinite}
+.pg-skeleton-line{height:12px;border-radius:6px;background:var(--surface-raised);animation:pgPulse 1.4s ease-in-out infinite}
+.pg-skeleton-line--lg{width:140px}
+.pg-skeleton-line:not(.pg-skeleton-line--lg){width:90px}
+@keyframes pgPulse{0%,100%{opacity:.5}50%{opacity:1}}
+
+@media(prefers-reduced-motion:reduce){
+  .pg-svg path,.pg-svg g,.pg-clickable,.pg-tooltip,.pg-skeleton-arc,.pg-skeleton-line{transition:none!important;animation:none!important}
+}

@@ -13,13 +13,13 @@ import {
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
 import ExpensesDoughnut from "./ExpensesDoughnut";
-import MetasGauge from "./MetasGauge";
-import Gauge from "./Gauge";
+import PerformanceGauge from "./PerformanceGauge";
 import DateRangePicker from "./DateRangePicker";
 import AvisoRemessasFull from "./AvisoRemessasFull";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, rawGoalPercent } from "@/lib/domain/gauge";
 
-type Props = { data: UserData; onVerEstoque?: () => void };
+type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void };
 
 type AnuncioResult = {
   item_id:      string;
@@ -549,6 +549,15 @@ function MetaDiariaCard({
   const atrasado = ajuste > 0.01;
   const adiantado = ajuste < -0.01;
 
+  // Status/label do arco reaproveitam o mesmo `pct` (0-100, já clampado)
+  // calculado acima — nenhuma fórmula nova, só a leitura visual dele.
+  const tone = getGaugeStatus("revenue", pct);
+  const statusLabel = mesBatido
+    ? "Meta do mês batida"
+    : batida
+      ? `Meta batida · ${pedidosHoje} pedido(s)`
+      : `Faltam ${fmtBRL(falta)} · ${pedidosHoje} pedido(s)`;
+
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
       {semMeta ? (
@@ -558,20 +567,21 @@ function MetaDiariaCard({
         </>
       ) : (
         <>
-          <Gauge
-            caption="Meta Diária de Hoje"
-            pct={pct}
-            centerText={mesBatido ? "100%" : `${pct.toFixed(0)}%`}
-            leftLabel="R$ 0"
-            rightLabel={mesBatido ? "meta do mês batida" : fmtBRL(metaDiaria ?? 0)}
-            footer={
-              <>
-                <b style={{ color: "var(--text)" }}>{fmtBRL(faturamentoHoje)}</b> · {pedidosHoje} pedido(s) ·{" "}
-                <span style={{ color: batida ? "var(--green)" : "var(--muted)" }}>
-                  {mesBatido ? "meta do mês já batida!" : batida ? "batida!" : `faltam ${fmtBRL(falta)}`}
-                </span>
-              </>
-            }
+          <PerformanceGauge
+            title="Meta Diária de Hoje"
+            eyebrow="Meta Diária de Hoje"
+            compact
+            showNeedle={false}
+            // Quando o mês já bateu a meta não existe mais "alvo de hoje" (metaDiaria
+            // vira 0) — 1/1 é só um valor sintético pra desenhar o arco cheio; os
+            // textos ao redor continuam mostrando o faturamento real de hoje.
+            value={mesBatido ? 1 : faturamentoHoje}
+            max={mesBatido ? 1 : (metaDiaria ?? 0)}
+            status={tone}
+            valueLabel={mesBatido ? fmtBRL(faturamentoHoje) : `${fmtBRL(faturamentoHoje)} de ${fmtBRL(metaDiaria ?? 0)}`}
+            helperText={statusLabel}
+            minLabel="R$ 0"
+            maxLabel={mesBatido ? undefined : fmtBRL(metaDiaria ?? 0)}
           />
           {/* Por que a meta de hoje não é a meta plana */}
           {!mesBatido && metaPlana != null && diasRestantes != null && (
@@ -596,6 +606,96 @@ function MetaDiariaCard({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ── Acompanhamento de Metas (dois velocímetros: faturamento + margem) ──
+// Fórmulas de seleção de meta ativa / ritmo / ideal-até-hoje relocadas
+// verbatim do antigo MetasGauge.tsx — só a apresentação (PerformanceGauge)
+// é nova, nenhum número muda.
+function abreviarValor(n: number): string {
+  if (n >= 1_000_000) return `R$ ${(n / 1_000_000).toFixed(1).replace(".", ",")}M`;
+  if (n >= 1_000) return `R$ ${Math.round(n / 1_000)}k`;
+  return fmtBRL(n);
+}
+
+function MetasOverviewCard({
+  fatBruto, meta1, meta2, meta3, projecao, projecaoLucro, diaAtual, totalDias, margemAtual, metaMargem, onVerMetas,
+}: {
+  fatBruto: number;
+  meta1: number;
+  meta2: number | null;
+  meta3: number | null;
+  projecao: number;
+  projecaoLucro: number;
+  diaAtual: number;
+  totalDias: number;
+  margemAtual: number;
+  metaMargem: number;
+  onVerMetas?: () => void;
+}) {
+  const metas = [meta1, meta2, meta3].filter((v): v is number => !!v && v > 0);
+  const activeMeta = metas.find((v) => fatBruto < v) ?? metas[metas.length - 1] ?? meta1;
+  const metaIndex = Math.max(1, metas.indexOf(activeMeta) + 1);
+  const idealDia = activeMeta > 0 ? (activeMeta / totalDias) * diaAtual : 0;
+  const deltaIdeal = fatBruto - idealDia;
+
+  const falta = Math.max(activeMeta - fatBruto, 0);
+  const diasRestantes = Math.max(totalDias - diaAtual + 1, 1);
+  const ritmoDiaNecessario = falta > 0 ? falta / diasRestantes : undefined;
+
+  const pctMesRaw = rawGoalPercent(fatBruto, activeMeta);
+  const toneRevenue = getGaugeStatus("revenue", pctMesRaw);
+  const revenueStatusLabel = getGaugeStatusLabel("revenue", pctMesRaw, toneRevenue);
+  const insightRevenue = getGoalInsight("revenue", { falta, ritmoDiaNecessario, projecao, metaLabel: `Meta ${metaIndex}` });
+
+  const pctMargemRaw = rawGoalPercent(margemAtual, metaMargem);
+  const toneMargin = getGaugeStatus("margin", pctMargemRaw);
+  const marginStatusLabel = getGaugeStatusLabel("margin", pctMargemRaw, toneMargin);
+  const insightMargin = getGoalInsight("margin", { margemAtual, metaMargem });
+
+  return (
+    <div className="goals-card">
+      <div className="goals-card-head">
+        <div>
+          <div className="goals-card-title">Acompanhamento de metas</div>
+          <div className="goals-card-sub">Ritmo, projeção e margem da operação</div>
+        </div>
+        <div className="goals-card-updated">Projeção de lucro do mês: <b style={{ color: projecaoLucro >= 0 ? "var(--success)" : "var(--danger)" }}>{fmtBRL(projecaoLucro)}</b></div>
+      </div>
+
+      <div className="pg-row">
+        <PerformanceGauge
+          title={`Meta do Mês ${metaIndex}`}
+          eyebrow={`Meta do Mês ${metaIndex}`}
+          value={fatBruto}
+          max={activeMeta}
+          status={toneRevenue}
+          valueLabel={`${fmtBRL(fatBruto)} de ${abreviarValor(activeMeta)}`}
+          helperText={revenueStatusLabel}
+          insight={insightRevenue}
+          comparison={{ label: "Ideal até hoje", value: fmtBRL(idealDia), tone: deltaIdeal >= 0 ? "success" : "danger" }}
+          minLabel="R$ 0"
+          maxLabel={abreviarValor(activeMeta)}
+          tooltip={`Percentual do faturamento líquido em relação à Meta ${metaIndex} selecionada.`}
+          ctaLabel={onVerMetas ? "Ver metas" : undefined}
+          onClick={onVerMetas}
+        />
+        <PerformanceGauge
+          title="Margem Líquida"
+          eyebrow="Margem Líquida"
+          value={margemAtual}
+          max={metaMargem}
+          status={toneMargin}
+          valueLabel={`${margemAtual.toFixed(1)}% (meta ${metaMargem.toFixed(1)}%)`}
+          helperText={marginStatusLabel}
+          insight={insightMargin}
+          minLabel="0%"
+          maxLabel={`${metaMargem.toFixed(0)}%`}
+          tooltip="Lucro líquido operacional dividido pelo faturamento líquido. Custos incluídos seguem as regras atuais do Dashboard."
+        />
+      </div>
     </div>
   );
 }
@@ -793,7 +893,7 @@ function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; fro
 }
 
 // ── Dashboard principal ────────────────────────────────────────
-export default function Dashboard({ data, onVerEstoque }: Props) {
+export default function Dashboard({ data, onVerEstoque, onVerMetas }: Props) {
   const mes = mesAtual();
 
   const [range, setRange] = useState<{ from: string; to: string }>(() => monthRange(mes));
@@ -1056,13 +1156,10 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
         <>
           {/* Acompanhamento das metas (topo, modo mês) */}
           {isMesAtual && (
-            <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div className="panel-head" style={{ marginBottom: 0 }}>
-                <span className="panel-title">Acompanhamento das Metas — {formatMesBR(mes)}</span>
-                <span className="panel-sub">Projeção de fechamento: {fmtBRL(projecao)}</span>
-              </div>
+            <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: ".78rem", color: "var(--text-secondary)" }}>{formatMesBR(mes)}</div>
               {goals?.meta1 ? (
-                <MetasGauge
+                <MetasOverviewCard
                   fatBruto={fatLiquido}
                   meta1={goals.meta1}
                   meta2={goals.meta2 ?? null}
@@ -1073,9 +1170,10 @@ export default function Dashboard({ data, onVerEstoque }: Props) {
                   totalDias={diasNoMes(mes)}
                   margemAtual={mlMetrics?.margemComCustos ?? 0}
                   metaMargem={goals.metaMargem ?? 10}
+                  onVerMetas={onVerMetas}
                 />
               ) : (
-                <div className="panel" style={{ color: "var(--muted)", fontSize: ".85rem" }}>
+                <div className="goals-card" style={{ color: "var(--text-secondary)", fontSize: ".85rem" }}>
                   Nenhuma meta configurada. Configure na aba Metas.
                 </div>
               )}
