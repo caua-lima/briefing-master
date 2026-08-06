@@ -25,6 +25,8 @@ import ActionCenter from "./ActionCenter";
 import ExecutiveKpis, { Delta } from "./ExecutiveKpis";
 import RevenueLineChart from "./RevenueLineChart";
 import DayDetailModal from "./DayDetailModal";
+import ProdutosEmRisco from "./ProdutosEmRisco";
+import { findProdutosEmRisco } from "@/lib/domain/risk";
 
 type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void; onNavigate?: (tab: string) => void };
 
@@ -1421,6 +1423,12 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               />
             </div>
           </div>
+
+          {/* Produtos em risco — estoque baixo e/ou margem abaixo da meta */}
+          <ProdutosEmRisco
+            produtos={findProdutosEmRisco(data.products, mlMetrics?.anuncios ?? [], goals?.metaMargem ?? 10)}
+            onVerEstoque={onVerEstoque}
+          />
 
           {/* Lucro por anúncio — com filtro de data próprio */}
           <LucroPorAnuncioPanel anuncios={mlMetrics?.anuncios ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
