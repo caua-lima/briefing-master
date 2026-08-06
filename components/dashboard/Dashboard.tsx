@@ -158,6 +158,17 @@ function prevPeriod(from: string, to: string): { from: string; to: string } {
     const m = pm.getUTCMonth() + 1;
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const mm = String(m).padStart(2, "0");
+
+    // Mês em andamento (ex.: "Mês atual" visto no dia 5) — compara dia a dia
+    // com o mesmo dia do mês anterior (dia 5 vs dia 5), NÃO com o mês
+    // anterior inteiro. Comparar 5 dias de dado real contra 31 dias inflava
+    // artificialmente a queda no "vs período anterior".
+    if (to > todayISO()) {
+      const diaAtual = Number(todayISO().slice(8, 10));
+      const diaClamp = Math.min(diaAtual, last);
+      return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(diaClamp).padStart(2, "0")}` };
+    }
+
     return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, "0")}` };
   }
   const days = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
@@ -979,10 +990,12 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   // Isso é diferente de "hoje" sozinho, onde o usuário já sabe que é parcial.
   const periodoParcial = useMemo(() => range.to === todayISO() && range.from !== range.to, [range]);
 
-  const prevLabel = useMemo(
-    () => (isFullMonth(range.from, range.to) ? "vs mês anterior" : "vs período anterior"),
-    [range],
-  );
+  const prevLabel = useMemo(() => {
+    if (!isFullMonth(range.from, range.to)) return "vs período anterior";
+    // Mês em andamento compara com o mesmo dia do mês anterior (ver
+    // prevPeriod); mês já fechado compara com o mês anterior inteiro.
+    return range.to > todayISO() ? "vs mesmo dia do mês anterior" : "vs mês anterior";
+  }, [range]);
 
   const fetchMetrics = useCallback(async (from: string, to: string, silent = false, fresh = false) => {
     if (!silent) setMlLoading(true);
@@ -1243,7 +1256,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
                   format: "currency",
                   tone: "acc",
                   tooltip: "Faturamento bruto do período menos vendas canceladas e devoluções concluídas.",
-                  delta: { current: fatLiquido, previous: prevMetrics?.faturamentoLiquido, mode: "pct" },
+                  delta: { current: fatLiquido, previous: prevMetrics?.faturamentoLiquido, mode: "pct", label: prevLabel },
                 },
                 {
                   key: "lucroLiquido",
@@ -1252,7 +1265,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
                   format: "currency",
                   tone: lucroLiquido >= 0 ? "pos" : "neg",
                   tooltip: "Retorno − CMV (custo médio) − frete − taxas ML − imposto − ADS − custos operacionais do Dashboard.",
-                  delta: { current: lucroLiquido, previous: prevMetrics?.lucroComCustos, mode: "pct" },
+                  delta: { current: lucroLiquido, previous: prevMetrics?.lucroComCustos, mode: "pct", label: prevLabel },
                 },
                 {
                   key: "margemLiquida",
@@ -1261,7 +1274,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
                   format: "percent",
                   tone: (mlMetrics.margemComCustos ?? 0) >= (goals?.metaMargem ?? 10) ? "pos" : "warn",
                   tooltip: "Lucro líquido dividido pelo retorno (valor da venda − taxa ML − frete) do período — não pelo faturamento bruto nem pelo líquido.",
-                  delta: { current: mlMetrics.margemComCustos ?? 0, previous: prevMetrics?.margemComCustos, mode: "points" },
+                  delta: { current: mlMetrics.margemComCustos ?? 0, previous: prevMetrics?.margemComCustos, mode: "points", label: prevLabel },
                 },
                 {
                   key: "projecaoMes",

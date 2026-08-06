@@ -9,7 +9,7 @@ export type KpiTone = "pos" | "neg" | "acc" | "warn";
  * evita duplicar a conta de delta. `invert` é pra métricas onde SUBIR é
  * ruim (ex.: custo) — sem isso, um custo que aumentou apareceria em verde.
  */
-export function Delta({ current, previous, mode, invert }: { current: number; previous: number | null | undefined; mode: "pct" | "points"; invert?: boolean }) {
+export function Delta({ current, previous, mode, invert, label = "vs período anterior" }: { current: number; previous: number | null | undefined; mode: "pct" | "points"; invert?: boolean; label?: string }) {
   if (previous == null) return null;
   const diff = current - previous;
   const flat = mode === "points"
@@ -28,7 +28,7 @@ export function Delta({ current, previous, mode, invert }: { current: number; pr
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, fontSize: ".74rem", fontWeight: 700, color }}>
-      <span aria-hidden="true">{arrow}</span><span>{text} vs período anterior</span>
+      <span aria-hidden="true">{arrow}</span><span>{text} {label}</span>
     </div>
   );
 }
@@ -40,7 +40,7 @@ export type ExecutiveKpiItem = {
   format: "currency" | "percent";
   tone: KpiTone;
   tooltip: string;
-  delta?: { current: number; previous: number | null | undefined; mode: "pct" | "points" };
+  delta?: { current: number; previous: number | null | undefined; mode: "pct" | "points"; invert?: boolean; label?: string };
   ctaLabel?: string;
   onClick?: () => void;
   indisponivel?: boolean;
