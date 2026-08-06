@@ -141,6 +141,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [valorMax, setValorMax] = useState("");
   const [margemMin, setMargemMin] = useState("");
   const [margemMax, setMargemMax] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,9 +179,15 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
       if (max != null && !Number.isNaN(max) && p.valor > max) return false;
       if (mMin != null && !Number.isNaN(mMin) && p.margem < mMin) return false;
       if (mMax != null && !Number.isNaN(mMax) && p.margem > mMax) return false;
+      if (statusFiltro && p.status !== statusFiltro) return false;
       return true;
     });
-  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax]);
+  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro]);
+
+  const statusOptions = useMemo(
+    () => Array.from(new Set(pedidos.map((p) => p.status).filter(Boolean))).sort(),
+    [pedidos],
+  );
 
   /**
    * Consolida por produto os pedidos que estão no filtro atual.
@@ -315,6 +322,21 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
         />
         {(margemMin || margemMax) && (
           <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setMargemMin(""); setMargemMax(""); }}>Limpar margem</button>
+        )}
+
+        {statusOptions.length > 1 && (
+          <>
+            <span style={{ fontSize: ".74rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>Status:</span>
+            <select
+              value={statusFiltro}
+              onChange={(e) => setStatusFiltro(e.target.value)}
+              aria-label="Filtrar por status do pedido"
+              style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+            >
+              <option value="">Todos</option>
+              {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </>
         )}
       </div>
 
