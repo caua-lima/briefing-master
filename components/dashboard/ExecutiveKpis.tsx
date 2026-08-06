@@ -4,15 +4,20 @@ import { fmtBRL } from "@/lib/domain/calc";
 
 export type KpiTone = "pos" | "neg" | "acc" | "warn";
 
-/** Mesma lógica de seta/cor/percentual usada no grid detalhado — única fonte, evita duplicar a conta de delta. */
-export function Delta({ current, previous, mode }: { current: number; previous: number | null | undefined; mode: "pct" | "points" }) {
+/**
+ * Mesma lógica de seta/cor/percentual usada no grid detalhado — única fonte,
+ * evita duplicar a conta de delta. `invert` é pra métricas onde SUBIR é
+ * ruim (ex.: custo) — sem isso, um custo que aumentou apareceria em verde.
+ */
+export function Delta({ current, previous, mode, invert }: { current: number; previous: number | null | undefined; mode: "pct" | "points"; invert?: boolean }) {
   if (previous == null) return null;
   const diff = current - previous;
   const flat = mode === "points"
     ? Math.abs(diff) < 0.05
     : Math.abs(diff) < 0.005 * Math.max(Math.abs(previous), 1);
   const up = diff > 0;
-  const color = flat ? "var(--text-muted)" : up ? "var(--success)" : "var(--danger)";
+  const good = invert ? !up : up;
+  const color = flat ? "var(--text-muted)" : good ? "var(--success)" : "var(--danger)";
   const arrow = flat ? "→" : up ? "↑" : "↓";
   let text: string;
   if (mode === "points") {

@@ -1144,13 +1144,13 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   // e infla a margem). A linha vira "indisponível" e a tela avisa.
   const adsFalhou = mlMetrics?.adsFalhou === true;
 
-  const custoRows: { label: string; value: number; color: string; indisponivel?: boolean }[] = [
-    { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0, color: COST_COLORS.cmv },
-    { label: "Frete (envio)", value: mlMetrics?.totalEnvio ?? 0, color: COST_COLORS.full },
-    { label: "Taxas ML (comissão)", value: mlMetrics?.totalTaxasML ?? 0, color: COST_COLORS.taxa },
-    { label: "Imposto sobre venda", value: mlMetrics?.totalImposto ?? 0, color: COST_COLORS.imp },
-    { label: "ADS (publicidade)", value: mlMetrics?.totalAds ?? 0, color: COST_COLORS.ads, indisponivel: adsFalhou },
-    { label: "Custos operacionais", value: mlMetrics?.custosOperacionais ?? 0, color: COST_COLORS.op },
+  const custoRows: { label: string; value: number; prevValue: number | null; color: string; indisponivel?: boolean }[] = [
+    { label: "CMV (custo do produto)", value: mlMetrics?.totalCMV ?? 0, prevValue: prevMetrics?.totalCMV ?? null, color: COST_COLORS.cmv },
+    { label: "Frete (envio)", value: mlMetrics?.totalEnvio ?? 0, prevValue: prevMetrics?.totalEnvio ?? null, color: COST_COLORS.full },
+    { label: "Taxas ML (comissão)", value: mlMetrics?.totalTaxasML ?? 0, prevValue: prevMetrics?.totalTaxasML ?? null, color: COST_COLORS.taxa },
+    { label: "Imposto sobre venda", value: mlMetrics?.totalImposto ?? 0, prevValue: prevMetrics?.totalImposto ?? null, color: COST_COLORS.imp },
+    { label: "ADS (publicidade)", value: mlMetrics?.totalAds ?? 0, prevValue: adsFalhou ? null : (prevMetrics?.totalAds ?? null), color: COST_COLORS.ads, indisponivel: adsFalhou },
+    { label: "Custos operacionais", value: mlMetrics?.custosOperacionais ?? 0, prevValue: prevMetrics?.custosOperacionais ?? null, color: COST_COLORS.op },
   ];
 
   return (
@@ -1388,14 +1388,17 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               {custoRows.map((r) => {
                 const participacao = totalCustos > 0 ? (r.value / totalCustos) * 100 : 0;
                 return (
-                  <div key={r.label} className="cost-row">
+                  <div key={r.label} className="cost-row" style={{ flexWrap: "wrap" }}>
                     <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
                     {r.indisponivel
                       ? <span title="O Mercado Livre não retornou o gasto com ADS. Não mostro R$ 0,00 para não te dar número errado." style={{ color: "#F4B942", fontWeight: 700, fontSize: ".82rem" }}>indisponível</span>
                       : (
-                        <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                          <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600 }}>{participacao.toFixed(0)}%</span>
-                          <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>
+                        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                          <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                            <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600 }}>{participacao.toFixed(0)}%</span>
+                            <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>
+                          </span>
+                          <Delta current={r.value} previous={r.prevValue} mode="pct" invert />
                         </span>
                       )}
                   </div>
