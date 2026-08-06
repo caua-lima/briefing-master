@@ -139,6 +139,8 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   // Filtros avançados — texto vazio = sem limite (não força 0).
   const [valorMin, setValorMin] = useState("");
   const [valorMax, setValorMax] = useState("");
+  const [margemMin, setMargemMin] = useState("");
+  const [margemMax, setMargemMax] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -165,6 +167,8 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
     const q = busca.trim().toLowerCase();
     const min = valorMin.trim() ? Number(valorMin.replace(",", ".")) : null;
     const max = valorMax.trim() ? Number(valorMax.replace(",", ".")) : null;
+    const mMin = margemMin.trim() ? Number(margemMin.replace(",", ".")) : null;
+    const mMax = margemMax.trim() ? Number(margemMax.replace(",", ".")) : null;
     return pedidos.filter((p) => {
       if (q && !(p.produto.toLowerCase().includes(q) || p.order_id.includes(q))) return false;
       if (filtro === "lucro" && p.lucro <= 0) return false;
@@ -172,9 +176,11 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
       if (filtro === "semcad" && p.vinculado) return false;
       if (min != null && !Number.isNaN(min) && p.valor < min) return false;
       if (max != null && !Number.isNaN(max) && p.valor > max) return false;
+      if (mMin != null && !Number.isNaN(mMin) && p.margem < mMin) return false;
+      if (mMax != null && !Number.isNaN(mMax) && p.margem > mMax) return false;
       return true;
     });
-  }, [pedidos, busca, filtro, valorMin, valorMax]);
+  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax]);
 
   /**
    * Consolida por produto os pedidos que estão no filtro atual.
@@ -293,6 +299,22 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
         />
         {(valorMin || valorMax) && (
           <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setValorMin(""); setValorMax(""); }}>Limpar valor</button>
+        )}
+
+        <span style={{ fontSize: ".74rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>Margem %:</span>
+        <input
+          type="number" inputMode="decimal" placeholder="mín." value={margemMin}
+          onChange={(e) => setMargemMin(e.target.value)}
+          style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+        />
+        <span style={{ color: "var(--text-muted,var(--muted))" }}>–</span>
+        <input
+          type="number" inputMode="decimal" placeholder="máx." value={margemMax}
+          onChange={(e) => setMargemMax(e.target.value)}
+          style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+        />
+        {(margemMin || margemMax) && (
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setMargemMin(""); setMargemMax(""); }}>Limpar margem</button>
         )}
       </div>
 
