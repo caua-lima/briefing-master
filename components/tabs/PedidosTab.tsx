@@ -125,6 +125,23 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
 
   const itens = p.itens ?? [];
 
+  // Linha do tempo — best-effort com o que a API do ML de fato devolve. Sem
+  // timestamp de "pago" separado, o marco vem do status atual do pedido, não
+  // de uma data específica. Isso é informativo, não uma garantia de SLA.
+  const statusPago = ["paid", "confirmed"].includes(p.status.toLowerCase());
+  const statusEnviado = !!p.shippingStatus && !["pending", "handling"].includes(p.shippingStatus.toLowerCase());
+  const marcos: { label: string; feito: boolean; nota?: string }[] = [
+    { label: "Criado", feito: true, nota: `${p.data.split("-").reverse().join("/")} ${p.hora}` },
+    { label: "Pago", feito: statusPago || !!p.dateDelivered, nota: p.status },
+    { label: "Enviado", feito: statusEnviado, nota: p.logisticType || p.shippingStatus || undefined },
+    { label: "Entregue", feito: !!p.dateDelivered, nota: p.dateDelivered ? p.dateDelivered.split("-").reverse().join("/") : undefined },
+    {
+      label: "Repasse liberado",
+      feito: !!p.moneyReleaseDate && p.moneyReleaseDate <= new Date().toISOString().slice(0, 10),
+      nota: p.moneyReleaseDate ? p.moneyReleaseDate.split("-").reverse().join("/") : undefined,
+    },
+  ];
+
   return (
     <div style={{ padding: "12px 16px", display: "grid", gap: 18, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
       <div>
@@ -171,6 +188,44 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
           ))}
         </div>
       )}
+
+      <div>
+        <div style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)", marginBottom: 4 }}>
+          Logística e repasse
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+          {marcos.map((m) => (
+            <div key={m.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: ".78rem" }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: m.feito ? "var(--success,var(--green))" : "var(--border)" }} />
+              <span style={{ color: m.feito ? "var(--text-primary,var(--text))" : "var(--text-muted,var(--muted))", fontWeight: m.feito ? 600 : 400 }}>{m.label}</span>
+              {m.nota && <span style={{ color: "var(--text-muted,var(--muted))", fontSize: ".72rem" }}>· {m.nota}</span>}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "5px 0", borderTop: "1px solid var(--border)" }}>
+          <span style={{ fontSize: ".8rem", color: "var(--muted)" }}>
+            Repasse do Mercado Pago
+            <span
+              style={{
+                display: "block", marginTop: 2, fontSize: ".64rem", fontWeight: 700,
+                color: p.netReceived ? "var(--success,var(--green))" : "var(--warning,#F4B942)",
+              }}
+            >
+              {p.netReceived ? "CONFIRMADO PELO MP" : "ESTIMADO (retorno calculado)"}
+            </span>
+          </span>
+          <span style={{ fontSize: ".84rem", fontWeight: 700, color: "var(--text)" }}>
+            {fmtBRL(p.netReceived || p.retorno)}
+          </span>
+        </div>
+
+        {p.linkAnuncio && (
+          <a href={p.linkAnuncio} target="_blank" rel="noopener noreferrer" className="ac-cta" style={{ display: "inline-block", marginTop: 10 }}>
+            Abrir anúncio no Mercado Livre ↗
+          </a>
+        )}
+      </div>
     </div>
   );
 }
