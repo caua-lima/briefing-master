@@ -39,12 +39,23 @@ type Pedido = {
   itens?: ItemPedido[];
   /** >1 quando a venda é um pacote: vários pedidos do ML na mesma compra. */
   pedidosNoPacote?: number;
+  cancelado?: boolean;
+  devolvido?: boolean;
+  shippingStatus?: string;
+  logisticType?: string;
+  tracking?: string;
+  estimatedDelivery?: string;
+  dateDelivered?: string;
+  /** Repasse REAL do Mercado Pago quando existe — sem isso, `retorno` acima é a nossa estimativa. */
+  netReceived?: number | null;
+  moneyReleaseDate?: string | null;
+  linkAnuncio?: string | null;
 };
 
 type FiltroSalvo = {
   nome: string;
   busca: string;
-  filtro: "todos" | "lucro" | "prejuizo" | "semcad";
+  filtro: "todos" | "lucro" | "prejuizo" | "semcad" | "canceldevol";
   valorMin: string; valorMax: string;
   margemMin: string; margemMax: string;
   statusFiltro: string; produtoFiltro: string;
@@ -158,7 +169,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad">("todos");
+  const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad" | "canceldevol">("todos");
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
   const [detalhe, setDetalhe] = useState<string | null>(null);
   // Filtros avançados — texto vazio = sem limite (não força 0).
@@ -227,6 +238,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
       if (filtro === "lucro" && p.lucro <= 0) return false;
       if (filtro === "prejuizo" && p.lucro >= 0) return false;
       if (filtro === "semcad" && p.vinculado) return false;
+      if (filtro === "canceldevol" && !p.cancelado && !p.devolvido) return false;
       if (min != null && !Number.isNaN(min) && p.valor < min) return false;
       if (max != null && !Number.isNaN(max) && p.valor > max) return false;
       if (mMin != null && !Number.isNaN(mMin) && p.margem < mMin) return false;
@@ -291,6 +303,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
 
   const prejuizoN = pedidos.filter((p) => p.lucro < 0).length;
   const semCadN = pedidos.filter((p) => !p.vinculado).length;
+  const cancelDevolN = pedidos.filter((p) => p.cancelado || p.devolvido).length;
 
   const totalLucro = filtrados.reduce((s, p) => s + p.lucro, 0);
   const totalValor = filtrados.reduce((s, p) => s + p.valor, 0);
@@ -339,6 +352,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
           ["lucro", "Lucrativos", "var(--green)"],
           ["prejuizo", `Prejuízo (${prejuizoN})`, "var(--red)"],
           ["semcad", `Sem cadastro (${semCadN})`, "var(--yellow)"],
+          ["canceldevol", `Cancelado/Devolvido (${cancelDevolN})`, "var(--info,var(--accent))"],
         ] as const).map(([id, label, cor]) => (
           <button
             key={id} type="button" onClick={() => setFiltro(id)}
