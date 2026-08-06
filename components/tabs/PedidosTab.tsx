@@ -41,6 +41,31 @@ type Pedido = {
   pedidosNoPacote?: number;
 };
 
+type FiltroSalvo = {
+  nome: string;
+  busca: string;
+  filtro: "todos" | "lucro" | "prejuizo" | "semcad";
+  valorMin: string; valorMax: string;
+  margemMin: string; margemMax: string;
+  statusFiltro: string; produtoFiltro: string;
+};
+
+const FILTROS_SALVOS_KEY = "briefing:pedidos:filtros-salvos";
+
+function lerFiltrosSalvos(): FiltroSalvo[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(FILTROS_SALVOS_KEY);
+    return raw ? (JSON.parse(raw) as FiltroSalvo[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function gravarFiltrosSalvos(lista: FiltroSalvo[]) {
+  try { window.localStorage.setItem(FILTROS_SALVOS_KEY, JSON.stringify(lista)); } catch { /* storage indisponível */ }
+}
+
 function monthRange() {
   const d = new Date();
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -143,6 +168,32 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [margemMax, setMargemMax] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("");
   const [produtoFiltro, setProdutoFiltro] = useState("");
+  // Filtros frequentes salvos no navegador (localStorage) — não é modelo
+  // global, não precisa de Firestore nem de rule nova.
+  const [filtrosSalvos, setFiltrosSalvos] = useState<FiltroSalvo[]>([]);
+  useEffect(() => { setFiltrosSalvos(lerFiltrosSalvos()); }, []);
+
+  function salvarFiltroAtual() {
+    const nome = window.prompt("Nome para este filtro:")?.trim();
+    if (!nome) return;
+    const novo: FiltroSalvo = { nome, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro, produtoFiltro };
+    const lista = [...filtrosSalvos.filter((f) => f.nome !== nome), novo];
+    setFiltrosSalvos(lista);
+    gravarFiltrosSalvos(lista);
+  }
+
+  function aplicarFiltroSalvo(f: FiltroSalvo) {
+    setBusca(f.busca); setFiltro(f.filtro);
+    setValorMin(f.valorMin); setValorMax(f.valorMax);
+    setMargemMin(f.margemMin); setMargemMax(f.margemMax);
+    setStatusFiltro(f.statusFiltro); setProdutoFiltro(f.produtoFiltro);
+  }
+
+  function excluirFiltroSalvo(nome: string) {
+    const lista = filtrosSalvos.filter((f) => f.nome !== nome);
+    setFiltrosSalvos(lista);
+    gravarFiltrosSalvos(lista);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -363,7 +414,25 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
             </select>
           </>
         )}
+
+        <button type="button" className="btn btn-xs btn-ghost" style={{ marginLeft: "auto" }} onClick={salvarFiltroAtual}>
+          💾 Salvar filtro atual
+        </button>
       </div>
+
+      {filtrosSalvos.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))" }}>Filtros salvos:</span>
+          {filtrosSalvos.map((f) => (
+            <span key={f.nome} className="severity-chip severity-info" style={{ cursor: "pointer" }}>
+              <button type="button" onClick={() => aplicarFiltroSalvo(f)} style={{ background: "none", border: "none", color: "inherit", font: "inherit", cursor: "pointer", padding: 0 }}>
+                {f.nome}
+              </button>
+              <button type="button" onClick={() => excluirFiltroSalvo(f.nome)} aria-label={`Excluir filtro ${f.nome}`} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, opacity: .7 }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Tabela */}
       <div className="panel">
