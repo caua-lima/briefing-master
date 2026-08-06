@@ -52,6 +52,23 @@ export async function GET(req: Request) {
         ordersMap.set(d.order_id ?? doc.id, d);
       }
 
+    // Cancelamentos/devoluções do período — mesma fonte e mesmo critério que
+    // app/api/ml/metrics/route.ts usa pro Dashboard (não é cálculo novo, só
+    // reaproveitado aqui pra marcar cada pedido).
+    const [retUTC, retBR] = await Promise.all([
+      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+    ]);
+    const cancelIds = new Set<string>();
+    const devolIds = new Set<string>();
+    for (const snap of [retUTC, retBR]) {
+      for (const doc of snap.docs) {
+        const r = doc.data();
+        if (String(r.tipo ?? "") === "devolucao") devolIds.add(doc.id);
+        else cancelIds.add(doc.id);
+      }
+    }
+
     /**
      * Compra com produtos diferentes vira um pacote: o comprador fez UMA venda,
      * mas a API devolve um pedido por produto. Sem juntar, cada linha mostrava
@@ -65,8 +82,21 @@ export async function GET(req: Request) {
       porPacote.set(chave, arr);
     }
 
-    const orders = Array.from(porPacote.values()).map((grupo) => {
-      if (grupo.length === 1) return grupo[0];
+    const orders: FirebaseFirestore.DocumentData[] = Array.from(porPacote.values()).map((grupo) => {
+      // cancelado/devolvido e repasse do MP são checados ANTES do merge —
+      // ml_returns e net_received são gravados por order_id ORIGINAL do ML,
+      // não pelo pack_id que a linha exibida passa a usar.
+      const algumCancelado = grupo.some((o) => cancelIds.has(String(o.order_id ?? "")));
+      const algumDevolvido = grupo.some((o) => devolIds.has(String(o.order_id ?? "")));
+      const netTotal = grupo.reduce((s, o) => s + Number(o.net_received ?? 0), 0);
+      const releaseMax = grupo.reduce((s, o) => (String(o.money_release_date ?? "") > s ? String(o.money_release_date ?? "") : s), "");
+
+      if (grupo.length === 1) {
+        return {
+          ...grupo[0], cancelado: algumCancelado, devolvido: algumDevolvido,
+          net_received: netTotal, money_release_date: releaseMax,
+        } as FirebaseFirestore.DocumentData;
+      }
       // Mais antigo primeiro: a venda herda a data e o id do primeiro pedido.
       grupo.sort((a, b) => String(a.date_created ?? "").localeCompare(String(b.date_created ?? "")));
       const base = grupo[0];
@@ -79,7 +109,11 @@ export async function GET(req: Request) {
         total_amount: grupo.reduce((s, o) => s + Number(o.total_amount ?? 0), 0),
         items: grupo.flatMap((o) => (o.items ?? []) as Record<string, unknown>[]),
         pedidosNoPacote: grupo.length,
-      };
+        cancelado: algumCancelado,
+        devolvido: algumDevolvido,
+        net_received: netTotal,
+        money_release_date: releaseMax,
+      } as FirebaseFirestore.DocumentData;
     });
 
     // Índice de produtos
@@ -173,6 +207,14 @@ export async function GET(req: Request) {
       const lucro = retorno - cmv - imposto;
       const margem = bruto > 0 ? (lucro / bruto) * 100 : 0;
 
+      // Link direto pro anúncio — best-effort: monta a URL padrão do ML a
+      // partir do MLB do primeiro item (não vem da API, então pode não
+      // resolver em casos raros de anúncio removido/alterado).
+      const primeiroMlb = items[0]?.item_id?.trim().toUpperCase() ?? "";
+      const linkAnuncio = /^MLB\d+$/.test(primeiroMlb)
+        ? `https://produto.mercadolivre.com.br/${primeiroMlb.replace(/^MLB/, "MLB-")}`
+        : null;
+
       return {
         order_id: String(o.order_id ?? ""),
         data: String(o.date_created ?? "").slice(0, 10),
@@ -185,6 +227,20 @@ export async function GET(req: Request) {
         bruto, retorno, cmv, envio, taxaML, imposto,
         lucro, margem, vinculado, itens,
         pedidosNoPacote: Number(o.pedidosNoPacote ?? 1),
+        // Cancelamento/devolução (ver ml_returns acima).
+        cancelado: Boolean(o.cancelado),
+        devolvido: Boolean(o.devolvido),
+        // Logística — já salva pelo sync (lib/ml/sync.ts), só repassada aqui.
+        shippingStatus: String(o.shipping_status ?? ""),
+        logisticType: String(o.logistic_type ?? ""),
+        tracking: String(o.tracking ?? ""),
+        estimatedDelivery: String(o.estimated_delivery ?? ""),
+        dateDelivered: String(o.date_delivered ?? ""),
+        // Repasse do Mercado Pago: net_received > 0 = valor CONFIRMADO pelo MP;
+        // sem isso, "retorno" acima é a nossa ESTIMATIVA (mesma que o resto do app usa).
+        netReceived: Number(o.net_received ?? 0) || null,
+        moneyReleaseDate: String(o.money_release_date ?? "") || null,
+        linkAnuncio,
       };
     });
 
