@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { fmtBRL } from "@/lib/domain/calc";
+import { fmtBRL, getMarginStatus } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
 
@@ -128,7 +128,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
   );
 }
 
-export default function PedidosTab() {
+export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number }) {
   const [range, setRange] = useState(() => monthRange());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,7 +217,11 @@ export default function PedidosTab() {
   const margemMedia = filtrados.length
     ? filtrados.reduce((s, p) => s + p.margem, 0) / filtrados.length
     : 0;
-  const margemTag = (m: number) => (m >= 20 ? "tag-g" : m >= 10 ? "tag-y" : "tag-r");
+  // saudável (bateu a meta de margem) / atenção (positiva mas abaixo) / prejuízo (<0)
+  const margemTag = (m: number) => {
+    const s = getMarginStatus(m, metaMargem);
+    return s === "saudavel" ? "tag-g" : s === "atencao" ? "tag-y" : "tag-r";
+  };
 
   return (
     <div className="dash">
