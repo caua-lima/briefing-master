@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL, getMarginStatus } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
@@ -238,6 +238,13 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad" | "canceldevol">("todos");
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
   const [detalhe, setDetalhe] = useState<string | null>(null);
+  // Fecha o drawer com Esc — sem isso, teclado só fecha clicando no X ou fora.
+  useEffect(() => {
+    if (!detalhe) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDetalhe(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [detalhe]);
   // Filtros avançados — texto vazio = sem limite (não força 0).
   const [valorMin, setValorMin] = useState("");
   const [valorMax, setValorMax] = useState("");
@@ -615,9 +622,8 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
           <div className="ped-cards">
             {filtrados.map((p) => {
               const custos = p.cmv + p.envio + p.taxaML + p.imposto;
-              const aberto = detalhe === p.order_id;
               return (
-                <div key={p.order_id} className={`ped-card ${p.lucro >= 0 ? "pos" : "neg"}`} onClick={() => setDetalhe(aberto ? null : p.order_id)}>
+                <div key={p.order_id} className={`ped-card ${p.lucro >= 0 ? "pos" : "neg"}`} onClick={() => setDetalhe(p.order_id)}>
                   <div className="ped-card-top">
                     <span className="ped-card-nome">
                       {p.produto || "—"}
@@ -637,13 +643,8 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
                     <div className="ped-card-cell"><span>Valor</span><b>{fmtBRL(p.valor)}</b></div>
                     <div className="ped-card-cell"><span>Retorno</span><b>{fmtBRL(p.retorno)}</b></div>
                     <div className="ped-card-cell"><span>Custos</span><b style={{ color: "var(--red)" }}>−{fmtBRL(custos)}</b></div>
-                    <div className="ped-card-cell"><span style={{ color: "var(--accent)" }}>{aberto ? "▴ fechar" : "▾ detalhes"}</span></div>
+                    <div className="ped-card-cell"><span style={{ color: "var(--accent)" }}>▾ detalhes</span></div>
                   </div>
-                  {aberto && (
-                    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8, borderTop: "1px solid var(--border)" }}>
-                      <DetalhePedido pedido={p} />
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -667,49 +668,40 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
                 {filtrados.map((p) => {
                   const custos = p.cmv + p.envio + p.taxaML + p.imposto;
                   const prej = p.lucro < 0;
-                  const aberto = detalhe === p.order_id;
                   return (
-                    <Fragment key={p.order_id}>
-                      <tr
-                        onClick={() => setDetalhe(aberto ? null : p.order_id)}
-                        style={{
-                          background: aberto ? "var(--surface2)" : prej ? "rgba(214,90,74,.05)" : undefined,
-                          boxShadow: `inset 3px 0 0 ${prej ? "var(--red)" : "var(--green)"}`,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap", fontSize: ".82rem" }}>
-                          {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".68rem", display: "block", opacity: .7 }}>{p.hora}</span>
-                        </td>
-                        <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
-                          {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
-                          {(p.itens?.length ?? 0) > 1 && (
-                            <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--accent)", background: "rgba(233,169,45,.14)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
-                              {p.itens?.length} PRODUTOS
-                            </span>
-                          )}
-                          <CancelDevolBadge pedido={p} />
-                          <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
-                        </td>
-                        <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
-                        <td style={{ textAlign: "right", color: "var(--text)", whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</td>
-                        <td style={{ textAlign: "right", color: "var(--text)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
-                        <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap" }}>
-                          −{fmtBRL(custos)}
-                          <span style={{ marginLeft: 5, color: "var(--muted)", fontSize: ".7rem" }}>{aberto ? "▴" : "▾"}</span>
-                        </td>
-                        <td style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap", color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</td>
-                        <td><span className={`tag ${margemTag(p.margem)}`}>{p.margem.toFixed(1)}%</span></td>
-                      </tr>
-                      {aberto && (
-                        <tr>
-                          <td colSpan={8} style={{ padding: 0, background: "var(--surface2)" }}>
-                            <DetalhePedido pedido={p} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
+                    <tr
+                      key={p.order_id}
+                      onClick={() => setDetalhe(p.order_id)}
+                      style={{
+                        background: prej ? "rgba(214,90,74,.05)" : undefined,
+                        boxShadow: `inset 3px 0 0 ${prej ? "var(--red)" : "var(--green)"}`,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <td style={{ textAlign: "left", color: "var(--muted)", whiteSpace: "nowrap", fontSize: ".82rem" }}>
+                        {p.data.split("-").reverse().join("/")}<span style={{ fontSize: ".68rem", display: "block", opacity: .7 }}>{p.hora}</span>
+                      </td>
+                      <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
+                        {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                        {(p.itens?.length ?? 0) > 1 && (
+                          <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--accent)", background: "rgba(233,169,45,.14)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
+                            {p.itens?.length} PRODUTOS
+                          </span>
+                        )}
+                        <CancelDevolBadge pedido={p} />
+                        <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
+                      </td>
+                      <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
+                      <td style={{ textAlign: "right", color: "var(--text)", whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</td>
+                      <td style={{ textAlign: "right", color: "var(--text)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(p.retorno)}</td>
+                      <td style={{ textAlign: "right", color: "var(--red)", whiteSpace: "nowrap" }}>
+                        −{fmtBRL(custos)}
+                        <span style={{ marginLeft: 5, color: "var(--muted)", fontSize: ".7rem" }}>▾</span>
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap", color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</td>
+                      <td><span className={`tag ${margemTag(p.margem)}`}>{p.margem.toFixed(1)}%</span></td>
+                    </tr>
                   );
                 })}
               </tbody>
@@ -718,6 +710,27 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
           </>
         )}
       </div>
+
+      {detalhe && (() => {
+        const p = pedidos.find((x) => x.order_id === detalhe);
+        if (!p) return null;
+        return (
+          <div className="drawer-overlay" onClick={() => setDetalhe(null)}>
+            <div className="drawer-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Detalhe do pedido ${p.order_id}`}>
+              <div className="drawer-head">
+                <div>
+                  <div className="drawer-title">{p.produto || "—"}</div>
+                  <div className="drawer-sub">#{p.order_id} · {p.data.split("-").reverse().join("/")} {p.hora}</div>
+                </div>
+                <button type="button" className="drawer-close" onClick={() => setDetalhe(null)} aria-label="Fechar detalhe do pedido">✕</button>
+              </div>
+              <div className="drawer-body">
+                <DetalhePedido pedido={p} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

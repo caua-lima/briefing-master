@@ -927,3 +927,19 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 @media(max-width:520px){
   .dash-greeting{flex-direction:column;align-items:flex-start}
 }
+
+/* =========================================================================
+   Drawer lateral (detalhe do pedido)
+   ========================================================================= */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;animation:drawerFade .18s ease}
+.drawer-panel{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);border-left:1px solid var(--border);box-shadow:-8px 0 32px rgba(0,0,0,.5);z-index:1001;display:flex;flex-direction:column;animation:drawerSlide .22s cubic-bezier(.4,0,.2,1)}
+.drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.drawer-title{font-size:1rem;font-weight:700;color:var(--text-primary,var(--text));line-height:1.35}
+.drawer-sub{font-size:.76rem;color:var(--text-secondary,var(--muted));margin-top:3px}
+.drawer-close{background:none;border:1px solid var(--border);color:var(--text-secondary,var(--muted));width:30px;height:30px;border-radius:8px;cursor:pointer;flex-shrink:0;font-size:.9rem}
+.drawer-close:hover{background:var(--surface-hover,var(--surface2));color:var(--text)}
+.drawer-body{overflow-y:auto;flex:1}
+@keyframes drawerFade{from{opacity:0}to{opacity:1}}
+@keyframes drawerSlide{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@media(prefers-reduced-motion:reduce){.drawer-overlay,.drawer-panel{animation:none}}
+@media(max-width:640px){.drawer-panel{width:100%}}
