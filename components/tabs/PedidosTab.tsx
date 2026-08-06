@@ -142,6 +142,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [margemMin, setMargemMin] = useState("");
   const [margemMax, setMargemMax] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("");
+  const [produtoFiltro, setProdutoFiltro] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -180,14 +181,23 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
       if (mMin != null && !Number.isNaN(mMin) && p.margem < mMin) return false;
       if (mMax != null && !Number.isNaN(mMax) && p.margem > mMax) return false;
       if (statusFiltro && p.status !== statusFiltro) return false;
+      if (produtoFiltro) {
+        const nomes = p.itens?.length ? p.itens.map((i) => i.produto) : [p.produto];
+        if (!nomes.includes(produtoFiltro)) return false;
+      }
       return true;
     });
-  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro]);
+  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro, produtoFiltro]);
 
   const statusOptions = useMemo(
     () => Array.from(new Set(pedidos.map((p) => p.status).filter(Boolean))).sort(),
     [pedidos],
   );
+
+  const produtoOptions = useMemo(() => {
+    const nomes = pedidos.flatMap((p) => (p.itens?.length ? p.itens.map((i) => i.produto) : [p.produto]));
+    return Array.from(new Set(nomes.filter(Boolean))).sort();
+  }, [pedidos]);
 
   /**
    * Consolida por produto os pedidos que estão no filtro atual.
@@ -335,6 +345,21 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
             >
               <option value="">Todos</option>
               {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </>
+        )}
+
+        {produtoOptions.length > 1 && (
+          <>
+            <span style={{ fontSize: ".74rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>Produto:</span>
+            <select
+              value={produtoFiltro}
+              onChange={(e) => setProdutoFiltro(e.target.value)}
+              aria-label="Filtrar por produto"
+              style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none", maxWidth: 200 }}
+            >
+              <option value="">Todos</option>
+              {produtoOptions.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </>
         )}
