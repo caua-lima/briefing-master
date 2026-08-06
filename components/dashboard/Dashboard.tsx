@@ -1385,14 +1385,22 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
           <div className="dash-2col">
             <div className="panel">
               <div className="panel-title" style={{ marginBottom: 14 }}>Composição de Custos</div>
-              {custoRows.map((r) => (
-                <div key={r.label} className="cost-row">
-                  <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
-                  {r.indisponivel
-                    ? <span title="O Mercado Livre não retornou o gasto com ADS. Não mostro R$ 0,00 para não te dar número errado." style={{ color: "#F4B942", fontWeight: 700, fontSize: ".82rem" }}>indisponível</span>
-                    : <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>}
-                </div>
-              ))}
+              {custoRows.map((r) => {
+                const participacao = totalCustos > 0 ? (r.value / totalCustos) * 100 : 0;
+                return (
+                  <div key={r.label} className="cost-row">
+                    <span className="c-lbl"><span className="cost-dot" style={{ background: r.color }} />{r.label}</span>
+                    {r.indisponivel
+                      ? <span title="O Mercado Livre não retornou o gasto com ADS. Não mostro R$ 0,00 para não te dar número errado." style={{ color: "#F4B942", fontWeight: 700, fontSize: ".82rem" }}>indisponível</span>
+                      : (
+                        <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                          <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600 }}>{participacao.toFixed(0)}%</span>
+                          <span style={{ color: "var(--red)", fontWeight: 700 }}>{fmtBRL(r.value)}</span>
+                        </span>
+                      )}
+                  </div>
+                );
+              })}
               <div className="cost-total">
                 <span>Total de custos{adsFalhou && <span style={{ color: "#F4B942", fontWeight: 400, fontSize: ".72rem" }}> (sem ADS)</span>}</span>
                 <span style={{ color: "var(--red)" }}>{fmtBRL(totalCustos)}</span>
