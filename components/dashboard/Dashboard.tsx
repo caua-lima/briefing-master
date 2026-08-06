@@ -725,7 +725,7 @@ function MetasOverviewCard({
           insight={insightMargin}
           minLabel="0%"
           maxLabel={`${metaMargem.toFixed(0)}%`}
-          tooltip="Lucro líquido operacional dividido pelo faturamento líquido. Custos incluídos seguem as regras atuais do Dashboard."
+          tooltip="Lucro líquido operacional dividido pelo retorno (valor da venda − taxa ML − frete) do período. Custos incluídos seguem as regras atuais do Dashboard."
         />
       </div>
     </div>
@@ -1260,7 +1260,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
                   value: mlMetrics.margemComCustos ?? 0,
                   format: "percent",
                   tone: (mlMetrics.margemComCustos ?? 0) >= (goals?.metaMargem ?? 10) ? "pos" : "warn",
-                  tooltip: "Lucro líquido dividido pelo faturamento líquido do período.",
+                  tooltip: "Lucro líquido dividido pelo retorno (valor da venda − taxa ML − frete) do período — não pelo faturamento bruto nem pelo líquido.",
                   delta: { current: mlMetrics.margemComCustos ?? 0, previous: prevMetrics?.margemComCustos, mode: "points" },
                 },
                 {
