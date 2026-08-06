@@ -164,3 +164,18 @@ export function totalCustosMes(custos: Cost[], mes: string): number {
     return s;
   }, 0);
 }
+
+// ── Badge de margem — usado em Pedidos, Ads e onde mais precisar de um
+// selo consistente de "saudável / atenção / prejuízo" ──────────────────
+export type MarginStatus = "saudavel" | "atencao" | "prejuizo";
+
+/** saudável = bateu a meta; atenção = positiva mas abaixo da meta; prejuízo = negativa. */
+export function getMarginStatus(margem: number, metaMargem = 10): MarginStatus {
+  if (margem < 0) return "prejuizo";
+  if (margem >= metaMargem) return "saudavel";
+  return "atencao";
+}
+
+export function getMarginStatusLabel(status: MarginStatus): string {
+  return status === "saudavel" ? "Margem saudável" : status === "atencao" ? "Margem em atenção" : "Prejuízo";
+}
