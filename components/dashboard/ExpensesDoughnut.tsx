@@ -6,10 +6,34 @@ import {
   Tooltip,
   Legend,
   type TooltipItem,
+  type Plugin,
 } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
+import { fmtBRL } from "@/lib/domain/calc";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
+
+/** Desenha "total gasto" no vão do meio do donut — sem isso o buraco fica vazio. */
+const centerTextPlugin: Plugin<"doughnut"> = {
+  id: "centerText",
+  afterDraw(chart) {
+    const total = (chart.data.datasets[0]?.data as number[] | undefined)?.reduce((s, v) => s + v, 0) ?? 0;
+    const { ctx, chartArea } = chart;
+    if (!chartArea) return;
+    const cx = (chartArea.left + chartArea.right) / 2;
+    const cy = (chartArea.top + chartArea.bottom) / 2;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#F7F3E8";
+    ctx.font = "700 17px sans-serif";
+    ctx.fillText(fmtBRL(total), cx, cy - 8);
+    ctx.fillStyle = "#B5B2A6";
+    ctx.font = "600 10px sans-serif";
+    ctx.fillText("TOTAL DE GASTOS", cx, cy + 12);
+    ctx.restore();
+  },
+};
 
 type Props = {
   produto: number;
@@ -89,7 +113,7 @@ export default function ExpensesDoughnut({ produto, envio = 0, taxasML, imposto 
 
   return (
     <div style={{ height: 220, position: "relative" }}>
-      <Doughnut data={data} options={options} />
+      <Doughnut data={data} options={options} plugins={[centerTextPlugin]} />
     </div>
   );
 }
