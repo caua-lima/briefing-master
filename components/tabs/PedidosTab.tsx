@@ -136,6 +136,9 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad">("todos");
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
   const [detalhe, setDetalhe] = useState<string | null>(null);
+  // Filtros avançados — texto vazio = sem limite (não força 0).
+  const [valorMin, setValorMin] = useState("");
+  const [valorMax, setValorMax] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,14 +163,18 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
+    const min = valorMin.trim() ? Number(valorMin.replace(",", ".")) : null;
+    const max = valorMax.trim() ? Number(valorMax.replace(",", ".")) : null;
     return pedidos.filter((p) => {
       if (q && !(p.produto.toLowerCase().includes(q) || p.order_id.includes(q))) return false;
       if (filtro === "lucro" && p.lucro <= 0) return false;
       if (filtro === "prejuizo" && p.lucro >= 0) return false;
       if (filtro === "semcad" && p.vinculado) return false;
+      if (min != null && !Number.isNaN(min) && p.valor < min) return false;
+      if (max != null && !Number.isNaN(max) && p.valor > max) return false;
       return true;
     });
-  }, [pedidos, busca, filtro]);
+  }, [pedidos, busca, filtro, valorMin, valorMax]);
 
   /**
    * Consolida por produto os pedidos que estão no filtro atual.
@@ -268,6 +275,25 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
             }}
           >{label}</button>
         ))}
+      </div>
+
+      {/* Filtros avançados */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: ".74rem", color: "var(--text-muted,var(--muted))", fontWeight: 600 }}>Valor:</span>
+        <input
+          type="number" inputMode="decimal" placeholder="mín." value={valorMin}
+          onChange={(e) => setValorMin(e.target.value)}
+          style={{ width: 90, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+        />
+        <span style={{ color: "var(--text-muted,var(--muted))" }}>–</span>
+        <input
+          type="number" inputMode="decimal" placeholder="máx." value={valorMax}
+          onChange={(e) => setValorMax(e.target.value)}
+          style={{ width: 90, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+        />
+        {(valorMin || valorMax) && (
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setValorMin(""); setValorMax(""); }}>Limpar valor</button>
+        )}
       </div>
 
       {/* Tabela */}
