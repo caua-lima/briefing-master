@@ -6,12 +6,14 @@ import {
   fmtBRL,
   formatMesBR,
   formatDateBR,
+  formatDateLong,
   mesAtual,
   diaAtualNoMes,
   diasNoMes,
   clamp,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
+import { useAuth } from "@/lib/firebase/auth-context";
 import ExpensesDoughnut from "./ExpensesDoughnut";
 import PerformanceGauge from "./PerformanceGauge";
 import DateRangePicker from "./DateRangePicker";
@@ -892,7 +894,17 @@ function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; fro
 }
 
 // ── Dashboard principal ────────────────────────────────────────
+function saudacao(): string {
+  const h = new Date().getHours();
+  if (h < 5) return "Boa madrugada";
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }: Props) {
+  const { user } = useAuth();
+  const primeiroNome = (user?.displayName ?? user?.email ?? "").split(/[ @]/)[0];
   const mes = mesAtual();
 
   const [range, setRange] = useState<{ from: string; to: string }>(() => monthRange(mes));
@@ -924,6 +936,11 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
     if (isMesAtual) return "Mês atual";
     return "Personalizado";
   }, [range, isMesAtual]);
+
+  // Período inclui o dia de hoje ainda em andamento — vendas de hoje podem
+  // continuar entrando, então qualquer soma do período pode subir depois.
+  // Isso é diferente de "hoje" sozinho, onde o usuário já sabe que é parcial.
+  const periodoParcial = useMemo(() => range.to === todayISO() && range.from !== range.to, [range]);
 
   const prevLabel = useMemo(
     () => (isFullMonth(range.from, range.to) ? "vs mês anterior" : "vs período anterior"),
@@ -1095,14 +1112,27 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
 
   return (
     <div className="dash">
+      {/* ── Barra de contexto ── */}
+      <div className="dash-greeting">
+        <div>
+          <div className="dash-greeting-title">{saudacao()}{primeiroNome ? `, ${primeiroNome}` : ""}</div>
+          <div className="dash-greeting-date">{formatDateLong(todayISO())}</div>
+        </div>
+        {periodoParcial && (
+          <span className="dash-parcial-badge" title="O dia de hoje ainda não terminou — vendas continuam entrando e os números deste período podem mudar.">
+            ⏳ Período inclui hoje — dados ainda podem mudar
+          </span>
+        )}
+      </div>
+
       {/* ── Topbar ── */}
       <div className="dash-top">
         <div className="dash-top-left">
           <span className="acct-chip">
             <span className="acct-dot" /> Conta ML <b>{mlAccount?.user?.nickname ?? "—"}</b>
           </span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={handleRefreshML} disabled={mlRefreshing} style={{ opacity: mlRefreshing ? 0.6 : 1 }}>
-            {mlRefreshing ? "Sincronizando..." : "⟳ Atualizar ML"}
+          <button type="button" className="btn btn-sm btn-ghost" onClick={handleRefreshML} disabled={mlRefreshing} aria-busy={mlRefreshing} style={{ opacity: mlRefreshing ? 0.7 : 1, cursor: mlRefreshing ? "not-allowed" : "pointer" }}>
+            {mlRefreshing ? (<><span className="dash-spinner" aria-hidden="true" /> Sincronizando…</>) : "⟳ Atualizar ML"}
           </button>
           {(mlMetrics && mlMetrics.totalAds === 0) && (
             <button type="button" className="btn btn-xs btn-ghost" onClick={runDiagAds} title="Diagnóstico do ADS">ADS</button>

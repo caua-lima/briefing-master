@@ -910,3 +910,20 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .exec-kpi-value{font-family:var(--font-display);font-size:clamp(1.35rem,2.6vw,1.7rem);font-weight:800;line-height:1.1;overflow-wrap:anywhere}
 @media(max-width:900px){.exec-kpis{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.exec-kpis{grid-template-columns:1fr}}
+
+/* =========================================================================
+   Barra de contexto (saudação + data + aviso de período parcial)
+   ========================================================================= */
+.dash-greeting{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.dash-greeting-title{font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--text-primary,var(--text))}
+.dash-greeting-date{font-size:.8rem;color:var(--text-secondary,var(--muted));margin-top:1px}
+.dash-greeting-date::first-letter{text-transform:uppercase}
+.dash-parcial-badge{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;color:var(--warning,var(--yellow));background:var(--warning-soft,rgba(242,169,59,.12));border:1px solid rgba(242,169,59,.3);padding:5px 12px;border-radius:8px;white-space:nowrap}
+
+.dash-spinner{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:currentColor;animation:dashSpin .7s linear infinite;vertical-align:-1px}
+@keyframes dashSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.dash-spinner{animation:none}}
+
+@media(max-width:520px){
+  .dash-greeting{flex-direction:column;align-items:flex-start}
+}
