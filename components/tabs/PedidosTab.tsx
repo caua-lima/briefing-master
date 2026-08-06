@@ -77,6 +77,17 @@ function gravarFiltrosSalvos(lista: FiltroSalvo[]) {
   try { window.localStorage.setItem(FILTROS_SALVOS_KEY, JSON.stringify(lista)); } catch { /* storage indisponível */ }
 }
 
+/** Badge de cancelado/devolvido — mesmo padrão visual usado em "SEM CADASTRO". */
+function CancelDevolBadge({ pedido: p }: { pedido: Pedido }) {
+  if (!p.cancelado && !p.devolvido) return null;
+  const texto = p.devolvido ? "DEVOLVIDO" : "CANCELADO";
+  return (
+    <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--danger,var(--red))", background: "var(--danger-soft,rgba(214,90,74,.12))", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
+      {texto}
+    </span>
+  );
+}
+
 function monthRange() {
   const d = new Date();
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -557,6 +568,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
                       {p.produto || "—"}
                       {!p.vinculado && <span className="ped-badge semcad" style={{ marginLeft: 6 }}>SEM CADASTRO</span>}
                       {(p.itens?.length ?? 0) > 1 && <span className="ped-badge multi" style={{ marginLeft: 6 }}>{p.itens?.length} PRODUTOS</span>}
+                      <CancelDevolBadge pedido={p} />
                     </span>
                     <span className="ped-card-lucro" style={{ color: p.lucro >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(p.lucro)}</span>
                   </div>
@@ -622,6 +634,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
                               {p.itens?.length} PRODUTOS
                             </span>
                           )}
+                          <CancelDevolBadge pedido={p} />
                           <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>#{p.order_id}</span>
                         </td>
                         <td style={{ color: "var(--muted)" }}>{p.qtd}</td>
