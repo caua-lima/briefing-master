@@ -11,6 +11,7 @@ import {
   diaAtualNoMes,
   diasNoMes,
   clamp,
+  yesterdayStr,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -22,6 +23,8 @@ import { authedFetch } from "@/lib/api/authed-fetch";
 import { getGaugeStatus, getGaugeStatusLabel, getGoalInsight, getRevenuePaceLabel, getRevenuePaceStatus, rawGoalPercent, selectActiveGoal } from "@/lib/domain/gauge";
 import ActionCenter from "./ActionCenter";
 import ExecutiveKpis, { Delta } from "./ExecutiveKpis";
+import RevenueLineChart from "./RevenueLineChart";
+import DayDetailModal from "./DayDetailModal";
 
 type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void; onNavigate?: (tab: string) => void };
 
@@ -463,6 +466,32 @@ function DevolucoesPanel({ total, emAndamento, detalhe }: { total: number; emAnd
       ) : (
         <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>Sem devoluções no período. </div>
       )}
+    </div>
+  );
+}
+
+// ── Hoje vs Ontem (leitura curta em texto) ──────────────────────
+function HojeVsOntem({ hoje, ontem }: { hoje?: HojeBreakdown; ontem: MlMetrics | null }) {
+  if (!hoje) return null;
+  const margemHoje = hoje.faturamentoBruto > 0 ? (hoje.lucroLiquido / hoje.faturamentoBruto) * 100 : 0;
+
+  let diffTxt: React.ReactNode = null;
+  if (ontem && ontem.faturamentoLiquido !== 0) {
+    const diffPct = ((hoje.faturamentoLiquido - ontem.faturamentoLiquido) / Math.abs(ontem.faturamentoLiquido)) * 100;
+    const tone = diffPct >= 0 ? "var(--success)" : "var(--danger)";
+    diffTxt = (
+      <> Diferença de <b style={{ color: tone }}>{diffPct >= 0 ? "+" : ""}{diffPct.toFixed(1)}%</b> vs ontem ({fmtBRL(ontem.faturamentoLiquido)}).</>
+    );
+  } else if (ontem) {
+    diffTxt = <> Ontem não teve faturamento pra comparar.</>;
+  }
+
+  return (
+    <div className="panel" style={{ fontSize: ".92rem", lineHeight: 1.6, color: "var(--text-secondary,var(--muted))" }}>
+      <b style={{ color: "var(--text-primary,var(--text))" }}>Hoje:</b>{" "}
+      {fmtBRL(hoje.faturamentoLiquido)} faturados, {hoje.pedidos} pedido(s), margem de{" "}
+      <b style={{ color: margemHoje >= 0 ? "var(--success)" : "var(--danger)" }}>{margemHoje.toFixed(1)}%</b>.
+      {diffTxt}
     </div>
   );
 }
@@ -912,9 +941,15 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   const [mlLoading, setMlLoading] = useState(false);
   const [mlMetrics, setMlMetrics] = useState<MlMetrics | null>(null);
   const [prevMetrics, setPrevMetrics] = useState<MlMetrics | null>(null);
+  // "Ontem" fixo (independe do período selecionado no DateRangePicker) —
+  // alimenta só o bloco "Hoje vs Ontem". Reaproveita a mesma rota de
+  // métricas com from=to=ontem, igual ao "hoje" que a rota já calcula
+  // sempre — nenhuma mudança na rota, nenhum cálculo novo.
+  const [ontemMetrics, setOntemMetrics] = useState<MlMetrics | null>(null);
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   function runDiagAds() {
@@ -990,6 +1025,14 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
     authedFetch("/api/ml/account", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (mountedRef.current) setMlAccount(j); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const ontemISO = yesterdayStr();
+    authedFetch(`/api/ml/metrics?from=${ontemISO}&to=${ontemISO}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (mountedRef.current) setOntemMetrics(j); })
       .catch(() => {});
   }, []);
 
@@ -1258,6 +1301,22 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               )}
             </section>
           )}
+
+          {/* Hoje vs Ontem — leitura rápida em texto */}
+          {mlMetrics && <HojeVsOntem hoje={mlMetrics.hoje} ontem={ontemMetrics} />}
+
+          {/* Fluxo e tendência */}
+          <section>
+            <div className="panel-head">
+              <span className="panel-title">Fluxo e tendência</span>
+              <span className="panel-sub">Faturamento líquido por dia no período selecionado</span>
+            </div>
+            <div className="panel">
+              <RevenueLineChart serie={mlMetrics?.serieDiaria ?? []} loading={mlLoading} onSelectDay={setSelectedDay} />
+            </div>
+          </section>
+
+          {selectedDay && <DayDetailModal date={selectedDay} onClose={() => setSelectedDay(null)} />}
 
           {/* Vendas do dia */}
           <VendasDoDiaHero hoje={mlMetrics?.hoje} />
