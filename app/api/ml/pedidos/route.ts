@@ -89,7 +89,11 @@ export async function GET(req: Request) {
     for (const doc of prodSnap.docs) {
       const d = doc.data();
       const entry: ProdutoData = {
-        custo: Number(d.custo ?? 0),
+        // Custo médio ponderado (livro de movimentações do Estoque) tem
+        // prioridade — é a MESMA fonte que app/api/ml/metrics/route.ts usa
+        // pro Dashboard. Cair pro custo manual só quando ainda não há
+        // custoMedio calculado (produto sem movimentação lançada ainda).
+        custo: Number(d.custoMedio ?? d.custo ?? 0),
         imposto: Number(d.imposto ?? 0),
         impostoFaixas: Array.isArray(d.impostoFaixas) ? (d.impostoFaixas as ImpostoFaixa[]) : undefined,
         name: String(d.name ?? ""),
