@@ -959,6 +959,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   // métricas com from=to=ontem, igual ao "hoje" que a rota já calcula
   // sempre — nenhuma mudança na rota, nenhum cálculo novo.
   const [ontemMetrics, setOntemMetrics] = useState<MlMetrics | null>(null);
+  const [estoqueForecast, setEstoqueForecast] = useState<{ vendas: Record<string, number>; dias: number } | null>(null);
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -1048,6 +1049,15 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
     authedFetch(`/api/ml/metrics?from=${ontemISO}&to=${ontemISO}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (mountedRef.current) setOntemMetrics(j); })
+      .catch(() => {});
+  }, []);
+
+  // Cobertura real de estoque pro "Produtos em risco" (Fase 5) — mesma rota
+  // que a aba Estoque já usa (cache de 60s no servidor, não pesa duas vezes).
+  useEffect(() => {
+    authedFetch("/api/ml/estoque-forecast?dias=30", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (mountedRef.current && j) setEstoqueForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? 30 }); })
       .catch(() => {});
   }, []);
 
@@ -1439,7 +1449,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
 
           {/* Produtos em risco — estoque baixo e/ou margem abaixo da meta */}
           <ProdutosEmRisco
-            produtos={findProdutosEmRisco(data.products, mlMetrics?.anuncios ?? [], goals?.metaMargem ?? 10)}
+            produtos={findProdutosEmRisco(data.products, mlMetrics?.anuncios ?? [], goals?.metaMargem ?? 10, estoqueForecast)}
             onVerEstoque={onVerEstoque}
           />
 

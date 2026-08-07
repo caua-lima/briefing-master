@@ -1,8 +1,11 @@
 // Helper puro pro bloco "Produtos em risco" do Dashboard — cruza estoque
 // (data.products) com o desempenho por anúncio do período (mlMetrics.anuncios)
-// já calculados em outro lugar. Não inventa cobertura de estoque em dias
-// (isso é a Fase 5, com o cálculo de giro médio) — aqui é só um limiar
-// simples de unidades, provisório e documentado como tal.
+// já calculados em outro lugar, e — quando disponível — a cobertura real em
+// dias (Fase 5, via /api/ml/estoque-forecast). Sem esse dado (endpoint
+// falhou, ou ainda carregando), cai num limiar simples de unidades como
+// modo degradado, pra não deixar a lista vazia à toa.
+
+import { calculateStockCoverage, getCoverageStatus } from "./estoque";
 
 export type RiskAnuncio = {
   item_id: string;
@@ -27,6 +30,7 @@ export type ProdutoEmRisco = {
   nome: string;
   qtdLocal: number;
   margem: number | null;
+  coberturaDias: number | null;
   motivos: RiskMotivo[];
 };
 
@@ -37,14 +41,17 @@ function normalizeMlb(s: string): string {
 }
 
 /**
- * Produtos ativos com estoque local baixo (≤5 un., limiar provisório — a
- * cobertura de verdade em dias entra na Fase 5) e/ou margem no período
- * abaixo da meta. Só entra na lista quem tem pelo menos um dos dois riscos.
+ * Produtos ativos em risco por estoque e/ou margem. Estoque: se
+ * `forecast` vier informado, usa cobertura real (<7 dias = crítico, mesma
+ * régua do getCoverageStatus da aba Estoque); sem forecast, cai no limiar
+ * provisório de unidades (modo degradado). Margem: abaixo da meta no
+ * período, só quando o anúncio teve venda de verdade pra medir.
  */
 export function findProdutosEmRisco(
   produtos: RiskProduto[],
   anuncios: RiskAnuncio[],
   metaMargem: number,
+  forecast?: { vendas: Record<string, number>; dias: number } | null,
 ): ProdutoEmRisco[] {
   const margemPorMlb = new Map<string, { margem: number; vendas: number }>();
   for (const a of anuncios) {
@@ -59,7 +66,15 @@ export function findProdutosEmRisco(
     const desempenho = mlbs.map((m) => margemPorMlb.get(m)).find((d) => d != null) ?? null;
 
     const motivos: RiskMotivo[] = [];
-    if (qtd > 0 && qtd <= ESTOQUE_BAIXO_LIMIAR) motivos.push("estoque-baixo");
+    let coberturaDias: number | null = null;
+    if (forecast) {
+      const vendasPeriodo = forecast.vendas[p.id] ?? 0;
+      coberturaDias = calculateStockCoverage(qtd, vendasPeriodo, forecast.dias);
+      const status = getCoverageStatus(coberturaDias, qtd, vendasPeriodo);
+      if (status === "critico") motivos.push("estoque-baixo");
+    } else if (qtd > 0 && qtd <= ESTOQUE_BAIXO_LIMIAR) {
+      motivos.push("estoque-baixo");
+    }
     if (desempenho && desempenho.vendas > 0 && metaMargem > 0 && desempenho.margem < metaMargem) motivos.push("margem-baixa");
 
     if (motivos.length === 0) continue;
@@ -68,10 +83,16 @@ export function findProdutosEmRisco(
       nome: p.name,
       qtdLocal: qtd,
       margem: desempenho?.margem ?? null,
+      coberturaDias,
       motivos,
     });
   }
 
-  // Pior primeiro: os dois riscos juntos, depois quem tem menos estoque.
-  return riscos.sort((a, b) => (b.motivos.length - a.motivos.length) || (a.qtdLocal - b.qtdLocal));
+  // Pior primeiro: os dois riscos juntos, depois quem tem menos cobertura/estoque.
+  return riscos.sort((a, b) => {
+    const porMotivos = b.motivos.length - a.motivos.length;
+    if (porMotivos !== 0) return porMotivos;
+    if (a.coberturaDias != null && b.coberturaDias != null) return a.coberturaDias - b.coberturaDias;
+    return a.qtdLocal - b.qtdLocal;
+  });
 }

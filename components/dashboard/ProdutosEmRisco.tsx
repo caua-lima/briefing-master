@@ -22,7 +22,9 @@ export default function ProdutosEmRisco({ produtos, onVerEstoque }: { produtos: 
             </span>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {p.motivos.includes("estoque-baixo") && (
-                <span className="severity-chip severity-warning">{p.qtdLocal} un. em estoque</span>
+                <span className="severity-chip severity-warning">
+                  {p.coberturaDias != null ? `cobertura ${p.coberturaDias.toFixed(0)}d` : `${p.qtdLocal} un. em estoque`}
+                </span>
               )}
               {p.motivos.includes("margem-baixa") && p.margem != null && (
                 <span className="severity-chip severity-critical">margem {p.margem.toFixed(1)}%</span>
