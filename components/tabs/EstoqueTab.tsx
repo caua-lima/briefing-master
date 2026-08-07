@@ -558,6 +558,12 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   async function handleSave() {
     if (!qNum || (!isAjuste && qNum <= 0)) { alert("Informe a quantidade."); return; }
     if (precisaCusto && cNum <= 0) { alert("Informe o custo unitário."); return; }
+    if (!obs.trim()) { alert("Informe o motivo desta movimentação — fica registrado no histórico do produto."); return; }
+    // Ajuste negativo tira estoque sem ser nem venda nem envio — a confirmação
+    // extra existe pra não zerar produto por engano digitando o sinal errado.
+    if (isAjuste && qNum < 0 && !confirm(`Confirma a baixa de ${Math.abs(qNum)} unidade(s) de "${product.name || "produto"}"?\n\nMotivo: ${obs.trim()}`)) {
+      return;
+    }
     setSaving(true);
     try {
       await addMovimento({
@@ -621,12 +627,12 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
       </div>
 
       <div className="config-field">
-        <label>Observação (opcional)</label>
-        <input type="text" placeholder="Ex: fornecedor João, NF 123" value={obs} onChange={(e) => setObs(e.target.value)} />
+        <label>Motivo</label>
+        <input type="text" placeholder="Ex: fornecedor João, NF 123 / quebra no transporte / contagem física" value={obs} onChange={(e) => setObs(e.target.value)} />
       </div>
 
       <div className="modal-btns">
-        <button type="button" className="btn btn-success" onClick={handleSave} disabled={saving}>{saving ? "Salvando…" : "Lançar"}</button>
+        <button type="button" className="btn btn-success" onClick={handleSave} disabled={saving || !obs.trim()}>{saving ? "Salvando…" : "Lançar"}</button>
         <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
       </div>
     </Modal>
