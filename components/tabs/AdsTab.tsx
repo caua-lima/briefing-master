@@ -300,6 +300,37 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
     { lbl: "Lucro após ads (geral)", val: fmtBRL(t.lucroLiq), tone: t.lucroLiq >= 0 ? "pos" : "neg", sub: `direto: ${fmtBRL(t.lucroLiqDireto)}`, cor: t.lucroLiq >= 0 ? "var(--green)" : "var(--red)" },
   ];
 
+  // CSV da tabela FILTRADA (linhasFiltradas), gerado no cliente — sem rota
+  // nova. ";" como separador porque num() já usa vírgula decimal (pt-BR);
+  // com "," como separador o Excel quebraria o número ao abrir.
+  function exportarCsv() {
+    const header = pub
+      ? ["Anúncio", "MLB", "Ação", "Orç/dia", "ROAS alvo", "Alterado", "Impressões", "Cliques", "CTR %", "CPC", "Investido", "Vendas diretas", "Unidades", "ACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %"]
+      : ["Anúncio", "MLB", "Ação", "Orç/dia", "ROAS alvo", "Alterado", "Investido", "Vendas totais", "Unidades", "% via ads", "TACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %"];
+
+    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, alt, reco, lucroAtual, margemAtual }) => {
+      const comuns = [i.title || i.itemId, i.itemId, reco.label, i.dailyBudget > 0 ? num(i.dailyBudget, 2) : "", i.roasTarget > 0 ? num(i.roasTarget, 1) : "", alt.dataHora || ""];
+      const fim = [
+        i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "",
+        lucroAtual != null ? num(lucroAtual, 2) : "", margemAtual != null ? num(margemAtual, 1) : "",
+      ];
+      return pub
+        ? [...comuns, num(i.prints), num(i.clicks), num(ctr, 2), num(cpc, 2), num(i.cost, 2), num(v, 2), num(un), num(a, 1), ...fim]
+        : [...comuns, num(i.cost, 2), num(v, 2), num(un), num(pctAds, 0), num(a, 1), ...fim];
+    });
+
+    const linhas2 = [header, ...linhasCsv]
+      .map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
+      .join("\r\n");
+    const blob = new Blob([String.fromCharCode(0xfeff) + linhas2], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a2 = document.createElement("a");
+    a2.href = url;
+    a2.download = `ads-${pub ? "publicidade" : "geral"}-${range.from}_a_${range.to}.csv`;
+    a2.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="dash">
       <div className="tab-head">
@@ -405,7 +436,14 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
 
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: 8 }}>
-              <span className="panel-title">Por anúncio — {pub ? "publicidade" : "geral"}</span>
+              <span className="panel-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                Por anúncio — {pub ? "publicidade" : "geral"}
+                {linhasFiltradas.length > 0 && (
+                  <button type="button" className="btn btn-xs btn-ghost" onClick={exportarCsv} title="Exporta as linhas visíveis (respeitando os filtros ativos) em CSV">
+                    ⬇ Exportar CSV
+                  </button>
+                )}
+              </span>
               <span className="panel-sub" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 ordenado por investimento
                 {semGastoNoPeriodo > 0 && (
