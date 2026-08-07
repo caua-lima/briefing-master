@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
+import { calculateBreakEvenRoas } from "@/lib/domain/ads";
 
 // Status da CAMPANHA (não do anúncio no catálogo) — é o que decide se o
 // investimento está de fato rodando agora.
@@ -331,6 +332,7 @@ export default function AdsTab() {
                         <th style={{ textAlign: "right" }}>Un</th>
                         <th style={{ textAlign: "right" }}>ACOS</th>
                         <th style={{ textAlign: "right" }}>ROAS</th>
+                        <th style={{ textAlign: "right" }} title="ROAS mínimo pra não perder dinheiro com o ad — abaixo dele, o gasto consome mais que o lucro que sobra antes do ads.">Break-even</th>
                         <th style={{ textAlign: "right" }}>Lucro</th>
                         <th style={{ textAlign: "right" }}>Margem</th>
                       </tr>
@@ -346,6 +348,7 @@ export default function AdsTab() {
                         <th style={{ textAlign: "right" }}>% via ads</th>
                         <th style={{ textAlign: "right" }}>TACOS</th>
                         <th style={{ textAlign: "right" }}>ROAS</th>
+                        <th style={{ textAlign: "right" }} title="ROAS mínimo pra não perder dinheiro com o ad — abaixo dele, o gasto consome mais que o lucro que sobra antes do ads.">Break-even</th>
                         <th style={{ textAlign: "right" }}>Lucro</th>
                         <th style={{ textAlign: "right" }}>Margem</th>
                       </tr>
@@ -360,6 +363,8 @@ export default function AdsTab() {
                       const ctr = i.prints > 0 ? (i.clicks / i.prints) * 100 : 0;
                       const cpc = i.clicks > 0 ? i.cost / i.clicks : 0;
                       const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
+                      const breakEven = calculateBreakEvenRoas(v, pub ? i.lucroDiretoAntesAds : i.lucroAntesAds);
+                      const abaixoDoBreakEven = breakEven != null && i.cost > 0 && r < breakEven;
                       return (
                         <tr key={i.itemId}>
                           <td className="ads-name" style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
@@ -394,6 +399,14 @@ export default function AdsTab() {
                           {!pub && <td data-label="% via ads" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(pctAds, 0)}%</td>}
                           <td data-label={pub ? "ACOS" : "TACOS"} style={{ textAlign: "right", color: corAcos(a, v > 0), fontWeight: 700, whiteSpace: "nowrap" }}>{v > 0 ? `${num(a, 1)}%` : "—"}</td>
                           <td data-label="ROAS" style={{ textAlign: "right", color: corRoas(r), fontWeight: 700, whiteSpace: "nowrap" }}>{i.cost > 0 ? `${num(r, 2)}x` : "—"}</td>
+                          <td
+                            data-label="Break-even"
+                            style={{ textAlign: "right", whiteSpace: "nowrap", color: abaixoDoBreakEven ? "var(--red)" : "var(--muted)", fontWeight: abaixoDoBreakEven ? 700 : 400 }}
+                            title={breakEven == null ? "Sem lucro antes do ads pra calcular — nenhum ROAS cobriria o custo do produto neste volume." : abaixoDoBreakEven ? "ROAS atual está abaixo do break-even — o ad está consumindo mais do que o lucro que sobraria sem ele." : undefined}
+                          >
+                            {breakEven != null ? `${num(breakEven, 2)}x` : "—"}
+                            {abaixoDoBreakEven ? " ⚠" : ""}
+                          </td>
                           {pub && !i.diretoDisponivel ? (
                             <>
                               <td data-label="Lucro" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }} title="Sem venda vinculada no período pra calcular a margem do lucro direto — não é prejuízo, é falta de dado.">—</td>
