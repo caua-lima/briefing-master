@@ -127,6 +127,12 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   const [loading, setLoading] = useState(true);
   const [statusFiltro, setStatusFiltro] = useState<StatusAnuncio | "">("");
   const [lucroFiltro, setLucroFiltro] = useState<"" | "lucro" | "prejuizo">("");
+  const [roasMin, setRoasMin] = useState("");
+  const [roasMax, setRoasMax] = useState("");
+  const [acosMin, setAcosMin] = useState("");
+  const [acosMax, setAcosMax] = useState("");
+  const [investMin, setInvestMin] = useState("");
+  const [investMax, setInvestMax] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   type Tentativa = { tentativa: string; status?: number; body?: string; erro?: string };
   const [diag, setDiag] = useState<{
@@ -245,12 +251,26 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
 
   // Filtros da tabela — o Diagnóstico acima continua olhando o período
   // inteiro (linhas), só a tabela reage a esses filtros.
-  const linhasFiltradas = useMemo(() => linhas.filter((l) => {
-    if (statusFiltro && l.i.status !== statusFiltro) return false;
-    if (lucroFiltro === "lucro" && (l.lucroAtual == null || l.lucroAtual <= 0)) return false;
-    if (lucroFiltro === "prejuizo" && (l.lucroAtual == null || l.lucroAtual >= 0)) return false;
-    return true;
-  }), [linhas, statusFiltro, lucroFiltro]);
+  const linhasFiltradas = useMemo(() => {
+    const rMin = roasMin.trim() ? Number(roasMin.replace(",", ".")) : null;
+    const rMax = roasMax.trim() ? Number(roasMax.replace(",", ".")) : null;
+    const acMin = acosMin.trim() ? Number(acosMin.replace(",", ".")) : null;
+    const acMax = acosMax.trim() ? Number(acosMax.replace(",", ".")) : null;
+    const invMin = investMin.trim() ? Number(investMin.replace(",", ".")) : null;
+    const invMax = investMax.trim() ? Number(investMax.replace(",", ".")) : null;
+    return linhas.filter((l) => {
+      if (statusFiltro && l.i.status !== statusFiltro) return false;
+      if (lucroFiltro === "lucro" && (l.lucroAtual == null || l.lucroAtual <= 0)) return false;
+      if (lucroFiltro === "prejuizo" && (l.lucroAtual == null || l.lucroAtual >= 0)) return false;
+      if (rMin != null && !Number.isNaN(rMin) && l.r < rMin) return false;
+      if (rMax != null && !Number.isNaN(rMax) && l.r > rMax) return false;
+      if (acMin != null && !Number.isNaN(acMin) && l.a < acMin) return false;
+      if (acMax != null && !Number.isNaN(acMax) && l.a > acMax) return false;
+      if (invMin != null && !Number.isNaN(invMin) && l.i.cost < invMin) return false;
+      if (invMax != null && !Number.isNaN(invMax) && l.i.cost > invMax) return false;
+      return true;
+    });
+  }, [linhas, statusFiltro, lucroFiltro, roasMin, roasMax, acosMin, acosMax, investMin, investMax]);
 
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
   const vendasTot = pub ? t.direct : t.total;
@@ -437,6 +457,32 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                 )}
               </span>
             </div>
+
+            {items.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600 }}>ROAS:</span>
+                <input type="number" inputMode="decimal" placeholder="mín." value={roasMin} onChange={(e) => setRoasMin(e.target.value)} style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
+                <span style={{ color: "var(--text-muted,var(--muted))" }}>–</span>
+                <input type="number" inputMode="decimal" placeholder="máx." value={roasMax} onChange={(e) => setRoasMax(e.target.value)} style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
+
+                <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>{pub ? "ACOS" : "TACOS"} %:</span>
+                <input type="number" inputMode="decimal" placeholder="mín." value={acosMin} onChange={(e) => setAcosMin(e.target.value)} style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
+                <span style={{ color: "var(--text-muted,var(--muted))" }}>–</span>
+                <input type="number" inputMode="decimal" placeholder="máx." value={acosMax} onChange={(e) => setAcosMax(e.target.value)} style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
+
+                <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>Investido R$:</span>
+                <input type="number" inputMode="decimal" placeholder="mín." value={investMin} onChange={(e) => setInvestMin(e.target.value)} style={{ width: 74, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
+                <span style={{ color: "var(--text-muted,var(--muted))" }}>–</span>
+                <input type="number" inputMode="decimal" placeholder="máx." value={investMax} onChange={(e) => setInvestMax(e.target.value)} style={{ width: 74, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
+
+                {(roasMin || roasMax || acosMin || acosMax || investMin || investMax) && (
+                  <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setRoasMin(""); setRoasMax(""); setAcosMin(""); setAcosMax(""); setInvestMin(""); setInvestMax(""); }}>
+                    Limpar faixas
+                  </button>
+                )}
+              </div>
+            )}
+
             {loading ? (
               <div className="empty-state">Carregando…</div>
             ) : items.length === 0 ? (
