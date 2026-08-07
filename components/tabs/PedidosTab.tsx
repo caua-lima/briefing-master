@@ -59,6 +59,9 @@ type FiltroSalvo = {
   valorMin: string; valorMax: string;
   margemMin: string; margemMax: string;
   statusFiltro: string; produtoFiltro: string;
+  // Opcionais: filtros salvos antes desses dois existirem continuam válidos.
+  adsFiltro?: "" | "com" | "sem";
+  logisticaFiltro?: string;
 };
 
 const FILTROS_SALVOS_KEY = "briefing:pedidos:filtros-salvos";
@@ -86,6 +89,12 @@ function CancelDevolBadge({ pedido: p }: { pedido: Pedido }) {
       {texto}
     </span>
   );
+}
+
+/** Algum item do pedido teve investimento em Ads no período (mesma fonte que a aba Ads usa). */
+function pedidoTemAds(p: Pedido, adsByItem: Record<string, number>): boolean {
+  const mlbs = p.itens?.length ? p.itens.map((i) => i.mlb) : [];
+  return mlbs.some((m) => m && (adsByItem[m] ?? 0) > 0);
 }
 
 function monthRange() {
@@ -238,6 +247,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad" | "canceldevol">("todos");
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
   const [detalhe, setDetalhe] = useState<string | null>(null);
+  const [adsByItem, setAdsByItem] = useState<Record<string, number>>({});
   // Fecha o drawer com Esc — sem isso, teclado só fecha clicando no X ou fora.
   useEffect(() => {
     if (!detalhe) return;
@@ -252,6 +262,8 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [margemMax, setMargemMax] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("");
   const [produtoFiltro, setProdutoFiltro] = useState("");
+  const [adsFiltro, setAdsFiltro] = useState<"" | "com" | "sem">("");
+  const [logisticaFiltro, setLogisticaFiltro] = useState("");
   // Filtros frequentes salvos no navegador (localStorage) — não é modelo
   // global, não precisa de Firestore nem de rule nova.
   const [filtrosSalvos, setFiltrosSalvos] = useState<FiltroSalvo[]>([]);
@@ -260,7 +272,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   function salvarFiltroAtual() {
     const nome = window.prompt("Nome para este filtro:")?.trim();
     if (!nome) return;
-    const novo: FiltroSalvo = { nome, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro, produtoFiltro };
+    const novo: FiltroSalvo = { nome, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro, produtoFiltro, adsFiltro, logisticaFiltro };
     const lista = [...filtrosSalvos.filter((f) => f.nome !== nome), novo];
     setFiltrosSalvos(lista);
     gravarFiltrosSalvos(lista);
@@ -271,6 +283,7 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
     setValorMin(f.valorMin); setValorMax(f.valorMax);
     setMargemMin(f.margemMin); setMargemMax(f.margemMax);
     setStatusFiltro(f.statusFiltro); setProdutoFiltro(f.produtoFiltro);
+    setAdsFiltro(f.adsFiltro ?? ""); setLogisticaFiltro(f.logisticaFiltro ?? "");
   }
 
   function excluirFiltroSalvo(nome: string) {
@@ -282,11 +295,18 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await authedFetch(`/api/ml/pedidos?from=${range.from}&to=${range.to}`, { cache: "no-store" });
-      if (res.ok) setPedidos((await res.json()).pedidos ?? []);
+      const [resPedidos, resAds] = await Promise.all([
+        authedFetch(`/api/ml/pedidos?from=${range.from}&to=${range.to}`, { cache: "no-store" }),
+        // Mesma rota que a aba Ads usa — gasto por MLB no período. Best-effort:
+        // se falhar, o filtro "com/sem Ads" só some, o resto da tela funciona normal.
+        authedFetch(`/api/ml/ads-spend?from=${range.from}&to=${range.to}`, { cache: "no-store" }).catch(() => null),
+      ]);
+      if (resPedidos.ok) setPedidos((await resPedidos.json()).pedidos ?? []);
       else setPedidos([]);
+      setAdsByItem(resAds?.ok ? (await resAds.json()).adsByItem ?? {} : {});
     } catch {
       setPedidos([]);
+      setAdsByItem({});
     } finally {
       setLoading(false);
     }
@@ -321,9 +341,15 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
         const nomes = p.itens?.length ? p.itens.map((i) => i.produto) : [p.produto];
         if (!nomes.includes(produtoFiltro)) return false;
       }
+      if (adsFiltro) {
+        const temAds = pedidoTemAds(p, adsByItem);
+        if (adsFiltro === "com" && !temAds) return false;
+        if (adsFiltro === "sem" && temAds) return false;
+      }
+      if (logisticaFiltro && p.logisticType !== logisticaFiltro) return false;
       return true;
     });
-  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro, produtoFiltro]);
+  }, [pedidos, busca, filtro, valorMin, valorMax, margemMin, margemMax, statusFiltro, produtoFiltro, adsFiltro, adsByItem, logisticaFiltro]);
 
   const statusOptions = useMemo(
     () => Array.from(new Set(pedidos.map((p) => p.status).filter(Boolean))).sort(),
@@ -334,6 +360,11 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
     const nomes = pedidos.flatMap((p) => (p.itens?.length ? p.itens.map((i) => i.produto) : [p.produto]));
     return Array.from(new Set(nomes.filter(Boolean))).sort();
   }, [pedidos]);
+
+  const logisticaOptions = useMemo(
+    () => Array.from(new Set(pedidos.map((p) => p.logisticType).filter(Boolean))).sort(),
+    [pedidos],
+  );
 
   /**
    * Consolida por produto os pedidos que estão no filtro atual.
@@ -498,6 +529,33 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
             >
               <option value="">Todos</option>
               {produtoOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </>
+        )}
+
+        <span style={{ fontSize: ".74rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>Ads:</span>
+        <select
+          value={adsFiltro}
+          onChange={(e) => setAdsFiltro(e.target.value as "" | "com" | "sem")}
+          aria-label="Filtrar por investimento em Ads"
+          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+        >
+          <option value="">Todos</option>
+          <option value="com">Com Ads</option>
+          <option value="sem">Sem Ads</option>
+        </select>
+
+        {logisticaOptions.length > 1 && (
+          <>
+            <span style={{ fontSize: ".74rem", color: "var(--text-muted,var(--muted))", fontWeight: 600, marginLeft: 6 }}>Logística:</span>
+            <select
+              value={logisticaFiltro}
+              onChange={(e) => setLogisticaFiltro(e.target.value)}
+              aria-label="Filtrar por tipo de logística"
+              style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}
+            >
+              <option value="">Todas</option>
+              {logisticaOptions.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           </>
         )}
