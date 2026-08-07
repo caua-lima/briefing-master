@@ -60,6 +60,20 @@ const RECO_ICON: Record<AdRecommendation["tone"], string> = {
   critical: "▾", warning: "!", opportunity: "↑", info: "i",
 };
 
+const DIAG_TONE_COLOR: Record<"pos" | "neg" | "warn" | "muted", string> = {
+  pos: "var(--success,var(--green))", neg: "var(--danger,var(--red))", warn: "var(--warning,#F4B942)", muted: "var(--text-muted,var(--muted))",
+};
+
+function DiagCard({ label, nome, valor, tone }: { label: string; nome: string; valor: string; tone: "pos" | "neg" | "warn" | "muted" }) {
+  return (
+    <div style={{ background: "var(--surface-raised,var(--surface2))", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+      <div style={{ fontSize: ".68rem", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-muted,var(--muted))", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: ".84rem", fontWeight: 700, color: DIAG_TONE_COLOR[tone], marginBottom: 2 }}>{valor}</div>
+      <div style={{ fontSize: ".72rem", color: "var(--text-secondary,var(--muted))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={nome}>{nome}</div>
+    </div>
+  );
+}
+
 function RecommendationBadge({ reco }: { reco: AdRecommendation }) {
   return (
     <span className={`severity-chip ${RECO_TONE_CLASS[reco.tone]}`} style={{ whiteSpace: "nowrap" }}>
@@ -189,6 +203,44 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   }, { cost: 0, clicks: 0, prints: 0, direct: 0, directUn: 0, adSales: 0, total: 0, totalUn: 0, lucroAntes: 0, lucroLiq: 0, lucroLiqDireto: 0, semDadoDireto: 0 }), [items]);
 
   const pub = modo === "pub";
+
+  // Uma passada só com tudo derivado por anúncio — tabela e diagnóstico usam
+  // o mesmo resultado, evita calcular break-even/recomendação duas vezes.
+  const linhas = useMemo(() => items.map((i) => {
+    const v = pub ? i.directSales : i.totalSales;
+    const un = pub ? i.directUnits : i.totalUnits;
+    const r = i.cost > 0 ? v / i.cost : 0;
+    const a = v > 0 ? (i.cost / v) * 100 : 0;
+    const ctr = i.prints > 0 ? (i.clicks / i.prints) * 100 : 0;
+    const cpc = i.clicks > 0 ? i.cost / i.clicks : 0;
+    const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
+    const breakEven = calculateBreakEvenRoas(v, pub ? i.lucroDiretoAntesAds : i.lucroAntesAds);
+    const abaixoDoBreakEven = breakEven != null && i.cost > 0 && r < breakEven;
+    const alt = alteracaoInfo(i.lastUpdated);
+    const lucroAtual = pub ? (i.diretoDisponivel ? i.lucroDiretoLiquido : null) : i.lucroLiquido;
+    const margemAtual = v > 0 && lucroAtual != null ? (lucroAtual / v) * 100 : null;
+    const reco = getAdRecommendation({
+      clicks: i.clicks, vendas: v, cost: i.cost, lucro: lucroAtual, roas: r,
+      roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
+      metaMargem, podeAlterar: alt.podeAlterar,
+    });
+    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, alt, lucroAtual, margemAtual, reco };
+  }), [items, pub, metaMargem]);
+
+  // Diagnóstico de Ads: melhores/piores casos do período, pra achar o que
+  // precisa de atenção sem ler a tabela inteira.
+  const diagnostico = useMemo(() => {
+    const comCusto = linhas.filter((l) => l.i.cost > 0);
+    const maisLucrativo = linhas.filter((l) => l.lucroAtual != null).sort((a, b) => (b.lucroAtual ?? 0) - (a.lucroAtual ?? 0))[0] ?? null;
+    const maiorDesperdicio = linhas.filter((l) => l.lucroAtual != null && l.lucroAtual < 0).sort((a, b) => (a.lucroAtual ?? 0) - (b.lucroAtual ?? 0))[0] ?? null;
+    const maiorRoas = comCusto.length ? comCusto.reduce((m, l) => (l.r > m.r ? l : m)) : null;
+    const menorRoas = comCusto.length ? comCusto.reduce((m, l) => (l.r < m.r ? l : m)) : null;
+    const semRetorno = linhas.filter((l) => l.i.cost > 0 && l.v === 0);
+    const investimentoSemRetorno = semRetorno.reduce((s, l) => s + l.i.cost, 0);
+    const paraRevisao = linhas.filter((l) => l.reco.acao === "pausar" || l.reco.acao === "reduzir");
+    return { maisLucrativo, maiorDesperdicio, maiorRoas, menorRoas, semRetorno, investimentoSemRetorno, paraRevisao };
+  }, [linhas]);
+
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
   const vendasTot = pub ? t.direct : t.total;
   const unTot = pub ? t.directUn : t.totalUn;
@@ -295,6 +347,28 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
             ))}
           </div>
 
+          {items.length > 0 && (
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 12 }}>Diagnóstico de Ads</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+                {diagnostico.maisLucrativo && (
+                  <DiagCard label="Mais lucrativo" nome={diagnostico.maisLucrativo.i.title || diagnostico.maisLucrativo.i.itemId} valor={fmtBRL(diagnostico.maisLucrativo.lucroAtual ?? 0)} tone="pos" />
+                )}
+                {diagnostico.maiorDesperdicio && (
+                  <DiagCard label="Maior desperdício" nome={diagnostico.maiorDesperdicio.i.title || diagnostico.maiorDesperdicio.i.itemId} valor={fmtBRL(diagnostico.maiorDesperdicio.lucroAtual ?? 0)} tone="neg" />
+                )}
+                {diagnostico.maiorRoas && diagnostico.maiorRoas.r > 0 && (
+                  <DiagCard label="Maior ROAS" nome={diagnostico.maiorRoas.i.title || diagnostico.maiorRoas.i.itemId} valor={`${num(diagnostico.maiorRoas.r, 2)}x`} tone="pos" />
+                )}
+                {diagnostico.menorRoas && diagnostico.menorRoas.r > 0 && (
+                  <DiagCard label="Menor ROAS" nome={diagnostico.menorRoas.i.title || diagnostico.menorRoas.i.itemId} valor={`${num(diagnostico.menorRoas.r, 2)}x`} tone="neg" />
+                )}
+                <DiagCard label="Investimento sem retorno" nome={`${diagnostico.semRetorno.length} anúncio(s) sem nenhuma venda no período`} valor={fmtBRL(diagnostico.investimentoSemRetorno)} tone={diagnostico.investimentoSemRetorno > 0 ? "neg" : "muted"} />
+                <DiagCard label="Anúncios pra revisar" nome="lucro negativo ou ROAS abaixo do alvo e do break-even" valor={String(diagnostico.paraRevisao.length)} tone={diagnostico.paraRevisao.length > 0 ? "warn" : "muted"} />
+              </div>
+            </div>
+          )}
+
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: 8 }}>
               <span className="panel-title">Por anúncio — {pub ? "publicidade" : "geral"}</span>
@@ -372,24 +446,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                     )}
                   </thead>
                   <tbody>
-                    {items.map((i) => {
-                      const v = pub ? i.directSales : i.totalSales;
-                      const un = pub ? i.directUnits : i.totalUnits;
-                      const r = i.cost > 0 ? v / i.cost : 0;
-                      const a = v > 0 ? (i.cost / v) * 100 : 0;
-                      const ctr = i.prints > 0 ? (i.clicks / i.prints) * 100 : 0;
-                      const cpc = i.clicks > 0 ? i.cost / i.clicks : 0;
-                      const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
-                      const breakEven = calculateBreakEvenRoas(v, pub ? i.lucroDiretoAntesAds : i.lucroAntesAds);
-                      const abaixoDoBreakEven = breakEven != null && i.cost > 0 && r < breakEven;
-                      const alt = alteracaoInfo(i.lastUpdated);
-                      const lucroAtual = pub ? (i.diretoDisponivel ? i.lucroDiretoLiquido : null) : i.lucroLiquido;
-                      const margemAtual = v > 0 && lucroAtual != null ? (lucroAtual / v) * 100 : null;
-                      const reco = getAdRecommendation({
-                        clicks: i.clicks, vendas: v, cost: i.cost, lucro: lucroAtual, roas: r,
-                        roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
-                        metaMargem, podeAlterar: alt.podeAlterar,
-                      });
+                    {linhas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, alt, reco }) => {
                       return (
                         <tr key={i.itemId}>
                           <td className="ads-name" style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
