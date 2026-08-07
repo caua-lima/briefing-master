@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
-import { calculateBreakEvenRoas } from "@/lib/domain/ads";
+import { calculateBreakEvenRoas, getAdRecommendation, type AdRecommendation } from "@/lib/domain/ads";
 
 // Status da CAMPANHA (não do anúncio no catálogo) — é o que decide se o
 // investimento está de fato rodando agora.
@@ -53,6 +53,21 @@ function StatusTag({ item }: { item: AdItem }) {
   );
 }
 
+const RECO_TONE_CLASS: Record<AdRecommendation["tone"], string> = {
+  critical: "severity-critical", warning: "severity-warning", opportunity: "severity-opportunity", info: "severity-info",
+};
+const RECO_ICON: Record<AdRecommendation["tone"], string> = {
+  critical: "▾", warning: "!", opportunity: "↑", info: "i",
+};
+
+function RecommendationBadge({ reco }: { reco: AdRecommendation }) {
+  return (
+    <span className={`severity-chip ${RECO_TONE_CLASS[reco.tone]}`} style={{ whiteSpace: "nowrap" }}>
+      <span aria-hidden="true">{RECO_ICON[reco.tone]}</span> {reco.label}
+    </span>
+  );
+}
+
 /**
  * Data e hora exatas da última alteração, não só "hoje"/"há Nd" — o campo
  * `last_updated` da campanha pode não significar "você editou a campanha":
@@ -91,7 +106,7 @@ const corAcos = (a: number, tem: boolean) => (!tem ? "var(--muted)" : a <= 25 ? 
 // negativo — mesmos limiares usados no resto do dashboard.
 const corMargem = (m: number) => (m >= 15 ? "var(--green)" : m >= 0 ? "var(--yellow)" : "var(--red)");
 
-export default function AdsTab() {
+export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   const [range, setRange] = useState(() => mesAteHoje());
   const [modo, setModo] = useState<Modo>("pub");
   const [items, setItems] = useState<AdItem[]>([]);
@@ -320,6 +335,7 @@ export default function AdsTab() {
                     {pub ? (
                       <tr>
                         <th style={{ textAlign: "left" }}>Anúncio</th>
+                        <th style={{ textAlign: "left" }}>Ação</th>
                         <th style={{ textAlign: "right" }}>Orç/dia</th>
                         <th style={{ textAlign: "right" }}>ROAS alvo</th>
                         <th style={{ textAlign: "right" }}>Alterado</th>
@@ -339,6 +355,7 @@ export default function AdsTab() {
                     ) : (
                       <tr>
                         <th style={{ textAlign: "left" }}>Anúncio</th>
+                        <th style={{ textAlign: "left" }}>Ação</th>
                         <th style={{ textAlign: "right" }}>Orç/dia</th>
                         <th style={{ textAlign: "right" }}>ROAS alvo</th>
                         <th style={{ textAlign: "right" }}>Alterado</th>
@@ -365,6 +382,14 @@ export default function AdsTab() {
                       const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
                       const breakEven = calculateBreakEvenRoas(v, pub ? i.lucroDiretoAntesAds : i.lucroAntesAds);
                       const abaixoDoBreakEven = breakEven != null && i.cost > 0 && r < breakEven;
+                      const alt = alteracaoInfo(i.lastUpdated);
+                      const lucroAtual = pub ? (i.diretoDisponivel ? i.lucroDiretoLiquido : null) : i.lucroLiquido;
+                      const margemAtual = v > 0 && lucroAtual != null ? (lucroAtual / v) * 100 : null;
+                      const reco = getAdRecommendation({
+                        clicks: i.clicks, vendas: v, cost: i.cost, lucro: lucroAtual, roas: r,
+                        roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
+                        metaMargem, podeAlterar: alt.podeAlterar,
+                      });
                       return (
                         <tr key={i.itemId}>
                           <td className="ads-name" style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
@@ -372,10 +397,10 @@ export default function AdsTab() {
                             {i.title || i.itemId}
                             <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{i.itemId}</span>
                           </td>
+                          <td data-label="Ação" style={{ textAlign: "left", whiteSpace: "nowrap" }}><RecommendationBadge reco={reco} /></td>
                           <td data-label="Orç/dia" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{i.dailyBudget > 0 ? fmtBRL(i.dailyBudget) : "—"}</td>
                           <td data-label="ROAS alvo" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{i.roasTarget > 0 ? `${num(i.roasTarget, 1)}x` : "—"}</td>
                           {(() => {
-                            const alt = alteracaoInfo(i.lastUpdated);
                             const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#F4B942";
                             return (
                               <td data-label="Alterado" style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}

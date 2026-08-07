@@ -395,7 +395,7 @@ function AppShell() {
                   />
                 )}
                 {activeTab === "pedidos" && <PedidosTab metaMargem={data.goals?.metaMargem ?? undefined} />}
-                {activeTab === "ads" && <AdsTab />}
+                {activeTab === "ads" && <AdsTab metaMargem={data.goals?.metaMargem ?? undefined} />}
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
