@@ -125,6 +125,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   const [modo, setModo] = useState<Modo>("pub");
   const [items, setItems] = useState<AdItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<StatusAnuncio | "">("");
   const [lucroFiltro, setLucroFiltro] = useState<"" | "lucro" | "prejuizo">("");
   const [roasMin, setRoasMin] = useState("");
@@ -258,7 +259,9 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
     const acMax = acosMax.trim() ? Number(acosMax.replace(",", ".")) : null;
     const invMin = investMin.trim() ? Number(investMin.replace(",", ".")) : null;
     const invMax = investMax.trim() ? Number(investMax.replace(",", ".")) : null;
+    const q = busca.trim().toLowerCase();
     return linhas.filter((l) => {
+      if (q && !(l.i.title.toLowerCase().includes(q) || l.i.itemId.toLowerCase().includes(q))) return false;
       if (statusFiltro && l.i.status !== statusFiltro) return false;
       if (lucroFiltro === "lucro" && (l.lucroAtual == null || l.lucroAtual <= 0)) return false;
       if (lucroFiltro === "prejuizo" && (l.lucroAtual == null || l.lucroAtual >= 0)) return false;
@@ -270,7 +273,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
       if (invMax != null && !Number.isNaN(invMax) && l.i.cost > invMax) return false;
       return true;
     });
-  }, [linhas, statusFiltro, lucroFiltro, roasMin, roasMax, acosMin, acosMax, investMin, investMax]);
+  }, [linhas, busca, statusFiltro, lucroFiltro, roasMin, roasMax, acosMin, acosMax, investMin, investMax]);
 
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
   const vendasTot = pub ? t.direct : t.total;
@@ -460,6 +463,10 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
 
             {items.length > 0 && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                <input
+                  type="text" placeholder="Buscar produto…" value={busca} onChange={(e) => setBusca(e.target.value)}
+                  style={{ minWidth: 160, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text)", fontSize: ".78rem", outline: "none" }}
+                />
                 <span style={{ fontSize: ".72rem", color: "var(--text-muted,var(--muted))", fontWeight: 600 }}>ROAS:</span>
                 <input type="number" inputMode="decimal" placeholder="mín." value={roasMin} onChange={(e) => setRoasMin(e.target.value)} style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 8px", color: "var(--text)", fontSize: ".78rem", outline: "none" }} />
                 <span style={{ color: "var(--text-muted,var(--muted))" }}>–</span>
