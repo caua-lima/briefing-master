@@ -125,6 +125,8 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   const [modo, setModo] = useState<Modo>("pub");
   const [items, setItems] = useState<AdItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusFiltro, setStatusFiltro] = useState<StatusAnuncio | "">("");
+  const [lucroFiltro, setLucroFiltro] = useState<"" | "lucro" | "prejuizo">("");
   const [erro, setErro] = useState<string | null>(null);
   type Tentativa = { tentativa: string; status?: number; body?: string; erro?: string };
   const [diag, setDiag] = useState<{
@@ -240,6 +242,15 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
     const paraRevisao = linhas.filter((l) => l.reco.acao === "pausar" || l.reco.acao === "reduzir");
     return { maisLucrativo, maiorDesperdicio, maiorRoas, menorRoas, semRetorno, investimentoSemRetorno, paraRevisao };
   }, [linhas]);
+
+  // Filtros da tabela — o Diagnóstico acima continua olhando o período
+  // inteiro (linhas), só a tabela reage a esses filtros.
+  const linhasFiltradas = useMemo(() => linhas.filter((l) => {
+    if (statusFiltro && l.i.status !== statusFiltro) return false;
+    if (lucroFiltro === "lucro" && (l.lucroAtual == null || l.lucroAtual <= 0)) return false;
+    if (lucroFiltro === "prejuizo" && (l.lucroAtual == null || l.lucroAtual >= 0)) return false;
+    return true;
+  }), [linhas, statusFiltro, lucroFiltro]);
 
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
   const vendasTot = pub ? t.direct : t.total;
@@ -383,17 +394,45 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                   </span>
                 )}
                 {items.length > 0 && (
-                  <span style={{ display: "flex", gap: 6 }}>
+                  <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {(["ativo", "pausado", "config_indisponivel", "sem_campanha"] as const).map((s) => {
                       const n = items.filter((i) => i.status === s).length;
                       if (!n) return null;
                       const m = STATUS_META[s];
+                      const ativo = statusFiltro === s;
                       return (
-                        <span key={s} style={{ fontSize: ".68rem", fontWeight: 700, color: m.cor, background: m.bg, padding: "1px 7px", borderRadius: 5 }}>
+                        <button
+                          key={s} type="button" title={`Filtrar: só ${m.label.toLowerCase()}`}
+                          onClick={() => setStatusFiltro(ativo ? "" : s)}
+                          style={{
+                            fontSize: ".68rem", fontWeight: 700, color: m.cor, background: m.bg, padding: "1px 7px",
+                            borderRadius: 5, border: ativo ? `1px solid ${m.cor}` : "1px solid transparent", cursor: "pointer",
+                          }}
+                        >
                           {n} {m.label.toLowerCase()}
-                        </span>
+                        </button>
                       );
                     })}
+                    {(["lucro", "prejuizo"] as const).map((f) => {
+                      const ativo = lucroFiltro === f;
+                      const cor = f === "lucro" ? "var(--success,var(--green))" : "var(--danger,var(--red))";
+                      return (
+                        <button
+                          key={f} type="button" onClick={() => setLucroFiltro(ativo ? "" : f)}
+                          style={{
+                            fontSize: ".68rem", fontWeight: 700, color: cor, background: "transparent", padding: "1px 7px",
+                            borderRadius: 5, border: `1px solid ${ativo ? cor : "var(--border)"}`, cursor: "pointer",
+                          }}
+                        >
+                          {f === "lucro" ? "lucrativos" : "prejuízo"}
+                        </button>
+                      );
+                    })}
+                    {(statusFiltro || lucroFiltro) && (
+                      <button type="button" onClick={() => { setStatusFiltro(""); setLucroFiltro(""); }} style={{ fontSize: ".68rem", color: "var(--text-muted,var(--muted))", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                        limpar filtro
+                      </button>
+                    )}
                   </span>
                 )}
               </span>
@@ -402,6 +441,8 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
               <div className="empty-state">Carregando…</div>
             ) : items.length === 0 ? (
               <div className="empty-state"><span className="empty-ico">📣</span>Sem dados de Ads no período.</div>
+            ) : linhasFiltradas.length === 0 ? (
+              <div className="empty-state"><span className="empty-ico">📣</span>Nenhum anúncio bate com esse filtro.</div>
             ) : (
               <div className="table-wrapper" style={{ border: "none" }}>
                 <table className="tbl-modern tbl-cards">
@@ -446,7 +487,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                     )}
                   </thead>
                   <tbody>
-                    {linhas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, alt, reco }) => {
+                    {linhasFiltradas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, alt, reco }) => {
                       return (
                         <tr key={i.itemId}>
                           <td className="ads-name" style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
