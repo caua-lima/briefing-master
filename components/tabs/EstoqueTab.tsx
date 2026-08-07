@@ -5,6 +5,7 @@ import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product 
 import { movIdRemessa, remessaTemBaixa, type Remessa } from "@/lib/domain/remessas";
 import { addMovimento, deleteMovimento, deleteProduct, ignorarRemessaFull, reabrirRemessaFull, upsertProduct, watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
+import { getCoverageStatus } from "@/lib/domain/estoque";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -201,6 +202,24 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   // Venda potencial = todo o estoque × preço de venda atual do ML.
   const valorPotencialVenda = data.products.reduce((s, p) => s + previsaoDe(p, estoqueML, forecast).valorPotencial, 0);
 
+  // Indicadores de reposição (Fase 5) — cobertura real via forecast, só
+  // produtos ativos (produto descontinuado não precisa de alerta de compra).
+  const resumoCobertura = useMemo(() => {
+    let ruptura = 0, critico = 0, repor = 0, encalhado = 0, valorEmRisco = 0;
+    for (const p of data.products) {
+      if (!p.ativo) continue;
+      const f = previsaoDe(p, estoqueML, forecast);
+      const vendasPeriodo = forecast.vendas[p.id] ?? 0;
+      const coberturaDias = Number.isFinite(f.cobertura) ? f.cobertura : null;
+      const status = getCoverageStatus(coberturaDias, f.total, vendasPeriodo);
+      if (f.total <= 0) ruptura++;
+      if (status === "critico") { critico++; valorEmRisco += f.total * custoMedioDe(p); }
+      else if (status === "repor") repor++;
+      else if (status === "encalhado") { encalhado++; valorEmRisco += f.total * custoMedioDe(p); }
+    }
+    return { ruptura, critico, repor, encalhado, valorEmRisco };
+  }, [data.products, estoqueML, forecast]);
+
   function onAdd() {
     setEditProduct({ id: newId(), name: "", custo: "", sku: "", imposto: "", mlbs: [""], ativo: true });
   }
@@ -235,6 +254,11 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         <div className="kpi k-warn"><div className="k-lbl">Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
         <div className="kpi k-pos"><div className="k-lbl">No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Venda potencial</div><div className="k-val">{fmtBRL(valorPotencialVenda)}</div><div className="k-sub">estoque × preço ML atual</div></div>
+        <div className="kpi k-neg"><div className="k-lbl">Em ruptura</div><div className="k-val" style={{ color: resumoCobertura.ruptura > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.ruptura}</div><div className="k-sub">estoque total zerado</div></div>
+        <div className="kpi k-neg"><div className="k-lbl">Cobertura crítica</div><div className="k-val" style={{ color: resumoCobertura.critico > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.critico}</div><div className="k-sub">&lt; 7 dias de giro</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Cobertura baixa</div><div className="k-val" style={{ color: resumoCobertura.repor > 0 ? "var(--yellow)" : "var(--muted)" }}>{resumoCobertura.repor}</div><div className="k-sub">7–15 dias, repor em breve</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Capital parado</div><div className="k-val" style={{ color: resumoCobertura.encalhado > 0 ? "#F4B942" : "var(--muted)" }}>{resumoCobertura.encalhado}</div><div className="k-sub">sem venda no período</div></div>
+        <div className="kpi k-neg"><div className="k-lbl">Valor em risco</div><div className="k-val" style={{ color: resumoCobertura.valorEmRisco > 0 ? "var(--red)" : "var(--muted)" }}>{fmtBRL(resumoCobertura.valorEmRisco)}</div><div className="k-sub">crítico + encalhado × custo médio</div></div>
       </div>
 
       {/* Busca */}
