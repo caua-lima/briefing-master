@@ -1387,6 +1387,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               metaDiariaAtiva={metaDiariaAtiva}
               pedidosHoje={mlMetrics.pedidosHoje ?? 0}
               produtos={data.products}
+              estoqueForecast={estoqueForecast}
               onNavigate={onNavigate}
             />
           )}

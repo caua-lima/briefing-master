@@ -3,6 +3,8 @@
 // aqui inventa dado: quando falta informação (ex.: ADS indisponível), o
 // alerta avisa disso em vez de fingir um número.
 
+import { getCoverageStatus } from "./estoque";
+
 export type AlertSeverity = "critical" | "warning" | "opportunity" | "success" | "info";
 export type AlertCategoria = "margem" | "ads" | "estoque" | "meta" | "custos" | "pedidos" | "devolucoes";
 export type AlertTab = "ads" | "estoque" | "metas" | "pedidos" | "dre" | "custos";
@@ -88,13 +90,15 @@ export type BuildAlertsInput = {
   metaDiariaAtiva: number | null;
   pedidosHoje: number;
   produtos: AlertProduto[];
+  /** Vendas por produto num período fixo (30d) via /api/ml/estoque-forecast — opcional, some se indisponível. */
+  estoqueForecast?: { vendas: Record<string, number>; dias: number } | null;
 };
 
 export function buildActionAlerts(input: BuildAlertsInput): ActionAlert[] {
   const {
     anuncios, margemAtual, metaMargem, totalAds, adsFalhou,
     vendasCanceladas, vendasDevolvidas, faturamentoBruto, projecao, activeMeta, metaIndex,
-    faturamentoHoje, metaDiariaAtiva, pedidosHoje, produtos,
+    faturamentoHoje, metaDiariaAtiva, pedidosHoje, produtos, estoqueForecast,
   } = input;
   const alerts: ActionAlert[] = [];
 
@@ -133,6 +137,31 @@ export function buildActionAlerts(input: BuildAlertsInput): ActionAlert[] {
       ctaTab: "estoque",
       valorRef: -1,
     });
+  }
+
+  // ALERTA — capital parado: tem estoque, mas zero venda no período do
+  // forecast (30d por padrão). Diferente de "ruptura" (que é falta de
+  // estoque) — aqui é excesso sem giro, dinheiro parado no galpão.
+  if (estoqueForecast) {
+    for (const p of produtos) {
+      if (!p.ativo) continue;
+      const qtd = p.qtdLocal ?? 0;
+      if (qtd <= 0) continue;
+      const vendasPeriodo = estoqueForecast.vendas[p.id] ?? 0;
+      const coberturaDias = qtd > 0 && vendasPeriodo > 0 ? (qtd / (vendasPeriodo / estoqueForecast.dias)) : null;
+      const status = getCoverageStatus(coberturaDias, qtd, vendasPeriodo);
+      if (status !== "encalhado") continue;
+      alerts.push({
+        chave: `encalhado-${p.id}`,
+        severity: "warning",
+        categoria: "estoque",
+        titulo: `${p.name} sem nenhuma venda em ${estoqueForecast.dias} dias`,
+        explicacao: `${qtd} unidade(s) paradas no estoque, zero venda no período — capital parado no galpão.`,
+        ctaLabel: "Ver Estoque",
+        ctaTab: "estoque",
+        valorRef: qtd,
+      });
+    }
   }
 
   // ALERTA — margem líquida abaixo da meta
