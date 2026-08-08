@@ -12,6 +12,7 @@ import {
   diasNoMes,
   clamp,
   yesterdayStr,
+  projetarMes,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -1126,21 +1127,14 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
 
   const projecao = useMemo(() => {
     if (!isMesAtual || !mlMetrics) return 0;
-    const diaAtual = diaAtualNoMes();
-    const totalDias = diasNoMes(mes);
-    if (diaAtual <= 0) return 0;
-    return (fatLiquido / diaAtual) * totalDias;
+    return projetarMes(fatLiquido, diaAtualNoMes(), diasNoMes(mes));
   }, [isMesAtual, mlMetrics, fatLiquido, mes]);
 
   // Projeção de LUCRO: escala a parte variável (sem custos op.) e mantém o
   // custo operacional do mês fixo.
   const projecaoLucro = useMemo(() => {
     if (!isMesAtual || !mlMetrics) return 0;
-    const diaAtual = diaAtualNoMes();
-    const totalDias = diasNoMes(mes);
-    if (diaAtual <= 0) return 0;
-    const variavel = mlMetrics.lucroSemCustos;
-    return (variavel / diaAtual) * totalDias - (mlMetrics.custosOperacionais ?? 0);
+    return projetarMes(mlMetrics.lucroSemCustos, diaAtualNoMes(), diasNoMes(mes)) - (mlMetrics.custosOperacionais ?? 0);
   }, [isMesAtual, mlMetrics, mes]);
 
   // Meta ativa do mês (1, 2 ou 3) — única fonte, usada pelo resumo executivo,

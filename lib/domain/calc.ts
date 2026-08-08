@@ -152,6 +152,16 @@ export function totalCustosDia(custos: Cost[], dateISO = todayStr()): number {
   }, 0);
 }
 
+/**
+ * Projeção linear de fechamento do mês: assume que o ritmo médio até hoje se
+ * mantém pelos dias restantes. `diaAtual` <= 0 (mês ainda não começou) não
+ * dá pra projetar, retorna 0 em vez de dividir por zero.
+ */
+export function projetarMes(valorAcumulado: number, diaAtual: number, totalDiasMes: number): number {
+  if (diaAtual <= 0) return 0;
+  return (valorAcumulado / diaAtual) * totalDiasMes;
+}
+
 export function totalCustosMes(custos: Cost[], mes: string): number {
   return custos.reduce((s, item) => {
     const v = parseBRNumber(item.valor);
