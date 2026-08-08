@@ -178,12 +178,31 @@ export function roleLabel(role: AccessEntry["role"]): "Owner" | "Colaborador" {
 
 // ── Tarefas (Kanban) ────────────────────────────────────────────
 export type TaskStatus = "todo" | "doing" | "done";
+export type TaskPriority = "baixa" | "media" | "alta" | "critica";
+
+/** De onde a tarefa veio — "manual" é o padrão; os outros marcam que ela
+ *  nasceu de um alerta convertido (Central de Atenção → Tarefas). */
+export type TaskOrigem = "manual" | "ads" | "estoque" | "meta" | "pedido";
+
+/** Rastro simples de eventos — não é um histórico completo, só os marcos
+ *  que a Fase 8 pediu: criada, atribuída, movida, concluída. */
+export type TaskAtividadeTipo = "criada" | "atribuida" | "movida" | "concluida";
+export type TaskAtividade = {
+  tipo: TaskAtividadeTipo;
+  por: string; // e-mail de quem fez
+  em: number; // timestamp
+  detalhe?: string; // ex.: "todo → doing", ou o nome de quem recebeu
+};
 
 export type Task = {
   id: string;
   title: string;
   description?: string;
   status: TaskStatus;
+  priority?: TaskPriority; // sem valor = "media" na leitura (roleLabel-like default)
+  origem?: TaskOrigem;
+  /** Chave do alerta que virou esta tarefa (ver lib/domain/alerts.ts) — só quando origem != "manual". */
+  origemRef?: string;
   // E-mail (+ nome, como snapshot pra não depender de outra leitura) de quem
   // deve executar a tarefa — é o que permite "eu peço pro meu sócio e vice-versa".
   assignedTo?: string;
@@ -192,5 +211,8 @@ export type Task = {
   createdByName?: string;
   createdAt?: number;
   updatedAt?: number;
+  /** Quem fez a ÚLTIMA alteração — diferente de createdBy, pra colaborador editar sem apagar a autoria original. */
+  lastEditedBy?: string;
   dueDate?: string; // yyyy-mm-dd, opcional
+  atividade?: TaskAtividade[];
 };
