@@ -14,7 +14,7 @@ import { useAccess } from "@/components/tabs/AccessGuard";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { getRevenuePaceLabel, getRevenuePaceStatus, selectActiveGoal } from "@/lib/domain/gauge";
 
-type MetricsAtivo = { faturamentoLiquido: number; lucroComCustos: number; margemComCustos: number };
+type MetricsAtivo = { faturamentoLiquido: number; lucroComCustos: number; margemComCustos: number; faturamentoHoje: number };
 
 const TONE_COLOR: Record<string, string> = {
   success: "var(--success,var(--green))", warning: "var(--warning,#F4B942)",
@@ -50,7 +50,7 @@ export default function MetasTab({
     let vivo = true;
     authedFetch(`/api/ml/metrics?month=${activeEntry.mes}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (vivo && j) setMetricsAtivo({ faturamentoLiquido: j.faturamentoLiquido ?? 0, lucroComCustos: j.lucroComCustos ?? 0, margemComCustos: j.margemComCustos ?? 0 }); })
+      .then((j) => { if (vivo && j) setMetricsAtivo({ faturamentoLiquido: j.faturamentoLiquido ?? 0, lucroComCustos: j.lucroComCustos ?? 0, margemComCustos: j.margemComCustos ?? 0, faturamentoHoje: j.faturamentoHoje ?? 0 }); })
       .catch(() => {});
     return () => { vivo = false; };
   }, [activeEntry]);
@@ -61,6 +61,20 @@ export default function MetasTab({
   const diaAtual = diaAtualNoMes();
   const totalDiasAtivo = activeEntry ? diasNoMes(activeEntry.mes) : 30;
   const diasRestantesAtivo = Math.max(totalDiasAtivo - diaAtual + 1, 1);
+
+  // Meta diária adaptativa — mesma fórmula do Dashboard (metaDiariaAtiva):
+  // usa o acumulado até ONTEM (exclui o dia de hoje, ainda em andamento) e
+  // redistribui o que falta pelos dias que restam, pra não fugir da própria
+  // medição conforme as vendas de hoje entram. Fora do mês em andamento não
+  // tem "hoje" pra excluir, então cai na meta plana (meta1 ÷ dias do mês).
+  const metaDiariaPlana = activeEntry?.meta1 ? activeEntry.meta1 / totalDiasAtivo : null;
+  const metaDiariaAtiva = useMemo(() => {
+    if (!activeEntry?.meta1) return null;
+    if (!isMesAtualAtivo || !metricsAtivo) return metaDiariaPlana;
+    const fatAteOntem = Math.max(metricsAtivo.faturamentoLiquido - metricsAtivo.faturamentoHoje, 0);
+    const falta = Math.max(activeEntry.meta1 - fatAteOntem, 0);
+    return falta / diasRestantesAtivo;
+  }, [activeEntry?.meta1, isMesAtualAtivo, metricsAtivo, metaDiariaPlana, diasRestantesAtivo]);
 
   const metasProgresso = useMemo(() => {
     if (!activeEntry || !metricsAtivo) return [];
@@ -130,7 +144,15 @@ export default function MetasTab({
             <div className="kpi k-acc"><div className="k-lbl">Meta 1</div><div className="k-val">{fmtBRL(activeEntry.meta1)}</div><div className="k-sub">objetivo principal</div></div>
             <div className="kpi k-warn"><div className="k-lbl">Meta 2</div><div className="k-val" style={{ color: "var(--yellow)" }}>{activeEntry.meta2 ? fmtBRL(activeEntry.meta2) : "—"}</div></div>
             <div className="kpi" style={{ borderLeft: "3px solid var(--purple)" }}><div className="k-lbl">Meta 3</div><div className="k-val" style={{ color: "var(--purple)" }}>{activeEntry.meta3 ? fmtBRL(activeEntry.meta3) : "—"}</div></div>
-            <div className="kpi k-acc"><div className="k-lbl">Meta diária</div><div className="k-val">{fmtBRL(activeEntry.meta1 / diasNoMes(activeEntry.mes))}</div><div className="k-sub">Meta 1 ÷ {diasNoMes(activeEntry.mes)} dias</div></div>
+            <div className="kpi k-acc">
+              <div className="k-lbl">Meta diária</div>
+              <div className="k-val">{fmtBRL(metaDiariaAtiva ?? metaDiariaPlana ?? 0)}</div>
+              <div className="k-sub">
+                {isMesAtualAtivo && metaDiariaAtiva != null && metaDiariaPlana != null && Math.abs(metaDiariaAtiva - metaDiariaPlana) > 0.5
+                  ? `ajustada pelo ritmo · plana seria ${fmtBRL(metaDiariaPlana)}`
+                  : `Meta 1 ÷ ${diasNoMes(activeEntry.mes)} dias`}
+              </div>
+            </div>
             <div className="kpi k-pos"><div className="k-lbl">Margem alvo</div><div className="k-val" style={{ color: "var(--green)" }}>{activeEntry.metaMargem ?? 10}%</div><div className="k-sub">lucro líquido</div></div>
           </div>
 
