@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fmtBRL, mesAtual, todayStr, totalCustosMes, diasNoMes } from "@/lib/domain/calc";
-import type { Cost } from "@/lib/domain/types";
+import { COST_CATEGORIA_LABEL, type Cost, type CostCategoria } from "@/lib/domain/types";
 import { deleteCost, upsertCost } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
 import { useAccess } from "@/components/tabs/AccessGuard";
@@ -92,22 +92,31 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
   const [freq, setFreq] = useState<Cost["freq"]>(cost.freq);
   const [dataAvulso, setDataAvulso] = useState(cost.data || todayStr());
   const [escopo, setEscopo] = useState<NonNullable<Cost["escopo"]>>(cost.escopo ?? "dash");
+  const [categoria, setCategoria] = useState<CostCategoria | "">(cost.categoria ?? "");
+  const [centroCusto, setCentroCusto] = useState(cost.centroCusto ?? "");
+  const [observacao, setObservacao] = useState(cost.observacao ?? "");
 
   useEffect(() => {
     setNome(cost.nome); setValor(cost.valor); setFreq(cost.freq); setDataAvulso(cost.data || todayStr());
     setEscopo(cost.escopo ?? "dash");
-  }, [cost.nome, cost.valor, cost.freq, cost.data, cost.escopo]);
+    setCategoria(cost.categoria ?? ""); setCentroCusto(cost.centroCusto ?? ""); setObservacao(cost.observacao ?? "");
+  }, [cost.nome, cost.valor, cost.freq, cost.data, cost.escopo, cost.categoria, cost.centroCusto, cost.observacao]);
 
   useEffect(() => {
     if (!canEdit) return;
     const handle = setTimeout(() => {
-      const next: Cost = { id: cost.id, nome, valor, freq, data: dataAvulso, escopo };
+      const next: Cost = {
+        id: cost.id, nome, valor, freq, data: dataAvulso, escopo,
+        categoria: categoria || undefined, centroCusto: centroCusto || undefined, observacao: observacao || undefined,
+      };
       if (next.nome === cost.nome && next.valor === cost.valor && next.freq === cost.freq
-        && next.data === cost.data && next.escopo === (cost.escopo ?? "dash")) return;
+        && next.data === cost.data && next.escopo === (cost.escopo ?? "dash")
+        && next.categoria === (cost.categoria ?? undefined) && next.centroCusto === (cost.centroCusto ?? undefined)
+        && next.observacao === (cost.observacao ?? undefined)) return;
       upsertCost(uid, next).catch(() => {});
     }, 350);
     return () => clearTimeout(handle);
-  }, [nome, valor, freq, dataAvulso, escopo, cost, uid, canEdit]);
+  }, [nome, valor, freq, dataAvulso, escopo, categoria, centroCusto, observacao, cost, uid, canEdit]);
 
   const meta = FREQ_META[freq];
   const ro = !canEdit;
@@ -159,11 +168,28 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
           <select
             className="inp" value={escopo}
             onChange={(e) => setEscopo(e.target.value as NonNullable<Cost["escopo"]>)}
-            disabled={ro} title="Onde este custo é descontado"
+            disabled={ro} title="Desconta no Dashboard = custo da operação de venda (ex.: embalagem). Só na DRE = despesa da empresa (ex.: pró-labore, contador) — não aparece no lucro do dia a dia."
           >
             <option value="dash">Desconta no Dashboard</option>
             <option value="dre">Só na DRE</option>
           </select>
+        </div>
+        <div className="field">
+          <label>Categoria {!categoria && <span style={{ color: "#F4B942", fontWeight: 700 }}>· sem categoria</span>}</label>
+          <select className="inp" value={categoria} onChange={(e) => setCategoria(e.target.value as CostCategoria | "")} disabled={ro}>
+            <option value="">— sem categoria —</option>
+            {(Object.keys(COST_CATEGORIA_LABEL) as CostCategoria[]).map((c) => (
+              <option key={c} value={c}>{COST_CATEGORIA_LABEL[c]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Centro de custo (opcional)</label>
+          <input className="inp" type="text" placeholder="Ex: Anúncios ML, Galpão…" value={centroCusto} onChange={(e) => setCentroCusto(e.target.value)} readOnly={ro} />
+        </div>
+        <div className="field">
+          <label>Observação (opcional)</label>
+          <input className="inp" type="text" placeholder="Ex: contrato até dez/2026" value={observacao} onChange={(e) => setObservacao(e.target.value)} readOnly={ro} />
         </div>
       </div>
 
