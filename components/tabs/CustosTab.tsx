@@ -6,6 +6,7 @@ import { COST_CATEGORIA_LABEL, type Cost, type CostCategoria } from "@/lib/domai
 import { deleteCost, upsertCost } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
 import { useAccess } from "@/components/tabs/AccessGuard";
+import { authedFetch } from "@/lib/api/authed-fetch";
 
 function newId() {
   return "c" + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -39,6 +40,20 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
   const nDiario = doDash.filter((c) => c.freq === "diario").length;
   const nMensal = doDash.filter((c) => c.freq === "mensal").length;
 
+  // Impacto % no faturamento e no lucro (antes dos custos operacionais) do
+  // mes atual — mesma rota que o Dashboard ja usa, so pra dar contexto aqui.
+  const [impactoRef, setImpactoRef] = useState<{ faturamentoLiquido: number; lucroSemCustos: number } | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    authedFetch(`/api/ml/metrics?month=${mesAtual()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (vivo && j) setImpactoRef({ faturamentoLiquido: j.faturamentoLiquido ?? 0, lucroSemCustos: j.lucroSemCustos ?? 0 }); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, []);
+  const impactoFaturamentoPct = impactoRef && impactoRef.faturamentoLiquido > 0 ? (totalMes / impactoRef.faturamentoLiquido) * 100 : null;
+  const impactoLucroPct = impactoRef && impactoRef.lucroSemCustos > 0 ? (totalMes / impactoRef.lucroSemCustos) * 100 : null;
+
   function onAdd() {
     upsertCost(uid, { id: newId(), nome: "", valor: "", freq: "diario", data: todayStr() }).catch(() => {});
   }
@@ -59,6 +74,16 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
         <div className="kpi k-warn"><div className="k-lbl">Mensais fixos</div><div className="k-val" style={{ color: "var(--yellow)" }}>{fmtBRL(totalMensais)}</div><div className="k-sub">{nMensal} custo(s) · 1×/mês</div></div>
         <div className="kpi k-neg"><div className="k-lbl">Impacto no mês</div><div className="k-val" style={{ color: "var(--red)" }}>{fmtBRL(totalMes)}</div><div className="k-sub">fixos × {dias}d + mensais + avulsos</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Só na DRE</div><div className="k-val" style={{ color: soDre.length ? "var(--purple)" : "var(--muted)" }}>{fmtBRL(totalMesDre)}</div><div className="k-sub">{soDre.length} custo(s) · fora do Dashboard</div></div>
+        <div className="kpi k-warn">
+          <div className="k-lbl">Impacto no faturamento</div>
+          <div className="k-val" style={{ color: "var(--yellow)" }}>{impactoFaturamentoPct != null ? `${impactoFaturamentoPct.toFixed(1)}%` : "—"}</div>
+          <div className="k-sub">custos ÷ faturamento líquido do mês</div>
+        </div>
+        <div className="kpi k-neg">
+          <div className="k-lbl">Impacto no lucro</div>
+          <div className="k-val" style={{ color: "var(--red)" }}>{impactoLucroPct != null ? `${impactoLucroPct.toFixed(1)}%` : "—"}</div>
+          <div className="k-sub" title="Lucro antes de descontar estes custos operacionais">% do lucro (antes destes custos) que eles consomem</div>
+        </div>
       </div>
 
       <div className="note note-accent">
