@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/Modal";
-import { fmtBRL, formatMesBR, mesAtual, diasNoMes, diaAtualNoMes, projetarMes } from "@/lib/domain/calc";
+import { fmtBRL, formatMesBR, mesAtual, diasNoMes, diaAtualNoMes, projetarMes, scenariosDeProjecao } from "@/lib/domain/calc";
 import type { GoalEntry } from "@/lib/domain/types";
 import {
   deleteGoalEntry,
@@ -12,7 +12,7 @@ import {
 import type { UserData } from "@/components/useUserData";
 import { useAccess } from "@/components/tabs/AccessGuard";
 import { authedFetch } from "@/lib/api/authed-fetch";
-import { getRevenuePaceLabel, getRevenuePaceStatus } from "@/lib/domain/gauge";
+import { getRevenuePaceLabel, getRevenuePaceStatus, selectActiveGoal } from "@/lib/domain/gauge";
 
 type MetricsAtivo = { faturamentoLiquido: number; lucroComCustos: number; margemComCustos: number };
 
@@ -100,6 +100,14 @@ export default function MetasTab({
     };
   }, [activeEntry, metricsAtivo, isMesAtualAtivo, diaAtual, totalDiasAtivo]);
 
+  // Cenários só fazem sentido no mês em andamento — mês fechado já tem o
+  // resultado real, não uma projeção.
+  const cenarios = useMemo(() => {
+    if (!activeEntry || !metricsAtivo || !isMesAtualAtivo) return null;
+    const { activeMeta } = selectActiveGoal(metricsAtivo.faturamentoLiquido, activeEntry.meta1, activeEntry.meta2, activeEntry.meta3);
+    return { ...scenariosDeProjecao(metricsAtivo.faturamentoLiquido, diaAtual, totalDiasAtivo), activeMeta };
+  }, [activeEntry, metricsAtivo, isMesAtualAtivo, diaAtual, totalDiasAtivo]);
+
   return (
     <div className="dash">
       <div className="tab-head">
@@ -165,6 +173,31 @@ export default function MetasTab({
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {cenarios && (
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 2 }}>Cenários de fechamento — {formatMesBR(activeEntry.mes)}</div>
+              <div className="panel-sub" style={{ marginBottom: 12 }}>
+                Mesmo ritmo atual ±15% pelo resto do mês — não é previsão estatística, só uma noção de sensibilidade.
+              </div>
+              <div className="kpi-grid">
+                {([
+                  { label: "Conservador", valor: cenarios.conservador, sub: "ritmo 15% mais fraco", cor: "var(--red)" },
+                  { label: "Esperado", valor: cenarios.esperado, sub: "no ritmo atual", cor: "var(--accent)" },
+                  { label: "Agressivo", valor: cenarios.agressivo, sub: "ritmo 15% mais forte", cor: "var(--green)" },
+                ] as const).map((c) => (
+                  <div key={c.label} className="kpi">
+                    <div className="k-lbl">{c.label}</div>
+                    <div className="k-val" style={{ color: c.cor }}>{fmtBRL(c.valor)}</div>
+                    <div className="k-sub">
+                      {c.sub}
+                      {cenarios.activeMeta > 0 && (c.valor >= cenarios.activeMeta ? " · bate a meta" : ` · faltariam ${fmtBRL(cenarios.activeMeta - c.valor)}`)}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

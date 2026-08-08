@@ -162,6 +162,29 @@ export function projetarMes(valorAcumulado: number, diaAtual: number, totalDiasM
   return (valorAcumulado / diaAtual) * totalDiasMes;
 }
 
+export type CenariosProjecao = { conservador: number; esperado: number; agressivo: number };
+
+/**
+ * Três cenários de fechamento do mês a partir da MESMA projeção linear
+ * (`projetarMes`) — não há dado diário disponível aqui pra estimar uma
+ * tendência real, então "conservador"/"agressivo" são o ritmo atual ±
+ * `variacaoPct` (padrão 15%), não uma previsão estatística. Serve pra dar
+ * uma noção de sensibilidade ("e se o ritmo cair/subir"), não uma garantia.
+ */
+export function scenariosDeProjecao(
+  valorAcumulado: number,
+  diaAtual: number,
+  totalDiasMes: number,
+  variacaoPct = 0.15,
+): CenariosProjecao {
+  const esperado = projetarMes(valorAcumulado, diaAtual, totalDiasMes);
+  return {
+    conservador: esperado * (1 - variacaoPct),
+    esperado,
+    agressivo: esperado * (1 + variacaoPct),
+  };
+}
+
 export function totalCustosMes(custos: Cost[], mes: string): number {
   return custos.reduce((s, item) => {
     const v = parseBRNumber(item.valor);
