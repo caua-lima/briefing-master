@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { fmtBRL } from "@/lib/domain/calc";
+import { fmtBRL, isFullMonth, prevPeriod, todayStr } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
+import { Delta } from "@/components/dashboard/ExecutiveKpis";
 
 type CustoDre = { nome: string; valor: number; freq: string };
 
@@ -143,6 +144,7 @@ function GrupoDre({ children }: { children: React.ReactNode }) {
 export default function DreTab() {
   const [range, setRange] = useState(() => monthRange());
   const [m, setM] = useState<Metrics | null>(null);
+  const [mPrev, setMPrev] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -155,9 +157,23 @@ export default function DreTab() {
     } finally {
       setLoading(false);
     }
+    // Período anterior equivalente — mesma lógica do Dashboard (mês cheio vs
+    // mês anterior; mês em andamento vs mesmo dia do mês anterior). Falha
+    // silenciosa: comparação é um extra, não pode travar a DRE em si.
+    try {
+      const prev = prevPeriod(range.from, range.to);
+      const rp = await authedFetch(`/api/ml/metrics?from=${prev.from}&to=${prev.to}`, { cache: "no-store" });
+      setMPrev(rp.ok ? await rp.json() : null);
+    } catch {
+      setMPrev(null);
+    }
   }, [range]);
 
   useEffect(() => { load(); }, [load]);
+
+  const prevLabel = !isFullMonth(range.from, range.to)
+    ? "vs período anterior"
+    : range.to > todayStr() ? "vs mesmo dia do mês anterior" : "vs mês anterior";
 
   if (loading) {
     return <div className="dash"><div className="panel" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Carregando DRE…</div></div>;
@@ -176,6 +192,11 @@ export default function DreTab() {
 
   const base = receitaLiquida;
   const margem = (v: number) => (base ? (v / base) * 100 : 0);
+
+  const receitaLiquidaPrev = mPrev?.faturamentoLiquido ?? null;
+  const lucroBrutoPrev = mPrev ? mPrev.totalRetorno - mPrev.totalCMV : null;
+  const resultadoOperacionalPrev = mPrev?.lucroComCustos ?? null;
+  const resultadoLiquidoPrev = mPrev ? mPrev.lucroComCustos - mPrev.custosDre : null;
 
   return (
     <div className="dash">
@@ -201,21 +222,25 @@ export default function DreTab() {
           <div className="k-lbl">Receita líquida</div>
           <div className="k-val">{fmtBRL(receitaLiquida)}</div>
           <div className="k-sub">sem cancelados e devolvidos</div>
+          <Delta current={receitaLiquida} previous={receitaLiquidaPrev} mode="pct" label={prevLabel} />
         </div>
         <div className="kpi k-pos">
           <div className="k-lbl">Lucro bruto</div>
           <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(lucroBruto)}</div>
           <div className="k-sub">margem de {margem(lucroBruto).toFixed(1)}%</div>
+          <Delta current={lucroBruto} previous={lucroBrutoPrev} mode="pct" label={prevLabel} />
         </div>
         <div className="kpi k-warn">
           <div className="k-lbl">Resultado operacional</div>
           <div className="k-val" style={{ color: resultadoOperacional >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(resultadoOperacional)}</div>
           <div className="k-sub">é o lucro do Dashboard</div>
+          <Delta current={resultadoOperacional} previous={resultadoOperacionalPrev} mode="pct" label={prevLabel} />
         </div>
         <div className="kpi k-neg">
           <div className="k-lbl">Resultado líquido</div>
           <div className="k-val" style={{ color: resultadoLiquido >= 0 ? "var(--green)" : "var(--red)" }}>{fmtBRL(resultadoLiquido)}</div>
           <div className="k-sub">margem de {margem(resultadoLiquido).toFixed(1)}%</div>
+          <Delta current={resultadoLiquido} previous={resultadoLiquidoPrev} mode="pct" label={prevLabel} />
         </div>
       </div>
 
