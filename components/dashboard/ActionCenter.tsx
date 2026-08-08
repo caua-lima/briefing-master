@@ -2,14 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { useAccess } from "@/components/tabs/AccessGuard";
-import { dismissAlert, watchDismissedAlerts } from "@/lib/firebase/data";
+import { dismissAlert, upsertTask, watchDismissedAlerts } from "@/lib/firebase/data";
 import {
   alertShouldReappear,
   buildActionAlerts,
   type ActionAlert,
+  type AlertCategoria,
   type AlertSeverity,
   type BuildAlertsInput,
 } from "@/lib/domain/alerts";
+import type { TaskOrigem, TaskPriority } from "@/lib/domain/types";
+
+const CATEGORIA_ORIGEM: Record<AlertCategoria, TaskOrigem> = {
+  ads: "ads", estoque: "estoque", meta: "meta", pedidos: "pedido", devolucoes: "pedido",
+  margem: "manual", custos: "manual",
+};
+const SEVERITY_PRIORITY: Record<AlertSeverity, TaskPriority> = {
+  critical: "critica", warning: "alta", opportunity: "media", success: "baixa", info: "baixa",
+};
+
+function newTaskId() {
+  return "t" + Date.now() + Math.random().toString(36).slice(2, 6);
+}
 
 const SEVERITY_META: Record<AlertSeverity, { label: string; icon: string; cls: string }> = {
   critical: { label: "Crítico", icon: "▾", cls: "severity-critical" },
@@ -67,6 +81,26 @@ export default function ActionCenter(props: ActionCenterProps) {
     }
   }
 
+  const [criadas, setCriadas] = useState<Set<string>>(new Set());
+  async function handleCriarTarefa(a: ActionAlert) {
+    if (!email) return;
+    try {
+      await upsertTask({
+        id: newTaskId(),
+        title: a.titulo,
+        description: a.explicacao,
+        status: "todo",
+        priority: SEVERITY_PRIORITY[a.severity],
+        origem: CATEGORIA_ORIGEM[a.categoria],
+        origemRef: a.chave,
+        createdBy: email,
+      });
+      setCriadas((prev) => new Set(prev).add(a.chave));
+    } catch {
+      // falhou silenciosamente — usuário pode tentar de novo, botão não desabilita
+    }
+  }
+
   if (visiveis.length === 0) {
     return (
       <div className="ac-empty">
@@ -100,7 +134,7 @@ export default function ActionCenter(props: ActionCenterProps) {
       ) : (
         <div className="ac-list">
           {top5.map((a) => (
-            <AlertCard key={a.chave} alert={a} onDismiss={() => handleDismiss(a)} onNavigate={onNavigate} />
+            <AlertCard key={a.chave} alert={a} onDismiss={() => handleDismiss(a)} onNavigate={onNavigate} onCriarTarefa={() => handleCriarTarefa(a)} tarefaCriada={criadas.has(a.chave)} />
           ))}
         </div>
       )}
@@ -117,7 +151,7 @@ export default function ActionCenter(props: ActionCenterProps) {
             <div className="modal-title" style={{ textAlign: "left" }}>Todos os alertas</div>
             <div className="ac-list" style={{ marginTop: 14 }}>
               {filtrados.map((a) => (
-                <AlertCard key={a.chave} alert={a} onDismiss={() => handleDismiss(a)} onNavigate={onNavigate} />
+                <AlertCard key={a.chave} alert={a} onDismiss={() => handleDismiss(a)} onNavigate={onNavigate} onCriarTarefa={() => handleCriarTarefa(a)} tarefaCriada={criadas.has(a.chave)} />
               ))}
             </div>
             <div className="modal-btns">
@@ -131,11 +165,13 @@ export default function ActionCenter(props: ActionCenterProps) {
 }
 
 function AlertCard({
-  alert, onDismiss, onNavigate,
+  alert, onDismiss, onNavigate, onCriarTarefa, tarefaCriada,
 }: {
   alert: ActionAlert;
   onDismiss: () => void;
   onNavigate?: (tab: string) => void;
+  onCriarTarefa: () => void;
+  tarefaCriada: boolean;
 }) {
   const meta = SEVERITY_META[alert.severity];
   return (
@@ -154,16 +190,21 @@ function AlertCard({
           {Math.abs(alert.impacto).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
         </div>
       )}
-      {alert.ctaLabel && (
-        <button
-          type="button"
-          className="ac-cta"
-          onClick={() => alert.ctaTab && onNavigate?.(alert.ctaTab)}
-          disabled={!alert.ctaTab || !onNavigate}
-        >
-          {alert.ctaLabel} →
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+        {alert.ctaLabel && (
+          <button
+            type="button"
+            className="ac-cta"
+            onClick={() => alert.ctaTab && onNavigate?.(alert.ctaTab)}
+            disabled={!alert.ctaTab || !onNavigate}
+          >
+            {alert.ctaLabel} →
+          </button>
+        )}
+        <button type="button" className="ac-cta" onClick={onCriarTarefa} disabled={tarefaCriada}>
+          {tarefaCriada ? "✓ Tarefa criada" : "+ Criar tarefa"}
         </button>
-      )}
+      </div>
     </div>
   );
 }
