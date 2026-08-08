@@ -6,7 +6,7 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import Modal from "@/components/Modal";
-import { isTaskAtrasada, type AccessEntry, type Task, type TaskPriority, type TaskStatus } from "@/lib/domain/types";
+import { appendAtividade, isTaskAtrasada, type AccessEntry, type Task, type TaskAtividade, type TaskPriority, type TaskStatus } from "@/lib/domain/types";
 import { deleteTask, upsertTask, watchAccessList, watchTasks } from "@/lib/firebase/data";
 import { useAccess } from "@/components/tabs/AccessGuard";
 
@@ -20,6 +20,10 @@ const PRIORIDADE_META: Record<TaskPriority, { label: string; cor: string; peso: 
 function prioridadeDe(t: Task): TaskPriority {
   return t.priority ?? "media";
 }
+
+const ATIVIDADE_LABEL: Record<TaskAtividade["tipo"], string> = {
+  criada: "Criada", atribuida: "Atribuída", movida: "Movida", concluida: "Concluída",
+};
 
 function newId() {
   return "t" + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -73,7 +77,12 @@ export default function TarefasTab() {
 
   async function mover(t: Task, status: TaskStatus) {
     if (t.status === status) return;
-    await upsertTask({ ...t, status }).catch(() => {});
+    const evento: TaskAtividade = {
+      tipo: status === "done" ? "concluida" : "movida",
+      por: email, em: Date.now(),
+      detalhe: `${COLS.find((c) => c.status === t.status)?.label} → ${COLS.find((c) => c.status === status)?.label}`,
+    };
+    await upsertTask({ ...t, status, lastEditedBy: email, atividade: appendAtividade(t.atividade, evento) }).catch(() => {});
   }
 
   async function excluir(t: Task) {
@@ -299,6 +308,21 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
     try {
       const pessoa = pessoas.find((p) => p.email === assignedTo);
       const eu = pessoas.find((p) => p.email === minhaEmail);
+
+      // Rastro de atividade — compara contra a tarefa original (task) pra só
+      // registrar o que de fato mudou nesta edição.
+      let atividade = task?.atividade;
+      if (!task) {
+        atividade = appendAtividade(atividade, { tipo: "criada", por: minhaEmail, em: Date.now() });
+      } else {
+        if ((task.assignedTo ?? "") !== (assignedTo || "")) {
+          atividade = appendAtividade(atividade, { tipo: "atribuida", por: minhaEmail, em: Date.now(), detalhe: pessoa?.displayName || assignedTo || "ninguém" });
+        }
+        if (task.status !== status) {
+          atividade = appendAtividade(atividade, { tipo: status === "done" ? "concluida" : "movida", por: minhaEmail, em: Date.now() });
+        }
+      }
+
       const next: Task = {
         id: task?.id || newId(),
         title: title.trim(),
@@ -311,6 +335,8 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
         createdBy: task?.createdBy ?? minhaEmail,
         createdByName: task?.createdByName ?? (eu?.displayName || minhaEmail),
         createdAt: task?.createdAt ?? Date.now(),
+        lastEditedBy: minhaEmail,
+        atividade,
       };
       await upsertTask(next);
       onClose();
@@ -366,6 +392,20 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
           {COLS.map((c) => <option key={c.status} value={c.status}>{c.label}</option>)}
         </select>
       </div>
+
+      {task?.atividade && task.atividade.length > 0 && (
+        <details style={{ marginTop: 4, marginBottom: 10 }}>
+          <summary style={{ cursor: "pointer", fontSize: ".78rem", color: "var(--text-secondary,var(--muted))" }}>Atividade ({task.atividade.length})</summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+            {[...task.atividade].reverse().map((ev, i) => (
+              <div key={i} style={{ fontSize: ".76rem", color: "var(--text-secondary,var(--muted))" }}>
+                <b style={{ color: "var(--text-primary,var(--text))" }}>{ATIVIDADE_LABEL[ev.tipo]}</b>
+                {ev.detalhe ? ` — ${ev.detalhe}` : ""} · {ev.por} · {new Date(ev.em).toLocaleString("pt-BR")}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       <div className="modal-btns">
         <button type="button" className="btn btn-success" onClick={onSave} disabled={saving}>

@@ -222,3 +222,8 @@ export function isTaskAtrasada(t: Task): boolean {
   if (!t.dueDate || t.status === "done") return false;
   return t.dueDate < new Date().toISOString().slice(0, 10);
 }
+
+/** Acrescenta um evento ao rastro de atividade, mantendo só os últimos `max` (padrão 20) — não deixa o array crescer sem limite. */
+export function appendAtividade(atual: TaskAtividade[] | undefined, evento: TaskAtividade, max = 20): TaskAtividade[] {
+  return [...(atual ?? []), evento].slice(-max);
+}
