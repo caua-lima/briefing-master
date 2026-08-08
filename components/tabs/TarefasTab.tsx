@@ -50,6 +50,9 @@ export default function TarefasTab() {
   const [pessoas, setPessoas] = useState<AccessEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState<Filtro>("todas");
+  const [responsavelFiltro, setResponsavelFiltro] = useState("");
+  const [prioridadeFiltro, setPrioridadeFiltro] = useState<TaskPriority | "">("");
+  const [somenteAtrasadas, setSomenteAtrasadas] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [openNew, setOpenNew] = useState(false);
 
@@ -60,10 +63,14 @@ export default function TarefasTab() {
   }, []);
 
   const visiveis = useMemo(() => {
-    if (filtro === "pra-mim") return tasks.filter((t) => t.assignedTo === email);
-    if (filtro === "criei-eu") return tasks.filter((t) => t.createdBy === email);
-    return tasks;
-  }, [tasks, filtro, email]);
+    let lista = tasks;
+    if (filtro === "pra-mim") lista = lista.filter((t) => t.assignedTo === email);
+    else if (filtro === "criei-eu") lista = lista.filter((t) => t.createdBy === email);
+    if (responsavelFiltro) lista = lista.filter((t) => t.assignedTo === responsavelFiltro);
+    if (prioridadeFiltro) lista = lista.filter((t) => prioridadeDe(t) === prioridadeFiltro);
+    if (somenteAtrasadas) lista = lista.filter((t) => isAtrasada(t));
+    return lista;
+  }, [tasks, filtro, email, responsavelFiltro, prioridadeFiltro, somenteAtrasadas]);
 
   const porColuna = (status: TaskStatus) => visiveis.filter((t) => t.status === status);
 
@@ -119,6 +126,30 @@ export default function TarefasTab() {
         <button type="button" className={`seg-btn ${filtro === "todas" ? "active" : ""}`} onClick={() => setFiltro("todas")}>Todas</button>
         <button type="button" className={`seg-btn ${filtro === "pra-mim" ? "active" : ""}`} onClick={() => setFiltro("pra-mim")}>Pra mim</button>
         <button type="button" className={`seg-btn ${filtro === "criei-eu" ? "active" : ""}`} onClick={() => setFiltro("criei-eu")}>Criei eu</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={responsavelFiltro} onChange={(e) => setResponsavelFiltro(e.target.value)} aria-label="Filtrar por responsável" style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}>
+          <option value="">Todos os responsáveis</option>
+          {pessoas.map((p) => <option key={p.email} value={p.email}>{p.displayName || p.email}</option>)}
+        </select>
+        <select value={prioridadeFiltro} onChange={(e) => setPrioridadeFiltro(e.target.value as TaskPriority | "")} aria-label="Filtrar por prioridade" style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: ".82rem", outline: "none" }}>
+          <option value="">Todas as prioridades</option>
+          {(["critica", "alta", "media", "baixa"] as const).map((p) => <option key={p} value={p}>{PRIORIDADE_META[p].label}</option>)}
+        </select>
+        <button
+          type="button" onClick={() => setSomenteAtrasadas((v) => !v)}
+          style={{
+            fontSize: ".78rem", fontWeight: 600, padding: "5px 12px", borderRadius: 20, cursor: "pointer",
+            background: somenteAtrasadas ? "var(--red)" : "var(--surface2)", color: somenteAtrasadas ? "#fff" : "var(--muted)",
+            border: `1px solid ${somenteAtrasadas ? "var(--red)" : "var(--border)"}`,
+          }}
+        >
+          Só atrasadas
+        </button>
+        {(responsavelFiltro || prioridadeFiltro || somenteAtrasadas) && (
+          <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setResponsavelFiltro(""); setPrioridadeFiltro(""); setSomenteAtrasadas(false); }}>Limpar</button>
+        )}
       </div>
 
       {loading ? (
