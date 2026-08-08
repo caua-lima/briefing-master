@@ -19,6 +19,7 @@ import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 import { ZxpMark } from "@/components/ZxpMark";
 import { AvatarUpload } from "@/components/AvatarUpload";
+import CommandPalette from "@/components/CommandPalette";
 
 type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "dre" | "tarefas" | "acesso";
 
@@ -93,6 +94,20 @@ function AppShell() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swappingAccount, setSwappingAccount] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Ctrl/Cmd+K abre a busca rápida de qualquer lugar do app — atalho comum
+  // (VS Code, Linear, Notion) que dispensa clicar na sidebar pra trocar de aba.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const data = useUserData(user?.uid);
   const { isOwner } = useAccess();
@@ -359,6 +374,15 @@ function AppShell() {
             </div>
 
             <div className="topbar-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={() => setPaletteOpen(true)}
+                aria-label="Busca rápida (Ctrl+K)"
+                title="Busca rápida (Ctrl+K)"
+              >
+                🔎 <span className="cmdk-hint">Ctrl+K</span>
+              </button>
               <PushNotificationToggle />
               <MlAccountStatus />
             </div>
@@ -407,6 +431,14 @@ function AppShell() {
           </main>
         </div>
       </div>
+
+      {paletteOpen && (
+        <CommandPalette
+          onClose={() => setPaletteOpen(false)}
+          items={navItems.map((n) => ({ id: n.id, label: n.label, icon: <NavIcon id={n.id} /> }))}
+          onSelect={(id) => setTab(id as Tab)}
+        />
+      )}
     </>
   );
 }
