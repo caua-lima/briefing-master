@@ -23,10 +23,15 @@ function impactoMes(c: Cost, dias: number): number {
 export default function CustosTab({ uid, data }: { uid: string; data: UserData }) {
   const { canEdit } = useAccess();
   const dias = diasNoMes(mesAtual());
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
+  // Arquivado (ativo:false) para de contar em tudo — mesmo filtro que a rota
+  // de métricas do Dashboard aplica, senão "Arquivar" não significaria nada.
+  const ativos = data.costs.filter((c) => c.ativo !== false);
+  const arquivados = data.costs.filter((c) => c.ativo === false);
   // Os totais aqui são os que batem no Dashboard. Custo marcado "só na DRE"
   // fica de fora, senão o número desta tela não explicaria o de lá.
-  const doDash = data.costs.filter((c) => (c.escopo ?? "dash") === "dash");
-  const soDre = data.costs.filter((c) => c.escopo === "dre");
+  const doDash = ativos.filter((c) => (c.escopo ?? "dash") === "dash");
+  const soDre = ativos.filter((c) => c.escopo === "dre");
   const totalDia = doDash.filter((c) => c.freq === "diario").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
   const totalMensais = doDash.filter((c) => c.freq === "mensal").reduce((s, c) => s + (parseFloat(c.valor) || 0), 0);
   const totalMes = totalCustosMes(doDash, mesAtual());
@@ -65,14 +70,26 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
       </div>
 
       <div className="panel">
-        {data.costs.length === 0 ? (
+        {arquivados.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMostrarArquivados((v) => !v)}>
+              {mostrarArquivados ? "Ocultar" : "Mostrar"} arquivados ({arquivados.length})
+            </button>
+          </div>
+        )}
+        {ativos.length === 0 ? (
           <div className="empty-state">
             <span className="empty-ico">💸</span>
             Nenhum custo cadastrado.<br />Clique em <strong>＋ Adicionar Custo</strong>.
           </div>
         ) : (
           <div className="list-stack">
-            {data.costs.map((c) => (<CustoRow key={c.id} uid={uid} cost={c} canEdit={canEdit} impacto={impactoMes(c, dias)} />))}
+            {ativos.map((c) => (<CustoRow key={c.id} uid={uid} cost={c} canEdit={canEdit} impacto={impactoMes(c, dias)} />))}
+          </div>
+        )}
+        {mostrarArquivados && arquivados.length > 0 && (
+          <div className="list-stack" style={{ marginTop: 16, opacity: 0.6 }}>
+            {arquivados.map((c) => (<CustoRow key={c.id} uid={uid} cost={c} canEdit={canEdit} impacto={0} />))}
           </div>
         )}
       </div>
@@ -195,7 +212,22 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
 
       {canEdit && (
         <div className="row-actions" style={{ marginTop: 12, justifyContent: "flex-end" }}>
-          <button type="button" className="btn btn-danger btn-xs" onClick={() => deleteCost(uid, cost.id).catch(() => {})}>Excluir</button>
+          {cost.ativo === false ? (
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => upsertCost(uid, { ...cost, ativo: true }).catch(() => {})}>Reativar</button>
+          ) : (
+            <button
+              type="button" className="btn btn-ghost btn-xs"
+              onClick={() => { if (!confirm(`Arquivar "${cost.nome || "este custo"}"? Ele some da lista ativa, mas o histórico continua.`)) return; upsertCost(uid, { ...cost, ativo: false }).catch(() => {}); }}
+            >
+              Arquivar
+            </button>
+          )}
+          <button
+            type="button" className="btn btn-danger btn-xs"
+            onClick={() => { if (!confirm(`Excluir "${cost.nome || "este custo"}" definitivamente? Essa ação não pode ser desfeita — considere Arquivar em vez disso.`)) return; deleteCost(uid, cost.id).catch(() => {}); }}
+          >
+            Excluir
+          </button>
         </div>
       )}
     </div>

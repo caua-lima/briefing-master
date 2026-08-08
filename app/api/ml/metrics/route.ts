@@ -500,6 +500,9 @@ export async function GET(req: Request) {
     const custosDreDetalhe: { nome: string; valor: number; freq: string }[] = [];
     for (const doc of custosSnap.docs) {
       const d = doc.data();
+      // Arquivado (ativo:false) para de contar — é o ponto de "Arquivar" em
+      // vez de excluir: sai do cálculo sem apagar o registro histórico.
+      if (d.ativo === false) continue;
       const valor = Number(d.valor ?? d.amount ?? 0);
       const data = String(d.data ?? d.date ?? "");
       const freq = String(d.freq ?? d.frequency ?? "avulso");
