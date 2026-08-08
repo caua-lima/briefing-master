@@ -144,6 +144,12 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setExpanded(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [expanded]);
   const [impostoMassa, setImpostoMassa] = useState(false);
   const [vincularSku, setVincularSku] = useState(false);
 
@@ -304,7 +310,6 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                     product={p}
                     uid={uid}
                     estoqueML={estoqueML}
-                    movs={movsPorProduto.get(p.id) ?? []}
                     expanded={expanded === p.id}
                     onToggle={() => setExpanded((cur) => (cur === p.id ? null : p.id))}
                     onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })}
@@ -360,6 +365,27 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           onSaved={() => setMovModal(null)}
         />
       )}
+
+      {expanded && (() => {
+        const p = data.products.find((x) => x.id === expanded);
+        if (!p) return null;
+        return (
+          <div className="drawer-overlay" onClick={() => setExpanded(null)}>
+            <div className="drawer-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Movimentações de ${p.name || "produto"}`}>
+              <div className="drawer-head">
+                <div>
+                  <div className="drawer-title">{p.name || "Sem nome"}</div>
+                  <div className="drawer-sub">custo médio {fmtBRL(custoMedioDe(p))} · {p.qtdLocal ?? 0} un. em casa</div>
+                </div>
+                <button type="button" className="drawer-close" onClick={() => setExpanded(null)} aria-label="Fechar histórico">✕</button>
+              </div>
+              <div className="drawer-body" style={{ padding: "12px 16px" }}>
+                <MovimentosHistorico product={p} movs={movsPorProduto.get(p.id) ?? []} onMov={(tipo) => setMovModal({ product: p, tipo })} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -372,12 +398,11 @@ const TIPO_LABEL: Record<MovimentoTipo, string> = {
 };
 
 function ProductRow({
-  product, estoqueML, movs, expanded, onToggle, onEdit, onMov,
+  product, estoqueML, expanded, onToggle, onEdit, onMov,
 }: {
   product: Product;
   uid: string;
   estoqueML: EstoqueML;
-  movs: EstoqueMovimento[];
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -455,13 +480,6 @@ function ProductRow({
           </div>
         </td>
       </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={9} data-cell="full" style={{ background: "var(--bg)", padding: "10px 14px" }}>
-            <MovimentosHistorico product={product} movs={movs} onMov={onMov} />
-          </td>
-        </tr>
-      )}
     </>
   );
 }
