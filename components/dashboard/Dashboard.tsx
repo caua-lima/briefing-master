@@ -13,6 +13,9 @@ import {
   clamp,
   yesterdayStr,
   projetarMes,
+  todayStr,
+  isFullMonth,
+  prevPeriod,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -126,58 +129,12 @@ const COST_COLORS = {
 // throttle da sincronização automática (compartilhado entre montagens)
 let lastAutoSync = 0;
 
-function isoOf(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function todayISO(): string {
-  return isoOf(new Date());
-}
 function monthRange(mes: string): { from: string; to: string } {
   const [y, m] = mes.split("-").map(Number);
   const last = new Date(y, m, 0).getDate();
   const mm = String(m).padStart(2, "0");
   const ld = String(last).padStart(2, "0");
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${ld}` };
-}
-function isoUTC(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-// O período informado é um mês civil completo (dia 1 ao último dia)?
-function isFullMonth(from: string, to: string): boolean {
-  const a = new Date(from + "T00:00:00Z");
-  const b = new Date(to + "T00:00:00Z");
-  const last = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
-  return a.getUTCDate() === 1 && a.getUTCMonth() === b.getUTCMonth()
-    && a.getUTCFullYear() === b.getUTCFullYear() && b.getUTCDate() === last;
-}
-// Período imediatamente anterior, do mesmo tamanho. Mês cheio → mês anterior;
-// senão desloca a janela pra trás pelo mesmo número de dias.
-function prevPeriod(from: string, to: string): { from: string; to: string } {
-  const a = new Date(from + "T00:00:00Z");
-  const b = new Date(to + "T00:00:00Z");
-  if (isFullMonth(from, to)) {
-    const pm = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() - 1, 1));
-    const y = pm.getUTCFullYear();
-    const m = pm.getUTCMonth() + 1;
-    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const mm = String(m).padStart(2, "0");
-
-    // Mês em andamento (ex.: "Mês atual" visto no dia 5) — compara dia a dia
-    // com o mesmo dia do mês anterior (dia 5 vs dia 5), NÃO com o mês
-    // anterior inteiro. Comparar 5 dias de dado real contra 31 dias inflava
-    // artificialmente a queda no "vs período anterior".
-    if (to > todayISO()) {
-      const diaAtual = Number(todayISO().slice(8, 10));
-      const diaClamp = Math.min(diaAtual, last);
-      return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(diaClamp).padStart(2, "0")}` };
-    }
-
-    return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, "0")}` };
-  }
-  const days = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
-  const prevTo = new Date(a.getTime() - 86400000);
-  const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000);
-  return { from: isoUTC(prevFrom), to: isoUTC(prevTo) };
 }
 
 
@@ -986,7 +943,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   }, [range, mes]);
 
   const periodoLabel = useMemo(() => {
-    const today = todayISO();
+    const today = todayStr();
     if (range.from === today && range.to === today) return "Hoje";
     if (isMesAtual) return "Mês atual";
     return "Personalizado";
@@ -995,13 +952,13 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   // Período inclui o dia de hoje ainda em andamento — vendas de hoje podem
   // continuar entrando, então qualquer soma do período pode subir depois.
   // Isso é diferente de "hoje" sozinho, onde o usuário já sabe que é parcial.
-  const periodoParcial = useMemo(() => range.to === todayISO() && range.from !== range.to, [range]);
+  const periodoParcial = useMemo(() => range.to === todayStr() && range.from !== range.to, [range]);
 
   const prevLabel = useMemo(() => {
     if (!isFullMonth(range.from, range.to)) return "vs período anterior";
     // Mês em andamento compara com o mesmo dia do mês anterior (ver
     // prevPeriod); mês já fechado compara com o mês anterior inteiro.
-    return range.to > todayISO() ? "vs mesmo dia do mês anterior" : "vs mês anterior";
+    return range.to > todayStr() ? "vs mesmo dia do mês anterior" : "vs mês anterior";
   }, [range]);
 
   const fetchMetrics = useCallback(async (from: string, to: string, silent = false, fresh = false) => {
@@ -1184,7 +1141,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
       <div className="dash-greeting">
         <div>
           <div className="dash-greeting-title">{saudacao()}{primeiroNome ? `, ${primeiroNome}` : ""}</div>
-          <div className="dash-greeting-date">{formatDateLong(todayISO())}</div>
+          <div className="dash-greeting-date">{formatDateLong(todayStr())}</div>
         </div>
         {periodoParcial && (
           <span className="dash-parcial-badge" title="O dia de hoje ainda não terminou — vendas continuam entrando e os números deste período podem mudar.">

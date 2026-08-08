@@ -19,6 +19,49 @@ export function daysAgoStr(n: number): string {
   d.setDate(d.getDate() - n);
   return localDateStr(d);
 }
+
+function isoUTC(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** O período informado é um mês civil completo (dia 1 ao último dia)? */
+export function isFullMonth(from: string, to: string): boolean {
+  const a = new Date(from + "T00:00:00Z");
+  const b = new Date(to + "T00:00:00Z");
+  const last = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
+  return a.getUTCDate() === 1 && a.getUTCMonth() === b.getUTCMonth()
+    && a.getUTCFullYear() === b.getUTCFullYear() && b.getUTCDate() === last;
+}
+
+/**
+ * Período imediatamente anterior, do mesmo tamanho. Mês cheio → mês
+ * anterior; senão desloca a janela pra trás pelo mesmo número de dias.
+ * Mês em andamento compara dia a dia com o mesmo dia do mês anterior (não
+ * com o mês anterior inteiro, que infla artificialmente a queda).
+ */
+export function prevPeriod(from: string, to: string): { from: string; to: string } {
+  const a = new Date(from + "T00:00:00Z");
+  const b = new Date(to + "T00:00:00Z");
+  if (isFullMonth(from, to)) {
+    const pm = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() - 1, 1));
+    const y = pm.getUTCFullYear();
+    const m = pm.getUTCMonth() + 1;
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const mm = String(m).padStart(2, "0");
+
+    if (to > todayStr()) {
+      const diaAtual = Number(todayStr().slice(8, 10));
+      const diaClamp = Math.min(diaAtual, last);
+      return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(diaClamp).padStart(2, "0")}` };
+    }
+
+    return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, "0")}` };
+  }
+  const days = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+  const prevTo = new Date(a.getTime() - 86400000);
+  const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000);
+  return { from: isoUTC(prevFrom), to: isoUTC(prevTo) };
+}
 export function mesAtual(): string {
   return todayStr().slice(0, 7);
 }
