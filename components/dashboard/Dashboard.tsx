@@ -27,6 +27,8 @@ import RevenueLineChart from "./RevenueLineChart";
 import DayDetailModal from "./DayDetailModal";
 import ProdutosEmRisco from "./ProdutosEmRisco";
 import { findProdutosEmRisco } from "@/lib/domain/risk";
+import { isTaskAtrasada, type Task } from "@/lib/domain/types";
+import { watchTasks } from "@/lib/firebase/data";
 
 type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void; onNavigate?: (tab: string) => void };
 
@@ -960,6 +962,9 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   // sempre — nenhuma mudança na rota, nenhum cálculo novo.
   const [ontemMetrics, setOntemMetrics] = useState<MlMetrics | null>(null);
   const [estoqueForecast, setEstoqueForecast] = useState<{ vendas: Record<string, number>; dias: number } | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  useEffect(() => watchTasks(setTasks), []);
+  const tarefasVencidas = useMemo(() => tasks.filter(isTaskAtrasada), [tasks]);
   const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -1390,6 +1395,28 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               estoqueForecast={estoqueForecast}
               onNavigate={onNavigate}
             />
+          )}
+
+          {tarefasVencidas.length > 0 && (
+            <div className="panel" style={{ borderLeft: "3px solid var(--danger,var(--red))" }}>
+              <div className="panel-head" style={{ marginBottom: 10 }}>
+                <span className="panel-title">Tarefas vencidas</span>
+                <span className="panel-sub">{tarefasVencidas.length} tarefa(s) passou(aram) do prazo</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {tarefasVencidas.slice(0, 5).map((t) => (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 10px", background: "var(--surface-raised,var(--surface2))", borderRadius: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600, fontSize: ".85rem", color: "var(--text-primary,var(--text))" }}>{t.title}</span>
+                    <span style={{ fontSize: ".72rem", color: "var(--danger,var(--red))" }}>
+                      prazo {t.dueDate ? t.dueDate.split("-").reverse().join("/") : "—"}{t.assignedToName ? ` · ${t.assignedToName}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {onNavigate && (
+                <button type="button" className="ac-cta" style={{ marginTop: 10 }} onClick={() => onNavigate("tarefas")}>Ver Tarefas →</button>
+              )}
+            </div>
           )}
 
           {/* Meta diária de hoje */}

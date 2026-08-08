@@ -216,3 +216,9 @@ export type Task = {
   dueDate?: string; // yyyy-mm-dd, opcional
   atividade?: TaskAtividade[];
 };
+
+/** Vencida = tem prazo, já passou, e ainda não foi concluída. */
+export function isTaskAtrasada(t: Task): boolean {
+  if (!t.dueDate || t.status === "done") return false;
+  return t.dueDate < new Date().toISOString().slice(0, 10);
+}

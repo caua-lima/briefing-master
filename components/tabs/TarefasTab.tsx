@@ -6,7 +6,7 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import Modal from "@/components/Modal";
-import type { AccessEntry, Task, TaskPriority, TaskStatus } from "@/lib/domain/types";
+import { isTaskAtrasada, type AccessEntry, type Task, type TaskPriority, type TaskStatus } from "@/lib/domain/types";
 import { deleteTask, upsertTask, watchAccessList, watchTasks } from "@/lib/firebase/data";
 import { useAccess } from "@/components/tabs/AccessGuard";
 
@@ -37,10 +37,7 @@ function fmtData(iso?: string): string {
   return `${d}/${m}/${y.slice(2)}`;
 }
 
-function isAtrasada(t: Task): boolean {
-  if (!t.dueDate || t.status === "done") return false;
-  return t.dueDate < new Date().toISOString().slice(0, 10);
-}
+const isAtrasada = isTaskAtrasada;
 
 type Filtro = "todas" | "pra-mim" | "criei-eu";
 
