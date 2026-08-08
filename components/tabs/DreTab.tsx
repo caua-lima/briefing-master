@@ -36,6 +36,8 @@ function monthRange() {
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
+const num = (n: number, d = 2) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+
 /** "julho de 2026" quando o período é um mês inteiro; senão "01/07 – 22/07". */
 function fmtPeriodo(from: string, to: string): string {
   const [fy, fm, fd] = from.split("-").map(Number);
@@ -190,7 +192,11 @@ export default function DreTab() {
     return <div className="dash"><div className="panel" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Não consegui carregar os dados do período.</div></div>;
   }
 
-  const receitaBruta = m.faturamentoBruto;
+  // Cópia com tipo já estreitado pra "não-nulo" — funções aninhadas abaixo
+  // (exportarCsv) não herdam a checagem `if (!m) return` acima, então usam
+  // esta constante em vez de `m` direto.
+  const metrics = m;
+  const receitaBruta = metrics.faturamentoBruto;
   const canceladas = m.vendasCanceladas + m.vendasDevolvidas;
   const receitaLiquida = m.faturamentoLiquido;
   const receitaOperacional = m.totalRetorno; // já é líquida de taxa e frete
@@ -205,6 +211,37 @@ export default function DreTab() {
   const lucroBrutoPrev = mPrev ? mPrev.totalRetorno - mPrev.totalCMV : null;
   const resultadoOperacionalPrev = mPrev?.lucroComCustos ?? null;
   const resultadoLiquidoPrev = mPrev ? mPrev.lucroComCustos - mPrev.custosDre : null;
+
+  function exportarCsv() {
+    const linhas: { rotulo: string; valor: number; ded?: boolean }[] = [
+      { rotulo: "Receita bruta de vendas", valor: receitaBruta },
+      { rotulo: "Cancelamentos e devoluções", valor: canceladas, ded: true },
+      { rotulo: "Receita líquida", valor: receitaLiquida },
+      { rotulo: "Taxas do Mercado Livre", valor: metrics.totalTaxasML, ded: true },
+      { rotulo: "Frete", valor: metrics.totalEnvio, ded: true },
+      { rotulo: "Receita operacional líquida", valor: receitaOperacional },
+      { rotulo: "Custo da mercadoria vendida", valor: metrics.totalCMV, ded: true },
+      { rotulo: "Lucro bruto", valor: lucroBruto },
+      { rotulo: "Impostos sobre vendas", valor: metrics.totalImposto, ded: true },
+      { rotulo: "Marketing (ADS)", valor: metrics.totalAds, ded: true },
+      { rotulo: "Despesas operacionais", valor: metrics.custosOperacionais, ded: true },
+      { rotulo: "Resultado operacional", valor: resultadoOperacional },
+      ...metrics.custosDreDetalhe.map((c) => ({ rotulo: `Despesa da empresa: ${c.nome}`, valor: c.valor, ded: true })),
+      { rotulo: "Resultado líquido", valor: resultadoLiquido },
+    ];
+    const header = ["Linha", "Valor (R$)", "% receita líquida"];
+    const linhasCsv = linhas.map((l) => [l.rotulo, `${l.ded ? "-" : ""}${num(l.valor)}`, num(margem(l.valor), 1)]);
+    const csv = [header, ...linhasCsv]
+      .map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
+      .join("\r\n");
+    const blob = new Blob([String.fromCharCode(0xfeff) + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dre-${range.from}_a_${range.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="dash">
@@ -254,7 +291,12 @@ export default function DreTab() {
 
       <div className="panel">
         <div className="panel-head" style={{ marginBottom: 2 }}>
-          <span className="panel-title">Demonstrativo de resultado</span>
+          <span className="panel-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            Demonstrativo de resultado
+            <button type="button" className="btn btn-xs btn-ghost" onClick={exportarCsv} title="Exporta todas as linhas do demonstrativo em CSV">
+              ⬇ Exportar CSV
+            </button>
+          </span>
           <span className="panel-sub">{fmtPeriodo(range.from, range.to)}</span>
         </div>
 
