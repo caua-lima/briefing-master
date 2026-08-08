@@ -32,6 +32,33 @@ export default function MetasTab({
   const [openNew, setOpenNew] = useState(false);
   const [editEntry, setEditEntry] = useState<GoalEntry | null>(null);
 
+  // Histórico visual (meta vs realizado vs margem) — busca o resultado de
+  // CADA mês com meta cadastrada, uma vez só por mês (cache no state, nunca
+  // refaz pro mesmo mês). Meses futuros/sem venda ainda voltam 0, o que é
+  // correto: ainda não tem realizado.
+  const [historico, setHistorico] = useState<Record<string, { faturamentoLiquido: number; margemComCustos: number } | null>>({});
+  useEffect(() => {
+    const meses = Array.from(new Set(data.goalEntries.map((e) => e.mes))).filter((m) => !(m in historico));
+    if (meses.length === 0) return;
+    let vivo = true;
+    Promise.all(
+      meses.map((m) =>
+        authedFetch(`/api/ml/metrics?month=${m}`, { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((j) => [m, j ? { faturamentoLiquido: j.faturamentoLiquido ?? 0, margemComCustos: j.margemComCustos ?? 0 } : null] as const)
+          .catch(() => [m, null] as const),
+      ),
+    ).then((entries) => {
+      if (!vivo) return;
+      setHistorico((prev) => {
+        const next = { ...prev };
+        for (const [m, v] of entries) next[m] = v;
+        return next;
+      });
+    });
+    return () => { vivo = false; };
+  }, [data.goalEntries, historico]);
+
   // Current month's active entry (first one matching current month, or latest)
   const activeEntry = useMemo<GoalEntry | null>(() => {
     const mes = mesAtual();
@@ -229,6 +256,59 @@ export default function MetasTab({
       <div className="note note-purple">
         Defina as metas de faturamento e a margem de lucro líquido alvo. A <strong>meta diária</strong> sai automática (Meta 1 ÷ dias do mês) e o acompanhamento com velocímetros aparece no Dashboard.
       </div>
+
+      {data.goalEntries.length > 0 && (
+        <div className="panel">
+          <div className="panel-title" style={{ marginBottom: 12 }}>Histórico — meta vs realizado</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {[...data.goalEntries]
+              .sort((a, b) => b.mes.localeCompare(a.mes))
+              .map((entry) => {
+                const realizado = historico[entry.mes];
+                const meta = entry.meta1;
+                const pct = realizado && meta > 0 ? (realizado.faturamentoLiquido / meta) * 100 : null;
+                const margemMeta = entry.metaMargem ?? 10;
+                const margemOk = realizado != null && realizado.margemComCustos >= margemMeta;
+                return (
+                  <div key={entry.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: ".85rem", textTransform: "capitalize" }}>{formatMesBR(entry.mes)}</span>
+                      {realizado == null ? (
+                        <span style={{ fontSize: ".76rem", color: "var(--muted)" }}>carregando…</span>
+                      ) : (
+                        <span
+                          className="severity-chip"
+                          style={{
+                            color: margemOk ? "var(--green)" : "var(--red)",
+                            background: "transparent",
+                            border: `1px solid ${margemOk ? "var(--green)" : "var(--red)"}`,
+                          }}
+                        >
+                          margem {realizado.margemComCustos.toFixed(1)}% (meta {margemMeta}%)
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ height: 8, borderRadius: 4, background: "var(--surface-raised,var(--surface2))", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${Math.min(100, Math.max(0, pct ?? 0))}%`,
+                          background: pct != null && pct >= 100 ? "var(--green)" : "var(--accent)",
+                          transition: "width .3s ease",
+                        }}
+                      />
+                    </div>
+                    <div style={{ fontSize: ".76rem", color: "var(--text-secondary,var(--muted))", marginTop: 5 }}>
+                      {realizado == null
+                        ? `meta ${fmtBRL(meta)}`
+                        : `${fmtBRL(realizado.faturamentoLiquido)} de ${fmtBRL(meta)} (${(pct ?? 0).toFixed(0)}%)`}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
 
       <div className="panel">
         <div className="panel-title" style={{ marginBottom: 14 }}>Metas cadastradas</div>
