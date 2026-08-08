@@ -6,9 +6,20 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import Modal from "@/components/Modal";
-import type { AccessEntry, Task, TaskStatus } from "@/lib/domain/types";
+import type { AccessEntry, Task, TaskPriority, TaskStatus } from "@/lib/domain/types";
 import { deleteTask, upsertTask, watchAccessList, watchTasks } from "@/lib/firebase/data";
 import { useAccess } from "@/components/tabs/AccessGuard";
+
+const PRIORIDADE_META: Record<TaskPriority, { label: string; cor: string; peso: number }> = {
+  critica: { label: "Crítica", cor: "var(--danger,var(--red))", peso: 3 },
+  alta: { label: "Alta", cor: "var(--warning,#F4B942)", peso: 2 },
+  media: { label: "Média", cor: "var(--info-2,var(--info))", peso: 1 },
+  baixa: { label: "Baixa", cor: "var(--text-muted,var(--muted))", peso: 0 },
+};
+/** Tarefa sem prioridade definida (dado antigo) lê como "média" — nunca inventa "crítica" nem "baixa" por omissão. */
+function prioridadeDe(t: Task): TaskPriority {
+  return t.priority ?? "media";
+}
 
 function newId() {
   return "t" + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -215,6 +226,9 @@ function TaskCard({ task, onMover, onEditar, onExcluir, dragHandleProps, arrasta
       <div className="kanban-card-title">{task.title}</div>
       {task.description && <div className="kanban-card-desc">{task.description}</div>}
       <div className="kanban-card-meta">
+        <span className="severity-chip" style={{ color: PRIORIDADE_META[prioridadeDe(task)].cor, background: "transparent", border: `1px solid ${PRIORIDADE_META[prioridadeDe(task)].cor}` }}>
+          {PRIORIDADE_META[prioridadeDe(task)].label}
+        </span>
         {task.assignedToName && <span className="chip chip-accent">👤 {task.assignedToName}</span>}
         {task.dueDate && <span className={`chip ${atrasada ? "chip-red" : "chip-muted"}`}>{atrasada ? "atrasada · " : ""}{fmtData(task.dueDate)}</span>}
       </div>
@@ -248,6 +262,7 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
   const [assignedTo, setAssignedTo] = useState(task?.assignedTo ?? minhaEmail);
   const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "todo");
+  const [priority, setPriority] = useState<TaskPriority>(task ? prioridadeDe(task) : "media");
   const [saving, setSaving] = useState(false);
 
   async function onSave() {
@@ -261,6 +276,7 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
         title: title.trim(),
         description: description.trim() || undefined,
         status,
+        priority,
         assignedTo: assignedTo || undefined,
         assignedToName: pessoa?.displayName || assignedTo || undefined,
         dueDate: dueDate || undefined,
@@ -305,6 +321,15 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
           <label>Prazo (opcional)</label>
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
+      </div>
+
+      <div className="config-field">
+        <label>Prioridade</label>
+        <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
+          {(["critica", "alta", "media", "baixa"] as const).map((p) => (
+            <option key={p} value={p}>{PRIORIDADE_META[p].label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="config-field">
