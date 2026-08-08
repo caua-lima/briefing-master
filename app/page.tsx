@@ -98,16 +98,20 @@ function AppShell() {
 
   // Ctrl/Cmd+K abre a busca rápida de qualquer lugar do app — atalho comum
   // (VS Code, Linear, Notion) que dispensa clicar na sidebar pra trocar de aba.
+  // Escape fecha a sidebar mobile aberta — sem isto só dava pra fechar
+  // clicando no overlay, o que exclui quem navega só de teclado.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen(true);
+        return;
       }
+      if (e.key === "Escape" && sidebarOpen) setSidebarOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [sidebarOpen]);
 
   const data = useUserData(user?.uid);
   const { isOwner } = useAccess();
@@ -162,13 +166,21 @@ function AppShell() {
       {/* Sidebar overlay on mobile */}
       {sidebarOpen && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Fechar menu"
           style={{
             position: "fixed",
             inset: 0,
             background: "rgba(0,0,0,.6)",
             zIndex: 40,
+            border: "none",
+            cursor: "default",
           }}
           onClick={() => setSidebarOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSidebarOpen(false); }
+          }}
         />
       )}
 

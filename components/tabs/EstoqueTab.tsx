@@ -422,7 +422,7 @@ function ProductRow({
       <tr style={{ opacity: product.ativo ? 1 : 0.5 }}>
         <td style={{ textAlign: "left" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button type="button" onClick={onToggle} title="Ver movimentações" style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: ".8rem", transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</button>
+            <button type="button" onClick={onToggle} title="Ver movimentações" aria-label="Ver movimentações" aria-expanded={expanded} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: ".8rem", transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</button>
             <div>
               <div style={{ fontWeight: 600 }}>{product.name || <em style={{ color: "var(--muted)" }}>Sem nome</em>}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>

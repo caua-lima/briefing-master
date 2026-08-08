@@ -275,8 +275,8 @@ function TaskCard({ task, onMover, onEditar, onExcluir, dragHandleProps, arrasta
         </span>
         <div className="row-actions">
           <div className="kanban-move-btns">
-            <button type="button" className="btn btn-ghost btn-xs" title="Mover pra trás" disabled={idx <= 0} onClick={() => onMover(COLS[idx - 1].status)}>←</button>
-            <button type="button" className="btn btn-ghost btn-xs" title="Mover pra frente" disabled={idx >= COLS.length - 1} onClick={() => onMover(COLS[idx + 1].status)}>→</button>
+            <button type="button" className="btn btn-ghost btn-xs" title="Mover pra trás" aria-label="Mover pra trás" disabled={idx <= 0} onClick={() => onMover(COLS[idx - 1].status)}>←</button>
+            <button type="button" className="btn btn-ghost btn-xs" title="Mover pra frente" aria-label="Mover pra frente" disabled={idx >= COLS.length - 1} onClick={() => onMover(COLS[idx + 1].status)}>→</button>
           </div>
           <button type="button" className="btn btn-warning btn-xs" onClick={onEditar}>Editar</button>
           <button type="button" className="btn btn-danger btn-xs" onClick={onExcluir}>Excluir</button>
