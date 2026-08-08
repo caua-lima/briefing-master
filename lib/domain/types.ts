@@ -66,6 +66,16 @@ export type GoalEntry = {
   createdAt?: number;
 };
 
+export type CostCategoria =
+  | "embalagem" | "ferramenta" | "equipe" | "logistica" | "servico"
+  | "software" | "impostos" | "retirada" | "contabilidade" | "outros";
+
+export const COST_CATEGORIA_LABEL: Record<CostCategoria, string> = {
+  embalagem: "Embalagem", ferramenta: "Ferramenta", equipe: "Equipe", logistica: "Logística",
+  servico: "Serviço", software: "Software", impostos: "Impostos", retirada: "Retirada",
+  contabilidade: "Contabilidade", outros: "Outros",
+};
+
 export type Cost = {
   id: string;
   nome: string;
@@ -78,6 +88,11 @@ export type Cost = {
    * retirada e afins, que não devem sujar o número que se olha todo dia.
    */
   escopo?: "dash" | "dre";
+  categoria?: CostCategoria;
+  centroCusto?: string; // ex.: "Anúncios ML", "Galpão", "Financeiro" — livre, não é enum
+  observacao?: string;
+  /** false = arquivado (some das listas ativas, mas continua contando no histórico — nunca apagado por engano). */
+  ativo?: boolean;
   createdBy?: string;
 };
 
