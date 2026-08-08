@@ -155,6 +155,7 @@ function GoalEntryModal({
   const [m2, setM2] = useState(entry?.meta2 ? String(entry.meta2) : "");
   const [m3, setM3] = useState(entry?.meta3 ? String(entry.meta3) : "");
   const [margem, setMargem] = useState(entry?.metaMargem != null ? String(entry.metaMargem) : "10");
+  const [metaLucro, setMetaLucro] = useState(entry?.metaLucro != null ? String(entry.metaLucro) : "");
   const [label, setLabel] = useState(entry?.label ?? "");
 
   async function onSave() {
@@ -167,6 +168,7 @@ function GoalEntryModal({
       meta2: parseFloat(m2) || null,
       meta3: parseFloat(m3) || null,
       metaMargem: parseFloat(margem) || 10,
+      metaLucro: parseFloat(metaLucro) || null,
       // meta diária é derivada automaticamente da meta mensal (meta1 / dias)
       metaDiaria: null,
       meta2Diaria: null,
@@ -228,6 +230,14 @@ function GoalEntryModal({
         <input type="number" min="0" step="0.5" placeholder="10" value={margem} onChange={(e) => setMargem(e.target.value)} />
         <div className="hint">
           Padrão 10%. A meta diária é calculada automaticamente pela meta mensal (Meta 1 ÷ dias do mês).
+        </div>
+      </div>
+
+      <div className="config-field">
+        <label>Meta de lucro líquido (opcional, R$)</label>
+        <input type="number" min="0" step="100" placeholder="Ex: 1500" value={metaLucro} onChange={(e) => setMetaLucro(e.target.value)} />
+        <div className="hint">
+          Independente da margem % — bater a meta de faturamento com margem OK não garante bater esta meta em reais. Deixe em branco pra não acompanhar.
         </div>
       </div>
 

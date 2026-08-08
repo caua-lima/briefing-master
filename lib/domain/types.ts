@@ -48,6 +48,8 @@ export type Goals = {
   metaDiaria: number | null;
   meta2Diaria: number | null;
   meta3Diaria: number | null;
+  /** Meta de lucro líquido em R$, opcional e independente da meta de faturamento — nem todo mês com faturamento batido tem lucro batido junto. */
+  metaLucro: number | null;
   label?: string;
 };
 
@@ -61,6 +63,7 @@ export type GoalEntry = {
   metaDiaria: number | null;
   meta2Diaria: number | null;
   meta3Diaria: number | null;
+  metaLucro: number | null;
   label?: string;
   createdBy?: string;
   createdAt?: number;

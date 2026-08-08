@@ -1113,6 +1113,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
         metaDiaria:  activeGoalEntry.metaDiaria ?? null,
         meta2Diaria: activeGoalEntry.meta2Diaria ?? null,
         meta3Diaria: activeGoalEntry.meta3Diaria ?? null,
+        metaLucro:   activeGoalEntry.metaLucro ?? null,
         label:       activeGoalEntry.label,
       }
     : data.goals;
