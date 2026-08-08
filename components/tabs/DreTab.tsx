@@ -55,9 +55,11 @@ type LinhaProps = {
   /** deducao = sai do resultado; subtotal = fechamento; resultado = linha final */
   tipo?: "deducao" | "subtotal" | "resultado";
   base?: number;
+  /** Explica o que compõe este subtotal/resultado — mesmo padrão ⓘ + hover usado nos KPIs do Dashboard (ExecutiveKpis/PerformanceGauge). */
+  tooltip?: string;
 };
 
-function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
+function Linha({ rotulo, valor, nota, tipo, base, tooltip }: LinhaProps) {
   const ehResultado = tipo === "resultado";
   const ehSub = tipo === "subtotal" || ehResultado;
   const ehDed = tipo === "deducao";
@@ -95,6 +97,12 @@ function Linha({ rotulo, valor, nota, tipo, base }: LinhaProps) {
           }}>
             {rotulo}
           </span>
+          {tooltip && (
+            <span className="pg-info" tabIndex={0} style={{ marginLeft: 5 }}>
+              ⓘ
+              <span role="tooltip" className="pg-tooltip">{tooltip}</span>
+            </span>
+          )}
           {nota && <div style={{ fontSize: ".7rem", color: "var(--muted)", marginTop: 1 }}>{nota}</div>}
         </div>
       </div>
@@ -260,27 +268,55 @@ export default function DreTab() {
         <GrupoDre>Receita</GrupoDre>
         <Linha rotulo="Receita bruta de vendas" valor={receitaBruta} nota="tudo que entrou, inclusive o que caiu depois" />
         <Linha rotulo="Cancelamentos e devoluções" valor={canceladas} tipo="deducao" base={base} />
-        <Linha rotulo="Receita líquida" valor={receitaLiquida} tipo="subtotal" />
+        <Linha
+          rotulo="Receita líquida"
+          valor={receitaLiquida}
+          tipo="subtotal"
+          tooltip="Receita bruta de vendas menos cancelamentos e devoluções concluídas no período."
+        />
 
         <GrupoDre>Custos de venda no Mercado Livre</GrupoDre>
         <Linha rotulo="Taxas do Mercado Livre" valor={m.totalTaxasML} tipo="deducao" base={base} />
         <Linha rotulo="Frete" valor={m.totalEnvio} tipo="deducao" base={base} />
-        <Linha rotulo="Receita operacional líquida" valor={receitaOperacional} tipo="subtotal" nota="o que o ML de fato te repassa" />
+        <Linha
+          rotulo="Receita operacional líquida"
+          valor={receitaOperacional}
+          tipo="subtotal"
+          nota="o que o ML de fato te repassa"
+          tooltip="Receita líquida menos taxas do Mercado Livre e frete — é o valor que efetivamente cai na conta, antes de descontar o custo da mercadoria."
+        />
 
         <GrupoDre>Mercadoria</GrupoDre>
         <Linha rotulo="Custo da mercadoria vendida" valor={m.totalCMV} tipo="deducao" base={base} nota="custo médio × unidades vendidas" />
-        <Linha rotulo="Lucro bruto" valor={lucroBruto} tipo="subtotal" />
+        <Linha
+          rotulo="Lucro bruto"
+          valor={lucroBruto}
+          tipo="subtotal"
+          tooltip="Receita operacional líquida menos o custo da mercadoria vendida (custo médio × unidades). Ainda não descontou imposto, ADS nem despesas operacionais."
+        />
 
         <GrupoDre>Impostos e despesas operacionais</GrupoDre>
         <Linha rotulo="Impostos sobre vendas" valor={m.totalImposto} tipo="deducao" base={base} />
         <Linha rotulo="Marketing (ADS)" valor={m.totalAds} tipo="deducao" base={base} />
         <Linha rotulo="Despesas operacionais" valor={m.custosOperacionais} tipo="deducao" base={base} nota="custos da aba Custos que descontam no Dashboard" />
-        <Linha rotulo="Resultado operacional" valor={resultadoOperacional} tipo="subtotal" nota="daqui pra cima é exatamente o lucro líquido do Dashboard" />
+        <Linha
+          rotulo="Resultado operacional"
+          valor={resultadoOperacional}
+          tipo="subtotal"
+          nota="daqui pra cima é exatamente o lucro líquido do Dashboard"
+          tooltip="Lucro bruto menos impostos sobre vendas, ADS e despesas operacionais (as da aba Custos com escopo 'Dash'). Não inclui pró-labore, contador nem retirada — essas só entram no Resultado líquido, abaixo."
+        />
 
         <GrupoDre>Despesas da empresa</GrupoDre>
         <Linha rotulo="Pró-labore, contador, retirada" valor={m.custosDre} tipo="deducao" base={base} nota="só aparecem aqui, fora do lucro do Dashboard" />
         <div style={{ marginTop: 10 }}>
-          <Linha rotulo="Resultado líquido" valor={resultadoLiquido} tipo="resultado" base={base} />
+          <Linha
+            rotulo="Resultado líquido"
+            valor={resultadoLiquido}
+            tipo="resultado"
+            base={base}
+            tooltip="Resultado operacional menos as despesas da empresa marcadas 'Só na DRE' (pró-labore, contador, retirada). É o número final de tudo que saiu, inclusive o que o Dashboard não desconta."
+          />
         </div>
       </div>
 
