@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/Modal";
-import { fmtBRL, formatMesBR, mesAtual, diasNoMes } from "@/lib/domain/calc";
+import { fmtBRL, formatMesBR, mesAtual, diasNoMes, diaAtualNoMes, projetarMes } from "@/lib/domain/calc";
 import type { GoalEntry } from "@/lib/domain/types";
 import {
   deleteGoalEntry,
@@ -11,6 +11,15 @@ import {
 } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
 import { useAccess } from "@/components/tabs/AccessGuard";
+import { authedFetch } from "@/lib/api/authed-fetch";
+import { getRevenuePaceLabel, getRevenuePaceStatus } from "@/lib/domain/gauge";
+
+type MetricsAtivo = { faturamentoLiquido: number; lucroComCustos: number; margemComCustos: number };
+
+const TONE_COLOR: Record<string, string> = {
+  success: "var(--success,var(--green))", warning: "var(--warning,#F4B942)",
+  danger: "var(--danger,var(--red))", neutral: "var(--brand,var(--accent))",
+};
 
 export default function MetasTab({
   uid,
@@ -32,6 +41,64 @@ export default function MetasTab({
       null
     );
   }, [data.goalEntries]);
+
+  // Progresso real (faturamento/lucro do mês da meta ativa) — mesma rota que
+  // o Dashboard já usa, só filtrando pelo mês da meta em vez do período livre.
+  const [metricsAtivo, setMetricsAtivo] = useState<MetricsAtivo | null>(null);
+  useEffect(() => {
+    if (!activeEntry) { setMetricsAtivo(null); return; }
+    let vivo = true;
+    authedFetch(`/api/ml/metrics?month=${activeEntry.mes}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (vivo && j) setMetricsAtivo({ faturamentoLiquido: j.faturamentoLiquido ?? 0, lucroComCustos: j.lucroComCustos ?? 0, margemComCustos: j.margemComCustos ?? 0 }); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [activeEntry]);
+
+  // Ritmo/projeção só fazem sentido pro mês que está EM ANDAMENTO — meta de
+  // mês passado já fechou, não tem "dia atual" nem "dias restantes" reais.
+  const isMesAtualAtivo = activeEntry?.mes === mesAtual();
+  const diaAtual = diaAtualNoMes();
+  const totalDiasAtivo = activeEntry ? diasNoMes(activeEntry.mes) : 30;
+  const diasRestantesAtivo = Math.max(totalDiasAtivo - diaAtual + 1, 1);
+
+  const metasProgresso = useMemo(() => {
+    if (!activeEntry || !metricsAtivo) return [];
+    const fat = metricsAtivo.faturamentoLiquido;
+    return ([
+      { idx: 1, valor: activeEntry.meta1 },
+      { idx: 2, valor: activeEntry.meta2 },
+      { idx: 3, valor: activeEntry.meta3 },
+    ] as { idx: number; valor: number | null }[])
+      .filter((m): m is { idx: number; valor: number } => !!m.valor && m.valor > 0)
+      .map((m) => {
+        const idealDia = isMesAtualAtivo ? (m.valor / totalDiasAtivo) * diaAtual : m.valor;
+        const tone = getRevenuePaceStatus(fat, m.valor, idealDia);
+        const falta = Math.max(m.valor - fat, 0);
+        return {
+          idx: m.idx, valor: m.valor, tone,
+          label: getRevenuePaceLabel(fat, m.valor, tone),
+          falta,
+          ritmoDia: isMesAtualAtivo && falta > 0 ? falta / diasRestantesAtivo : null,
+          projecao: isMesAtualAtivo ? projetarMes(fat, diaAtual, totalDiasAtivo) : fat,
+          pctReal: (fat / m.valor) * 100,
+        };
+      });
+  }, [activeEntry, metricsAtivo, isMesAtualAtivo, diaAtual, totalDiasAtivo, diasRestantesAtivo]);
+
+  const lucroProgresso = useMemo(() => {
+    if (!activeEntry?.metaLucro || !metricsAtivo) return null;
+    const meta = activeEntry.metaLucro;
+    const lucro = metricsAtivo.lucroComCustos;
+    const idealDia = isMesAtualAtivo ? (meta / totalDiasAtivo) * diaAtual : meta;
+    const tone = getRevenuePaceStatus(lucro, meta, idealDia);
+    return {
+      meta, lucro, tone,
+      label: getRevenuePaceLabel(lucro, meta, tone),
+      falta: Math.max(meta - lucro, 0),
+      pctReal: (lucro / meta) * 100,
+    };
+  }, [activeEntry, metricsAtivo, isMesAtualAtivo, diaAtual, totalDiasAtivo]);
 
   return (
     <div className="dash">
@@ -58,6 +125,49 @@ export default function MetasTab({
             <div className="kpi k-acc"><div className="k-lbl">Meta diária</div><div className="k-val">{fmtBRL(activeEntry.meta1 / diasNoMes(activeEntry.mes))}</div><div className="k-sub">Meta 1 ÷ {diasNoMes(activeEntry.mes)} dias</div></div>
             <div className="kpi k-pos"><div className="k-lbl">Margem alvo</div><div className="k-val" style={{ color: "var(--green)" }}>{activeEntry.metaMargem ?? 10}%</div><div className="k-sub">lucro líquido</div></div>
           </div>
+
+          {metasProgresso.length > 0 && (
+            <div className="panel">
+              <div className="panel-title" style={{ marginBottom: 12 }}>Progresso — {formatMesBR(activeEntry.mes)}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {metasProgresso.map((m) => (
+                  <div key={m.idx}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: ".85rem" }}>Meta {m.idx}</span>
+                      <span className="severity-chip" style={{ color: TONE_COLOR[m.tone], background: "transparent", border: `1px solid ${TONE_COLOR[m.tone]}` }}>{m.label}</span>
+                    </div>
+                    <div style={{ height: 8, borderRadius: 4, background: "var(--surface-raised,var(--surface2))", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(100, Math.max(0, m.pctReal))}%`, background: TONE_COLOR[m.tone], transition: "width .3s ease" }} />
+                    </div>
+                    <div style={{ fontSize: ".76rem", color: "var(--text-secondary,var(--muted))", marginTop: 5 }}>
+                      {m.pctReal.toFixed(0)}% de {fmtBRL(m.valor)}
+                      {m.falta > 0 ? (
+                        <> · faltam <b style={{ color: "var(--text-primary,var(--text))" }}>{fmtBRL(m.falta)}</b>
+                          {m.ritmoDia != null && <> · precisa de {fmtBRL(m.ritmoDia)}/dia</>}
+                          {isMesAtualAtivo && <> · projeção {fmtBRL(m.projecao)}</>}
+                        </>
+                      ) : " · meta batida"}
+                    </div>
+                  </div>
+                ))}
+                {lucroProgresso && (
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: ".85rem" }}>Meta de lucro</span>
+                      <span className="severity-chip" style={{ color: TONE_COLOR[lucroProgresso.tone], background: "transparent", border: `1px solid ${TONE_COLOR[lucroProgresso.tone]}` }}>{lucroProgresso.label}</span>
+                    </div>
+                    <div style={{ height: 8, borderRadius: 4, background: "var(--surface-raised,var(--surface2))", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(100, Math.max(0, lucroProgresso.pctReal))}%`, background: TONE_COLOR[lucroProgresso.tone], transition: "width .3s ease" }} />
+                    </div>
+                    <div style={{ fontSize: ".76rem", color: "var(--text-secondary,var(--muted))", marginTop: 5 }}>
+                      {fmtBRL(lucroProgresso.lucro)} de {fmtBRL(lucroProgresso.meta)}
+                      {lucroProgresso.falta > 0 && <> · faltam <b style={{ color: "var(--text-primary,var(--text))" }}>{fmtBRL(lucroProgresso.falta)}</b></>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
 
