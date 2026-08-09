@@ -239,7 +239,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
   );
 }
 
-export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number }) {
+export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMargem?: number; openOrderId?: string }) {
   const [range, setRange] = useState(() => monthRange());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,6 +247,20 @@ export default function PedidosTab({ metaMargem = 10 }: { metaMargem?: number })
   const [filtro, setFiltro] = useState<"todos" | "lucro" | "prejuizo" | "semcad" | "canceldevol">("todos");
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
   const [detalhe, setDetalhe] = useState<string | null>(null);
+  // Deep link de uma notificação de venda (?tab=pedidos&order=...) — abre o
+  // drawer assim que o pedido aparecer na lista carregada. Limitação
+  // conhecida: só funciona pra pedido dentro do período/range já carregado
+  // (por padrão, o mês atual); pedido mais antigo não abre sozinho.
+  // setState síncrono no efeito é o mesmo falso positivo já documentado em
+  // outros pontos do app (ex.: hidratação de estado a partir de dado
+  // assíncrono/externo) — aqui é sincronizar o drawer com um prop que só
+  // fica pronto depois da lista de pedidos carregar, não dá pra fazer isso
+  // durante o render.
+  useEffect(() => {
+    if (openOrderId && pedidos.some((p) => p.order_id === openOrderId)) {
+      setDetalhe(openOrderId);
+    }
+  }, [openOrderId, pedidos]);
   const [adsByItem, setAdsByItem] = useState<Record<string, number>>({});
   // Fecha o drawer com Esc — sem isso, teclado só fecha clicando no X ou fora.
   useEffect(() => {

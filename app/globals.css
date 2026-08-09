@@ -956,3 +956,59 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 @keyframes drawerSlide{from{transform:translateX(100%)}to{transform:translateX(0)}}
 @media(prefers-reduced-motion:reduce){.drawer-overlay,.drawer-panel{animation:none}}
 @media(max-width:640px){.drawer-panel{width:100%}}
+
+/* =========================================================================
+   Toast premium de venda (foreground) — Fase 7
+   Fila fixa no canto superior direito (desktop) / bottom sheet (mobile).
+   Onyx Gold: fundo --surface-raised, borda --border, acento semântico na
+   borda esquerda (success/warning/danger/info). Sem confete, sem brilho
+   neon, sem som — sombra discreta, entrada ~200ms, respeita
+   prefers-reduced-motion.
+   ========================================================================= */
+.sale-toast-region{position:fixed;top:16px;right:16px;z-index:1200;display:flex;flex-direction:column;gap:10px;width:min(360px,calc(100vw - 32px));pointer-events:none}
+.sale-toast{
+  pointer-events:auto;background:var(--surface-raised);border:1px solid var(--border);
+  border-left:3px solid var(--info-2);border-radius:var(--radius-card);box-shadow:var(--shadow);
+  padding:14px 14px 12px;animation:saleToastIn .2s cubic-bezier(.4,0,.2,1);
+}
+.sale-toast-success{border-left-color:var(--success)}
+.sale-toast-warning{border-left-color:var(--warning)}
+.sale-toast-danger{border-left-color:var(--danger)}
+.sale-toast-info{border-left-color:var(--info-2)}
+.sale-toast-head{display:flex;align-items:flex-start;gap:8px}
+.sale-toast-icon{flex-shrink:0;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+.sale-toast-success .sale-toast-icon{color:var(--success)}
+.sale-toast-warning .sale-toast-icon{color:var(--warning)}
+.sale-toast-danger .sale-toast-icon{color:var(--danger)}
+.sale-toast-info .sale-toast-icon{color:var(--info-2)}
+.sale-toast-title{flex:1;min-width:0;font-size:.72rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--text-primary,var(--text))}
+.sale-toast-close{flex-shrink:0;background:none;border:none;color:var(--text-secondary,var(--muted));cursor:pointer;padding:2px;border-radius:6px;line-height:1}
+.sale-toast-close:hover{color:var(--text-primary,var(--text));background:var(--surface-hover,var(--surface2))}
+.sale-toast-product{margin-top:8px;font-size:.9rem;font-weight:700;color:var(--text-primary,var(--text));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sale-toast-sub{margin-top:2px;font-size:.74rem;color:var(--text-secondary,var(--muted))}
+.sale-toast-value{margin-top:8px;font-size:1.15rem;font-weight:800;color:var(--text-primary,var(--text))}
+.sale-toast-finance{margin-top:3px;font-size:.76rem;color:var(--text-secondary,var(--muted));line-height:1.5}
+.sale-toast-updating{margin-top:6px;display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:700;color:var(--text-muted,var(--muted));background:var(--surface-hover,var(--surface2));border-radius:var(--radius-chip);padding:2px 8px}
+.sale-toast-actions{margin-top:11px;display:flex;gap:8px}
+@keyframes saleToastIn{from{transform:translateX(16px);opacity:0}to{transform:translateX(0);opacity:1}}
+@media(prefers-reduced-motion:reduce){.sale-toast{animation:none}}
+@media(max-width:640px){
+  .sale-toast-region{top:auto;bottom:calc(72px + env(safe-area-inset-bottom,0px));right:8px;left:8px;width:auto}
+}
+
+/* =========================================================================
+   Central de Notificações — sino + drawer (reaproveita .drawer-overlay/
+   .drawer-panel do detalhe de pedido)
+   ========================================================================= */
+.notif-bell{position:relative}
+.notif-bell-dot{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:var(--danger);color:#fff;font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1;border:1.5px solid var(--surface)}
+.notif-tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--border)}
+.notif-tab{padding:8px 12px;border-radius:8px 8px 0 0;border:none;background:transparent;color:var(--text-secondary,var(--muted));font-size:.82rem;font-weight:600;cursor:pointer}
+.notif-tab.active{color:var(--text-primary,var(--text));background:var(--surface-hover,var(--surface2))}
+.notif-item{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer}
+.notif-item:hover{background:var(--surface-hover,var(--surface2))}
+.notif-item-unread{background:var(--brand-soft)}
+.notif-item-icon{flex-shrink:0;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;margin-top:2px}
+.notif-item-title{font-size:.86rem;font-weight:700;color:var(--text-primary,var(--text))}
+.notif-item-body{font-size:.8rem;color:var(--text-secondary,var(--muted));margin-top:2px}
+.notif-item-time{font-size:.7rem;color:var(--text-muted,var(--muted));margin-top:4px}

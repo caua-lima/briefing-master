@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { initForegroundPush } from "@/lib/firebase/push";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
+import { NotificationCenter } from "@/components/NotificationCenter";
 import { useUserData } from "@/components/useUserData";
 import { AccessGuard, useAccess } from "@/components/tabs/AccessGuard";
 import LoginCard from "@/components/LoginCard";
@@ -20,6 +22,7 @@ import { MlAccountStatus } from "@/components/MlAccountStatus";
 import { ZxpMark } from "@/components/ZxpMark";
 import { AvatarUpload } from "@/components/AvatarUpload";
 import CommandPalette from "@/components/CommandPalette";
+import { SaleNotificationProvider } from "@/components/SaleNotificationProvider";
 
 type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "dre" | "tarefas" | "acesso";
 
@@ -84,17 +87,62 @@ export default function Page() {
 
   return (
     <AccessGuard>
-      <AppShell />
+      {/* useSearchParams (deep link ?tab=&order= de uma notificação de venda)
+          exige um limite de Suspense em volta — sem isto o Next reclamaria
+          da falta dele, mesmo esta página inteira já sendo renderizada só no
+          cliente (atrás do gate de auth acima). */}
+      <Suspense fallback={null}>
+        <AppShell />
+      </Suspense>
     </AccessGuard>
   );
 }
 
+const VALID_TABS: readonly Tab[] = ["dashboard", "pedidos", "ads", "metas", "custos", "estoque", "dre", "tarefas", "acesso"];
+
 function AppShell() {
   const { user, signOut, signInWithAccountSelection } = useAuth();
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const searchParams = useSearchParams();
+  // Deep link de notificação de venda (?tab=pedidos&order=...) — só lido na
+  // primeira montagem; depois disso a navegação é sempre por estado local
+  // (setTab/setOpenOrderId), igual ao resto do app, que não usa rota de URL.
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = searchParams.get("tab");
+    return (VALID_TABS as readonly string[]).includes(t ?? "") ? (t as Tab) : "dashboard";
+  });
+  const [openOrderId, setOpenOrderId] = useState<string | undefined>(() => searchParams.get("order") ?? undefined);
+  const [openTaskId, setOpenTaskId] = useState<string | undefined>(() => searchParams.get("task") ?? undefined);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swappingAccount, setSwappingAccount] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  /** CTA de toast/central de notificações: pula direto pra aba Pedidos com o drawer do pedido já aberto. */
+  function navigateToOrder(orderId: string) {
+    setTab("pedidos");
+    setOpenOrderId(orderId);
+  }
+
+  /** Mesma ideia, pra tarefa atribuída: pula pra Tarefas com o modal já aberto. */
+  function navigateToTask(taskId: string) {
+    setTab("tarefas");
+    setOpenTaskId(taskId);
+  }
+
+  /**
+   * Toast e Central de Notificações só sabem o `deepLink` (ex.:
+   * "/?tab=pedidos&order=123" ou "/?tab=tarefas&task=456") — traduz pra
+   * navegação de estado local, que é como o app inteiro navega (sem router
+   * de verdade, ver Tab acima).
+   */
+  function abrirDeepLink(deepLink: string) {
+    const url = new URL(deepLink, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    const orderId = url.searchParams.get("order");
+    const taskId = url.searchParams.get("task");
+    const t = url.searchParams.get("tab");
+    if (orderId) { navigateToOrder(orderId); return; }
+    if (taskId) { navigateToTask(taskId); return; }
+    if (t && (VALID_TABS as readonly string[]).includes(t)) setTab(t as Tab);
+  }
 
   // Ctrl/Cmd+K abre a busca rápida de qualquer lugar do app — atalho comum
   // (VS Code, Linear, Notion) que dispensa clicar na sidebar pra trocar de aba.
@@ -395,6 +443,7 @@ function AppShell() {
               >
                 🔎 <span className="cmdk-hint">Ctrl+K</span>
               </button>
+              <NotificationCenter onNavigate={abrirDeepLink} />
               <PushNotificationToggle />
               <MlAccountStatus />
             </div>
@@ -430,13 +479,13 @@ function AppShell() {
                     onNavigate={(t) => setTab(t as Tab)}
                   />
                 )}
-                {activeTab === "pedidos" && <PedidosTab metaMargem={data.goals?.metaMargem ?? undefined} />}
+                {activeTab === "pedidos" && <PedidosTab metaMargem={data.goals?.metaMargem ?? undefined} openOrderId={openOrderId} />}
                 {activeTab === "ads" && <AdsTab metaMargem={data.goals?.metaMargem ?? undefined} />}
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
                 {activeTab === "dre" && <DreTab />}
-                {activeTab === "tarefas" && <TarefasTab />}
+                {activeTab === "tarefas" && <TarefasTab openTaskId={openTaskId} />}
                 {activeTab === "acesso" && isOwner && <AccessControlTab uid={user.uid} data={data} />}
               </>
             )}
@@ -451,6 +500,8 @@ function AppShell() {
           onSelect={(id) => setTab(id as Tab)}
         />
       )}
+
+      <SaleNotificationProvider onNavigate={abrirDeepLink} />
     </>
   );
 }
