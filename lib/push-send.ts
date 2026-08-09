@@ -1,5 +1,8 @@
 import "server-only";
 import { getAdminDb, getAdminMessaging } from "@/lib/firebase/admin";
+import type { NotificationEventType, SalePushPayload } from "@/lib/domain/notifications";
+import { isPushAllowedForRecipient } from "@/lib/domain/notification-preferences";
+import { agoraBR, getNotificationPreferencesByEmail } from "@/lib/notification-preferences";
 
 type Registro = {
   docId: string; token: string; updatedAt: number;
@@ -89,14 +92,41 @@ function deduplicarPorDispositivo(docs: FirebaseFirestore.QueryDocumentSnapshot[
 }
 
 /**
- * Manda `title`/`body` pros dispositivos em `registros`, com dedupe de
+ * Serializa o payload normalizado pro formato `data` do FCM — TODOS os
+ * valores viram string porque mensagens data-only exigem isso (a API rejeita
+ * número/undefined dentro de `data`). Campos ausentes viram string vazia em
+ * vez de sumirem, pra quem lê do outro lado (SW, foreground, toast) não
+ * precisar tratar "chave ausente" como um caso a mais.
+ */
+function serializarPayload(payload: SalePushPayload): Record<string, string> {
+  return {
+    eventId: payload.eventId,
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    icon: payload.icon ?? "/manifest-icon-192",
+    badge: payload.badge ?? "/manifest-icon-192",
+    tag: payload.tag,
+    orderId: payload.orderId ?? "",
+    deepLink: payload.deepLink,
+    productName: payload.productName ?? "",
+    grossAmount: payload.grossAmount ?? "",
+    estimatedProfit: payload.estimatedProfit ?? "",
+    estimatedMargin: payload.estimatedMargin ?? "",
+    financialState: payload.financialState ?? "",
+    timestamp: payload.timestamp,
+  };
+}
+
+/**
+ * Manda o payload normalizado pros dispositivos em `registros`, com dedupe de
  * `tag`/`collapseKey` (o aparelho SUBSTITUI uma notificação já existente com
  * a mesma tag em vez de empilhar outra — rede de segurança extra, mesmo que
  * algo mande dois pushes do mesmo evento o usuário vê um aviso só). Limpa
  * token morto (app desinstalado, permissão revogada) sozinho.
  * Retorna quantos dispositivos realmente receberam.
  */
-async function enviarPara(registros: Registro[], title: string, body: string, dedupeKey?: string): Promise<number> {
+async function enviarPara(registros: Registro[], payload: SalePushPayload): Promise<number> {
   if (registros.length === 0) return 0;
   const db = getAdminDb();
   const messaging = getAdminMessaging();
@@ -108,8 +138,8 @@ async function enviarPara(registros: Registro[], title: string, body: string, de
     // Worker já faz (ver app/firebase-messaging-sw.js/route.ts) — duas
     // exibições pra um push só. Só "data" garante que a exibição acontece
     // uma vez, sempre pelo nosso código.
-    data: { title, body, tag: dedupeKey ?? "" },
-    webpush: { fcmOptions: { link: "/" } },
+    data: serializarPayload(payload),
+    webpush: { fcmOptions: { link: payload.deepLink } },
   });
 
   const mortos: string[] = [];
@@ -128,13 +158,15 @@ async function enviarPara(registros: Registro[], title: string, body: string, de
 }
 
 /**
- * Manda a mesma notificação pra TODOS os dispositivos registrados
- * (owner e colaborador, cada celular/navegador que ativou) — uma venda é
- * informação do time inteiro, não só de quem tá logado no momento.
+ * Manda o mesmo evento pra TODOS os dispositivos registrados (owner e
+ * colaborador, cada celular/navegador que ativou) — uma venda é informação
+ * do time inteiro, não só de quem tá logado no momento.
  *
- * `dedupeKey` normalmente é o id do pedido — ver `enviarPara`.
+ * `payload.tag` já vem pronto de quem chama (ex.: `sale-{orderId}` — ver
+ * lib/domain/notifications.ts) — é o que faz o aparelho substituir em vez de
+ * empilhar duas notificações do mesmo pedido.
  */
-export async function sendPushToAll(title: string, body: string, dedupeKey?: string): Promise<void> {
+export async function sendPushToAll(payload: SalePushPayload): Promise<{ enviados: number }> {
   const db = getAdminDb();
   const snap = await db.collection("pushTokens").get();
   const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
@@ -145,7 +177,51 @@ export async function sendPushToAll(title: string, body: string, dedupeKey?: str
     await batch.commit();
   }
 
-  await enviarPara(envio, title, body, dedupeKey ? `venda-${dedupeKey}` : undefined);
+  const enviados = await enviarPara(envio, payload);
+  return { enviados };
+}
+
+/**
+ * Igual a `sendPushToAll`, mas filtrando por destinatário ANTES de enviar:
+ * cada e-mail com preferências que desativam esse `type` (ou está dentro do
+ * próprio horário silencioso configurado, e o tipo não é crítico) fica de
+ * fora do envio. O evento em si já foi persistido de qualquer forma — isto
+ * só decide quem recebe o PUSH.
+ *
+ * Owner e colaborador podem ter preferências diferentes porque a checagem é
+ * por e-mail: cada um lê a própria preferência (usuarios/{uid}/preferences/
+ * notifications), nunca a do outro.
+ */
+export async function sendSalePushToAll(
+  payload: SalePushPayload,
+  type: NotificationEventType,
+  isSummary = false,
+): Promise<{ enviados: number; elegiveis: number; bloqueadosPorPreferencia: number }> {
+  const db = getAdminDb();
+  const snap = await db.collection("pushTokens").get();
+  const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
+
+  if (duplicados.length > 0) {
+    const batch = db.batch();
+    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    await batch.commit();
+  }
+
+  const emails = Array.from(new Set(envio.map((r) => r.email).filter(Boolean)));
+  const agora = agoraBR();
+  const permitidoPorEmail = new Map<string, boolean>();
+  await Promise.all(
+    emails.map(async (email) => {
+      const prefs = await getNotificationPreferencesByEmail(email);
+      permitidoPorEmail.set(email, isPushAllowedForRecipient(type, prefs, agora, isSummary));
+    }),
+  );
+
+  const elegiveis = envio.filter((r) => permitidoPorEmail.get(r.email) !== false);
+  const bloqueadosPorPreferencia = envio.length - elegiveis.length;
+
+  const enviados = await enviarPara(elegiveis, payload);
+  return { enviados, elegiveis: elegiveis.length, bloqueadosPorPreferencia };
 }
 
 /**
@@ -155,7 +231,7 @@ export async function sendPushToAll(title: string, body: string, dedupeKey?: str
  * resto do time. Retorna quantos dispositivos desse usuário receberam, pra
  * UI poder dizer "nenhum dispositivo seu está registrado" quando for 0.
  */
-export async function sendPushToUser(email: string, title: string, body: string): Promise<{ enviados: number }> {
+export async function sendPushToUser(email: string, payload: SalePushPayload): Promise<{ enviados: number }> {
   const db = getAdminDb();
   const snap = await db.collection("pushTokens").where("email", "==", email).get();
   const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
@@ -166,6 +242,25 @@ export async function sendPushToUser(email: string, title: string, body: string)
     await batch.commit();
   }
 
-  const enviados = await enviarPara(envio, title, body);
+  const enviados = await enviarPara(envio, payload);
   return { enviados };
+}
+
+/**
+ * Igual a `sendPushToUser`, mas primeiro verifica a preferência DAQUELE
+ * destinatário pra este tipo de evento (toggle + horário silencioso) — usado
+ * pra avisos direcionados a UMA pessoa (ex.: tarefa atribuída), diferente do
+ * envio de venda que já é preference-aware por natureza
+ * (`sendSalePushToAll`, que varre o time inteiro).
+ */
+export async function sendPushToUserIfAllowed(
+  email: string,
+  payload: SalePushPayload,
+  type: NotificationEventType,
+): Promise<{ enviados: number; bloqueadoPorPreferencia: boolean }> {
+  const prefs = await getNotificationPreferencesByEmail(email);
+  const permitido = isPushAllowedForRecipient(type, prefs, agoraBR());
+  if (!permitido) return { enviados: 0, bloqueadoPorPreferencia: true };
+  const { enviados } = await sendPushToUser(email, payload);
+  return { enviados, bloqueadoPorPreferencia: false };
 }

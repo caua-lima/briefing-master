@@ -29,6 +29,7 @@ import type {
   Product,
   Task,
 } from "@/lib/domain/types";
+import type { NotificationEvent } from "@/lib/domain/notifications";
 import { getFirebase } from "./client";
 
 function sanitizeUndefined<T extends Record<string, unknown>>(obj: T): T {
@@ -486,4 +487,48 @@ export function watchAuditLog(cb: (events: AuditEvent[]) => void, max = 200): ()
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => d.data() as AuditEvent));
   });
+}
+
+// ── Central de Notificações (Fase 7) ────────────────────────────
+// O evento em si (criação, classificação, delivery de push) é escrito só
+// pelo backend (ver lib/notification-events.ts) — aqui é só leitura +
+// marcar lido/dispensado, os dois únicos campos que firestore.rules deixa o
+// cliente tocar.
+export function watchNotificationEvents(cb: (events: NotificationEvent[]) => void, max = 50): () => void {
+  // limit(50) de propósito — sem isso o listener ficaria cada vez mais caro
+  // conforme o histórico cresce (é o requisito explícito da Fase 7: nunca um
+  // listener global sem limite).
+  const q = query(sCol("notification_events"), orderBy("createdAt", "desc"), limit(max));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => d.data() as NotificationEvent));
+  });
+}
+
+export async function markNotificationRead(eventId: string, email: string): Promise<void> {
+  await updateDoc(sDoc("notification_events", eventId), { [`readBy.${email}`]: Date.now() }).catch(() => {});
+}
+
+export async function markNotificationDismissed(eventId: string, email: string): Promise<void> {
+  await updateDoc(sDoc("notification_events", eventId), { [`dismissedBy.${email}`]: Date.now() }).catch(() => {});
+}
+
+// ── Preferências de notificação por usuário ──────────────────────
+// usuarios/{uid}/preferences/notifications — cada um só lê/escreve a
+// própria (ver firestore.rules). uid, não e-mail, porque é assim que o
+// backend resolve o destinatário via Admin Auth (ver
+// lib/notification-preferences.ts) sem precisar manter um mapa email→uid.
+function prefsDoc(uid: string) {
+  const { db } = getFirebase();
+  return doc(db, "usuarios", uid, "preferences", "notifications");
+}
+
+export function watchNotificationPreferences(
+  uid: string,
+  cb: (prefs: Record<string, unknown> | null) => void,
+): () => void {
+  return onSnapshot(prefsDoc(uid), (snap) => cb(snap.exists() ? snap.data() : null));
+}
+
+export async function saveNotificationPreferences(uid: string, prefs: Record<string, unknown>): Promise<void> {
+  await setDoc(prefsDoc(uid), prefs);
 }
