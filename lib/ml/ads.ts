@@ -163,11 +163,38 @@ async function resolverMlb(
   });
 }
 
+/**
+ * Identidade de uma linha, para não contar a mesma duas vezes na paginação.
+ *
+ * Inclui os campos de data quando existem: se o recurso devolver uma linha por
+ * DIA (em vez de um resumo do período), cada dia continua sendo uma linha
+ * distinta e nada é descartado. Linha sem nenhum identificador devolve null —
+ * aí não dá pra PROVAR que é duplicata, e o certo é manter (perder gasto real
+ * é pior do que somar demais).
+ */
+function chaveLinha(row: Record<string, unknown>): string | null {
+  const id =
+    texto(row.ad_id) || texto(row.id) || texto(row.item_id) || texto(row.mlb_item_id);
+  if (!id) return null;
+  return [
+    id,
+    texto(row.campaign_id) || texto(row.campaignId),
+    texto(row.date) || texto(row.day) || texto(row.date_from),
+    texto(row.date_to),
+  ].join("|");
+}
+
+// Trava de segurança: com o offset sendo ignorado pelo recurso, o laço só
+// termina pela contagem de linhas novas — este teto evita qualquer chance de
+// laço infinito consumindo a duração da função.
+const MAX_PAGINAS = 40;
+
 /** Busca paginada de um recurso, tentando as URLs candidatas em ordem. */
 async function buscar(urls: (offset: number) => string[], token: string): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
+  const vistos = new Set<string>();
   let offset = 0;
-  while (true) {
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
     let linhas: Record<string, unknown>[] | null = null;
     let total = 0;
     for (const url of urls(offset)) {
@@ -180,9 +207,36 @@ async function buscar(urls: (offset: number) => string[], token: string): Promis
       break;
     }
     if (linhas === null) return out; // nenhuma URL respondeu → deixa o chamador decidir
-    out.push(...linhas);
+
+    /**
+     * A MESMA linha voltando em duas páginas era somada duas vezes lá na
+     * frente (getAdsFullByItem agrupa por item e SOMA as métricas), dobrando
+     * impressões, cliques, investimento e receita atribuída do anúncio — o
+     * ACOS/ROAS continuavam certos porque numerador e denominador dobravam
+     * juntos, então o erro passava despercebido.
+     *
+     * Isso acontece quando o recurso ignora o `offset` ou quando a ordenação
+     * não é estável entre as chamadas: as páginas se sobrepõem e alguns
+     * anúncios aparecem duas vezes (e outros, nenhuma). Descartar por
+     * identidade resolve os dois casos — e NÃO atrapalha o anúncio que está
+     * de verdade em duas campanhas, porque aí o campaign_id difere e as duas
+     * linhas continuam contando.
+     */
+    let novas = 0;
+    for (const linha of linhas) {
+      const chave = chaveLinha(linha);
+      if (chave !== null) {
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
+      }
+      out.push(linha);
+      novas++;
+    }
+
     offset += linhas.length;
-    if (linhas.length === 0 || offset >= total) break;
+    // `novas === 0`: a página inteira já tinha sido lida — sinal de que o
+    // offset não está sendo respeitado. Continuar só repetiria o mesmo lote.
+    if (linhas.length === 0 || novas === 0 || offset >= total) break;
   }
   return out;
 }
