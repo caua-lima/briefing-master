@@ -2,13 +2,105 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { mapOrderItems } from "@/lib/ml/sync";
-import { sendPushToAll } from "@/lib/push-send";
+import { estimateOrderFinance, type ProdutoCusto } from "@/lib/ml/order-finance";
+import { sendSalePushToAll } from "@/lib/push-send";
+import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered, markPushError } from "@/lib/notification-events";
+import { registrarVendaNaJanela } from "@/lib/notification-groups";
+import {
+  buildCancelContent,
+  buildGroupedSalesContent,
+  buildOrderDeepLink,
+  buildSaleContent,
+  classifySale,
+  type NotificationEventSeverity,
+  type NotificationEventType,
+  type SalePushPayload,
+} from "@/lib/domain/notifications";
 
 export const maxDuration = 30;
 
 const ML_API = "https://api.mercadolibre.com";
 
-const fmtBRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+const normSku = (s: string) => s.trim().toLowerCase();
+const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
+
+/** Custo médio + imposto de cada produto, indexado por MLB e SKU — mesmo padrão de app/api/ml/ads/route.ts. */
+async function carregarProdutos(db: FirebaseFirestore.Firestore) {
+  const snap = await db.collection("estoque").get();
+  const porMlb = new Map<string, ProdutoCusto>();
+  const porSku = new Map<string, ProdutoCusto>();
+  for (const doc of snap.docs) {
+    const d = doc.data();
+    const entry: ProdutoCusto = { custo: Number(d.custoMedio ?? d.custo ?? 0), imposto: d.imposto, impostoFaixas: d.impostoFaixas };
+    const mlbs: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
+    for (const m of mlbs) { const n = normId(String(m)); if (n) porMlb.set(n, entry); }
+    const sku = String(d.sku ?? "").trim();
+    if (sku) porSku.set(normSku(sku), entry);
+  }
+  return { porMlb, porSku };
+}
+
+/**
+ * Meta de margem do mês atual, se configurada — mesma lógica de "meta ativa"
+ * do MetasTab (mês corrente, senão a mais recente). Só usada como limiar de
+ * "margem em atenção"; sem meta configurada, classifySale já cai no
+ * DEFAULT_LOW_MARGIN_THRESHOLD fixo.
+ */
+async function metaMargemAtual(db: FirebaseFirestore.Firestore): Promise<number | null> {
+  try {
+    const brNow = new Date(Date.now() - 3 * 3600 * 1000);
+    const mesAtual = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}`;
+    const snap = await db.collection("metasHistorico").orderBy("createdAt", "desc").get();
+    const doMes = snap.docs.find((d) => d.data()?.mes === mesAtual);
+    const escolhido = doMes ?? snap.docs[0];
+    const v = escolhido?.data()?.metaMargem;
+    return typeof v === "number" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function tipoParaSeveridade(type: NotificationEventType): NotificationEventSeverity {
+  switch (type) {
+    case "sale_high_value": case "sale_paid": return "success";
+    case "sale_low_margin": return "warning";
+    case "sale_negative_margin": case "sale_cancelled": case "return_opened": case "return_completed": return "danger";
+    default: return "info";
+  }
+}
+
+function buildPayload(eventId: string, type: NotificationEventType, title: string, body: string, opts: {
+  orderId: string; productName?: string; grossAmount?: number; estimatedProfit?: number; estimatedMargin?: number;
+  financialState?: "estimated" | "confirmed" | "unavailable"; tag: string;
+}): SalePushPayload {
+  return {
+    eventId, type, title, body, tag: opts.tag,
+    orderId: opts.orderId, deepLink: buildOrderDeepLink(opts.orderId),
+    productName: opts.productName,
+    grossAmount: opts.grossAmount != null ? opts.grossAmount.toFixed(2) : undefined,
+    estimatedProfit: opts.estimatedProfit != null ? opts.estimatedProfit.toFixed(2) : undefined,
+    estimatedMargin: opts.estimatedMargin != null ? opts.estimatedMargin.toFixed(1) : undefined,
+    financialState: opts.financialState,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Envia o push do evento já persistido, registrando tentativa/entrega/erro
+ * na trilha do próprio evento (nunca o token ou payload completo — só
+ * metadados seguros, ver lib/notification-events.ts).
+ */
+async function enviarEPersistirEntrega(eventId: string, type: NotificationEventType, payload: SalePushPayload, isSummary = false) {
+  await markPushAttempted(eventId);
+  try {
+    const { enviados, bloqueadosPorPreferencia } = await sendSalePushToAll(payload, type, isSummary);
+    if (enviados > 0) await markPushDelivered(eventId);
+    else await markPushError(eventId, bloqueadosPorPreferencia > 0 ? "todos os destinatários bloquearam por preferência/horário silencioso" : "nenhum dispositivo registrado");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await markPushError(eventId, msg.slice(0, 160));
+  }
+}
 
 /**
  * Callback de notificações do Mercado Livre (tópico `orders_v2`). Precisa
@@ -17,17 +109,15 @@ const fmtBRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency"
  *
  * O ML manda só um ponteiro (`resource`) a cada mudança no pedido — criação,
  * pagamento aprovado, troca de status de envio, etc. — então este endpoint
- * dispara VÁRIAS vezes pro mesmo pedido ao longo da vida dele. Só dispara a
- * notificação push na transição pra "paid" que ainda não tinha sido vista
- * (dedupe via `notifiedPush` no Firestore) — as outras chamadas só mantêm o
- * pedido atualizado no dashboard, sem pingar de novo.
+ * dispara VÁRIAS vezes pro mesmo pedido ao longo da vida dele.
  *
- * O check+set do `notifiedPush` roda dentro de uma transação — o ML costuma
- * mandar o mesmo evento em duas chamadas quase simultâneas (reenvio/retry), e
- * um "lê depois grava" comum tem uma janela onde as duas chamadas leem
- * "ainda não notificado" antes de qualquer uma escrever, e a notificação sai
- * duplicada. A transação serializa isso: a segunda chamada só é processada
- * depois que a primeira já commitou, então já enxerga `notifiedPush: true`.
+ * Idempotência: cada evento de negócio (venda confirmada, cancelamento) vira
+ * um doc em `notification_events` cujo ID É o dedupeKey — o Firestore
+ * garante, via `DocumentReference.create()`, que só a PRIMEIRA chamada cria
+ * o doc. Chamadas repetidas (retry do ML, ou o webhook disparando de novo
+ * por causa de outra mudança no mesmo pedido) recebem `created: false` e
+ * simplesmente não mandam push de novo — sem precisar de transação própria
+ * pra isso (ver lib/notification-events.ts).
  */
 export async function POST(req: Request) {
   let body: { resource?: string; topic?: string } | null = null;
@@ -59,46 +149,112 @@ export async function POST(req: Request) {
     }
     const order = (await res.json()) as Record<string, unknown>;
     const status = String(order.status ?? "");
+    const items = mapOrderItems(order);
+    const primeiro = items[0]?.title || "Pedido";
 
     const db = getAdminDb();
     const ref = db.collection("ml_orders").doc(orderId);
+    const antes = await ref.get();
+    const jaEstavaPago = antes.exists && antes.data()?.status === "paid";
 
-    // Transação: decide "deve notificar" e já marca notifiedPush=true no
-    // mesmo commit atômico, fechando a janela de corrida entre chamadas
-    // concorrentes do mesmo evento.
-    const deveNotificar = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      const jaEstavaPago = snap.exists && snap.data()?.status === "paid";
-      const jaNotificado = snap.exists && snap.data()?.notifiedPush === true;
-      const notificarAgora = status === "paid" && !jaEstavaPago && !jaNotificado;
+    // Mantém o dashboard atualizado mesmo em chamadas que não geram evento
+    // (troca de status de envio, etc.) — sincronização completa (frete,
+    // repasse) continua vindo do cron/sync manual, isto aqui é só o essencial.
+    await ref.set({
+      order_id: orderId,
+      status: order.status ?? null,
+      date_created: String(order.date_created ?? ""),
+      total_amount: Number(order.total_amount ?? 0),
+      currency: order.currency_id ?? "BRL",
+      items,
+      pack_id: order.pack_id ? String(order.pack_id) : null,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
 
-      // Grava o essencial pra já aparecer no dashboard na hora — a sincronização
-      // completa (custo de frete, repasse líquido do Mercado Pago) continua vindo
-      // do cron diário e do botão de sincronizar manual, então não duplica aquele
-      // trabalho pesado aqui a cada notificação recebida.
-      const patch: Record<string, unknown> = {
-        order_id: orderId,
-        status: order.status ?? null,
-        date_created: String(order.date_created ?? ""),
-        total_amount: Number(order.total_amount ?? 0),
-        currency: order.currency_id ?? "BRL",
-        items: mapOrderItems(order),
-        pack_id: order.pack_id ? String(order.pack_id) : null,
-        updatedAt: new Date().toISOString(),
-      };
-      if (notificarAgora) patch.notifiedPush = true;
+    // ── Venda confirmada (transição pra "paid") ──────────────────
+    if (status === "paid" && !jaEstavaPago) {
+      const [{ porMlb, porSku }, metaMargem] = await Promise.all([carregarProdutos(db), metaMargemAtual(db)]);
+      const finance = estimateOrderFinance(
+        items, porMlb, porSku,
+        typeof order.shipping_cost === "number" ? (order.shipping_cost as number) : null,
+        String(order.date_created ?? new Date().toISOString()),
+        metaMargem,
+      );
+      const { type } = classifySale(finance);
+      const content = buildSaleContent({ ...finance, type, itemCount: finance.itemCount });
+      const severity = tipoParaSeveridade(type);
+      const financialState: "estimated" | "unavailable" = finance.estimatedProfit == null ? "unavailable" : "estimated";
 
-      tx.set(ref, patch, { merge: true });
-      return notificarAgora;
-    });
+      // dedupeKey ESTÁVEL por pedido — sempre "sale_paid:{orderId}", nunca
+      // varia com a classificação (alto valor/margem baixa/etc.): se
+      // variasse, um retry que recalculasse pra um tipo diferente (ex.:
+      // produto ficou vinculado entre uma chamada e outra) criaria um SEGUNDO
+      // evento pro mesmo pedido — exatamente a duplicidade que isto existe
+      // pra evitar.
+      const dedupeKey = `sale_paid:${orderId}`;
+      const { created, eventId } = await createNotificationEventIdempotent({
+        type, severity, entityType: "order", entityId: orderId, dedupeKey,
+        title: content.title, body: content.body,
+        orderId, orderExternalId: orderId,
+        productName: finance.productName, productCount: finance.itemCount, quantity: finance.quantityTotal,
+        grossAmount: finance.grossAmount,
+        estimatedProfit: finance.estimatedProfit ?? undefined,
+        estimatedMargin: finance.estimatedMargin ?? undefined,
+        financialState,
+        deepLink: buildOrderDeepLink(orderId),
+      });
 
-    if (deveNotificar) {
-      const itens = mapOrderItems(order);
-      const primeiro = itens[0]?.title || "Pedido";
-      const resumo = itens.length > 1 ? `${primeiro} + ${itens.length - 1} item(ns)` : primeiro;
-      // orderId como chave: se dois pushes do mesmo pedido escaparem, o
-      // aparelho substitui a notificação em vez de empilhar duas.
-      await sendPushToAll("🎉 Nova venda!", `${resumo} — ${fmtBRL(Number(order.total_amount ?? 0))}`, orderId);
+      if (created) {
+        const payload = buildPayload(eventId, type, content.title, content.body, {
+          orderId, productName: finance.productName, grossAmount: finance.grossAmount,
+          estimatedProfit: finance.estimatedProfit ?? undefined, estimatedMargin: finance.estimatedMargin ?? undefined,
+          financialState, tag: `sale-${orderId}`,
+        });
+
+        // Prejuízo/margem negativa NUNCA agrupa — precisa continuar
+        // individual mesmo em pico de vendas, é o tipo de aviso que não pode
+        // se perder dentro de um resumo.
+        if (type === "sale_negative_margin") {
+          await enviarEPersistirEntrega(eventId, type, payload);
+        } else {
+          const decisao = await registrarVendaNaJanela(finance.grossAmount);
+          if (decisao.modo === "individual") {
+            await enviarEPersistirEntrega(eventId, type, payload);
+          } else if (decisao.modo === "resumo_dispara") {
+            const resumo = buildGroupedSalesContent(decisao.totalNaJanela, decisao.grossAcumulado, decisao.janelaMinutos);
+            const payloadResumo = buildPayload(eventId, type, resumo.title, resumo.body, {
+              orderId, tag: `sales-summary-${Math.floor(Date.now() / 90000)}`,
+            });
+            // O evento individual desta venda já foi persistido acima (fonte
+            // de verdade da Central) — o push é que vira um resumo pra não
+            // empilhar 4+ notificações nativas em poucos segundos.
+            await enviarEPersistirEntrega(eventId, type, payloadResumo, true);
+          }
+          // "resumo_silencioso": já mandou o resumo na venda que disparou o
+          // agrupamento — esta aqui só soma ao contador, sem push novo.
+        }
+      }
+    }
+
+    // ── Cancelamento (só conta se já tínhamos marcado como paga antes) ──
+    if (status === "cancelled" && jaEstavaPago) {
+      const dedupeKey = `sale_cancelled:${orderId}`;
+      const valorImpacto = Number(order.total_amount ?? antes.data()?.total_amount ?? 0);
+      const content = buildCancelContent(primeiro, items.length, valorImpacto);
+      const { created, eventId } = await createNotificationEventIdempotent({
+        type: "sale_cancelled", severity: "warning", entityType: "order", entityId: orderId, dedupeKey,
+        title: content.title, body: content.body,
+        orderId, orderExternalId: orderId,
+        productName: primeiro, productCount: items.length,
+        grossAmount: valorImpacto, financialState: "estimated",
+        deepLink: buildOrderDeepLink(orderId),
+      });
+      if (created) {
+        const payload = buildPayload(eventId, "sale_cancelled", content.title, content.body, {
+          orderId, productName: primeiro, grossAmount: valorImpacto, financialState: "estimated", tag: `sale-${orderId}`,
+        });
+        await enviarEPersistirEntrega(eventId, "sale_cancelled", payload);
+      }
     }
 
     return NextResponse.json({ ok: true });

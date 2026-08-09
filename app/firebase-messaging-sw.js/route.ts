@@ -34,26 +34,35 @@ messaging.onBackgroundMessage((payload) => {
   const d = payload.data || {};
   const title = d.title || "Nova venda!";
   // A "tag" faz o sistema SUBSTITUIR um aviso já existente do mesmo pedido
-  // em vez de empilhar outro — rede de segurança contra push duplicado.
+  // em vez de empilhar outro — rede de segurança extra contra push duplicado.
   const options = {
     body: d.body || "",
-    icon: "/manifest-icon-192",
-    badge: "/manifest-icon-192",
+    icon: d.icon || "/manifest-icon-192",
+    badge: d.badge || "/manifest-icon-192",
     tag: d.tag || undefined,
     renotify: false,
+    // Guarda o deepLink pro clique (notificationclick não recebe o payload de
+    // novo, só o objeto Notification já mostrado) — sem isto, clicar sempre
+    // abriria "/" em vez da aba/pedido certo.
+    data: { deepLink: d.deepLink || "/" },
   };
   self.registration.showNotification(title, options);
 });
 
-// Clicar na notificação foca a aba do app já aberta, ou abre uma nova.
+// Clicar na notificação foca a aba do app já aberta (navegando ela pro
+// deepLink) ou abre uma nova — nunca as duas coisas, pra não empilhar janela.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const deepLink = (event.notification.data && event.notification.data.deepLink) || "/";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const client of list) {
-        if ("focus" in client) return client.focus();
+        if ("focus" in client) {
+          if ("navigate" in client) client.navigate(deepLink).catch(() => {});
+          return client.focus();
+        }
       }
-      if (self.clients.openWindow) return self.clients.openWindow("/");
+      if (self.clients.openWindow) return self.clients.openWindow(deepLink);
     }),
   );
 });

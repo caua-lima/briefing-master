@@ -112,11 +112,46 @@ export async function disablePushNotifications(email: string): Promise<void> {
 
 let foregroundInited = false;
 
+/** Mesmos campos que lib/push-send.ts serializa em `data` — ver SalePushPayload em lib/domain/notifications.ts. */
+export type ForegroundPushEvent = {
+  eventId: string;
+  type: string;
+  title: string;
+  body: string;
+  tag: string;
+  orderId?: string;
+  deepLink: string;
+  productName?: string;
+  grossAmount?: string;
+  estimatedProfit?: string;
+  estimatedMargin?: string;
+  financialState?: string;
+  timestamp: string;
+};
+
+const foregroundListeners = new Set<(evt: ForegroundPushEvent) => void>();
+
+/**
+ * Assina eventos de push chegando com o app ABERTO — é o que alimenta o
+ * toast premium (SaleNotificationProvider). Retorna a função de cancelar a
+ * assinatura, padrão useEffect.
+ */
+export function onForegroundPush(cb: (evt: ForegroundPushEvent) => void): () => void {
+  foregroundListeners.add(cb);
+  return () => foregroundListeners.delete(cb);
+}
+
 /**
  * Com o app ABERTO em primeiro plano, o FCM não mostra notificação nativa
  * sozinho (isso só acontece em segundo plano, via Service Worker) — sem
  * isto, uma venda que chega com o dashboard aberto na tela passaria em
  * silêncio. Chamado uma vez na raiz do app; idempotente.
+ *
+ * NÃO abre mais um `new Notification()` nativo aqui: o toast premium (ver
+ * components/SaleNotificationProvider.tsx) é a experiência de foreground —
+ * mostrar os dois ao mesmo tempo duplicaria o aviso pro usuário com a aba
+ * focada, o mesmo princípio de "nunca duas notificações pro mesmo evento"
+ * que já rege a deduplicação por dispositivo.
  */
 export async function initForegroundPush(): Promise<void> {
   if (foregroundInited || typeof window === "undefined") return;
@@ -126,15 +161,18 @@ export async function initForegroundPush(): Promise<void> {
   const { app } = getFirebase();
   const messaging = getMessaging(app);
   onMessage(messaging, (payload) => {
-    if (Notification.permission !== "granted") return;
     // Lê de "data", não "notification" — o envio manda só "data" de
     // propósito (ver lib/push-send.ts) pra nunca correr o risco do próprio
     // Firebase exibir a notificação em paralelo com este código.
-    const title = payload.data?.title ?? "Nova venda!";
-    const bodyText = payload.data?.body ?? "";
-    // Mesma `tag` do Service Worker: com o app aberto E um aviso do mesmo
-    // pedido já na tela, o sistema substitui em vez de mostrar dois.
-    const tag = payload.data?.tag || undefined;
-    new Notification(title, { body: bodyText, icon: "/manifest-icon-192", tag });
+    const d = payload.data;
+    if (!d?.title) return;
+    const evt: ForegroundPushEvent = {
+      eventId: d.eventId ?? "", type: d.type ?? "system", title: d.title, body: d.body ?? "",
+      tag: d.tag ?? "", orderId: d.orderId || undefined, deepLink: d.deepLink ?? "/",
+      productName: d.productName || undefined, grossAmount: d.grossAmount || undefined,
+      estimatedProfit: d.estimatedProfit || undefined, estimatedMargin: d.estimatedMargin || undefined,
+      financialState: d.financialState || undefined, timestamp: d.timestamp ?? new Date().toISOString(),
+    };
+    foregroundListeners.forEach((cb) => cb(evt));
   });
 }
