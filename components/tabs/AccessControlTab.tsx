@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { roleLabel, type AccessEntry, type AuditEvent } from "@/lib/domain/types";
+import { roleLabel, type AccessEntry, type AuditEvent, type PermissionTab } from "@/lib/domain/types";
 import {
   addAccessEntry,
   logAudit,
@@ -13,6 +13,11 @@ import {
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { useAccess } from "@/components/tabs/AccessGuard";
+
+const PERMISSION_TABS: PermissionTab[] = ["custos", "metas", "estoque"];
+const PERMISSION_TAB_LABEL: Record<PermissionTab, string> = {
+  custos: "Custos", metas: "Metas", estoque: "Estoque",
+};
 
 export default function AccessControlTab({
   uid,
@@ -35,6 +40,7 @@ export default function AccessControlTab({
   const [displayName, setDisplayName] = useState("");
   const [photoURL, setPhotoURL] = useState("");
   const [password, setPassword] = useState("");
+  const [permissoesEdicao, setPermissoesEdicao] = useState<PermissionTab[]>([]);
 
   useEffect(() => {
     const unsubscribe = watchAccessList((nextEntries) => {
@@ -79,6 +85,7 @@ export default function AccessControlTab({
     setDisplayName("");
     setPhotoURL("");
     setPassword("");
+    setPermissoesEdicao([]);
     setError("");
   }
 
@@ -89,7 +96,12 @@ export default function AccessControlTab({
     setDisplayName(entry.displayName ?? "");
     setPhotoURL(entry.photoURL ?? "");
     setPassword("");
+    setPermissoesEdicao(entry.permissoesEdicao ?? []);
     setError("");
+  }
+
+  function togglePermissao(tab: PermissionTab) {
+    setPermissoesEdicao((cur) => (cur.includes(tab) ? cur.filter((t) => t !== tab) : [...cur, tab]));
   }
 
   async function saveEntry() {
@@ -107,22 +119,28 @@ export default function AccessControlTab({
     try {
       setError("");
       const effectiveRole = editingEntry?.role === "owner" ? "owner" : role;
+      // Owner edita tudo sempre — gravar permissoesEdicao pra ele seria um
+      // campo morto que some assim que a UI reabrisse a edição.
       const payload: AccessEntry = {
         email: normalizedEmail,
         role: effectiveRole,
         displayName: displayName.trim() || undefined,
         photoURL: photoURL.trim() || undefined,
+        permissoesEdicao: effectiveRole === "colaborador" ? permissoesEdicao : undefined,
       };
+      const detalhePermissoes = effectiveRole === "colaborador"
+        ? ` · edita: ${permissoesEdicao.length ? permissoesEdicao.map((t) => PERMISSION_TAB_LABEL[t]).join(", ") : "nenhuma aba"}`
+        : "";
 
       if (editingEmail) {
         if (editingEmail !== normalizedEmail) {
           await removeAccessEntry(editingEmail);
         }
         await updateAccessEntry(normalizedEmail, payload);
-        logAudit({ acao: "editar", entidade: "acesso", entidadeId: normalizedEmail, entidadeLabel: normalizedEmail, detalhe: `papel: ${effectiveRole}` }).catch(() => {});
+        logAudit({ acao: "editar", entidade: "acesso", entidadeId: normalizedEmail, entidadeLabel: normalizedEmail, detalhe: `papel: ${effectiveRole}${detalhePermissoes}` }).catch(() => {});
       } else {
         await addAccessEntry(payload);
-        logAudit({ acao: "criar", entidade: "acesso", entidadeId: normalizedEmail, entidadeLabel: normalizedEmail, detalhe: `papel: ${effectiveRole}` }).catch(() => {});
+        logAudit({ acao: "criar", entidade: "acesso", entidadeId: normalizedEmail, entidadeLabel: normalizedEmail, detalhe: `papel: ${effectiveRole}${detalhePermissoes}` }).catch(() => {});
       }
 
       // Se informou senha, cria/atualiza o login por e-mail/senha
@@ -274,6 +292,23 @@ export default function AccessControlTab({
               </div>
             </div>
 
+            {(editingEntry?.role === "owner" ? "owner" : role) === "colaborador" && (
+              <div className="config-field" style={{ margin: 0 }}>
+                <label>Pode editar (além de só ver)</label>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  {PERMISSION_TABS.map((tab) => (
+                    <label key={tab} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".85rem", fontWeight: 500, cursor: "pointer" }}>
+                      <input type="checkbox" checked={permissoesEdicao.includes(tab)} onChange={() => togglePermissao(tab)} />
+                      {PERMISSION_TAB_LABEL[tab]}
+                    </label>
+                  ))}
+                </div>
+                <div className="hint">
+                  Fora daqui, colaborador vê tudo mas só edita Tarefas (que já é compartilhado com o owner por padrão). Marque as abas onde ele também pode editar.
+                </div>
+              </div>
+            )}
+
             {error ? (
               <div className="note note-danger" role="alert">{error}</div>
             ) : null}
@@ -313,6 +348,9 @@ export default function AccessControlTab({
                     <div style={{ marginTop: 4, fontSize: ".8rem", color: "var(--muted)" }}>
                       {entry.displayName || "Sem nome"}
                       {entry.addedAt ? ` · desde ${new Date(entry.addedAt).toLocaleDateString("pt-BR")}` : ""}
+                      {entry.role !== "owner" && entry.permissoesEdicao?.length
+                        ? ` · edita: ${entry.permissoesEdicao.map((t) => PERMISSION_TAB_LABEL[t]).join(", ")}`
+                        : ""}
                     </div>
                   </div>
                   {canEdit && (
