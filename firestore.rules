@@ -125,6 +125,16 @@ service cloud.firestore {
       allow delete: if isAuthorized() && resource.data.email == request.auth.token.email;
     }
 
+    // Trilha de auditoria: qualquer autorizado registra a PRÓPRIA ação
+    // (não pode assinar em nome de outro), só o owner lê/lista (atividade de
+    // colaborador é informação sensível), e ninguém — nem o owner — pode
+    // alterar ou apagar um evento já gravado. Log de verdade é imutável.
+    match /auditLog/{docId} {
+      allow read, list: if isOwner();
+      allow create: if isAuthorized() && request.resource.data.por == request.auth.token.email;
+      allow update, delete: if false;
+    }
+
     // Legacy: Allow authorized users read old data, writes only own uid
     match /usuarios/{uid}/{document=**} {
       allow read: if isAuthorized();

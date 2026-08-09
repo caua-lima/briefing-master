@@ -18,6 +18,9 @@ import { getAuth } from "firebase/auth";
 import type {
   AccessEntry,
   ArchivedDay,
+  AuditAction,
+  AuditEntity,
+  AuditEvent,
   Cost,
   DraftToday,
   EstoqueMovimento,
@@ -458,4 +461,29 @@ export async function getAccessBootstrap(): Promise<{ ownerEmail: string } | nul
 export async function isAccessListEmpty(): Promise<boolean> {
   const snap = await getDocs(query(aCol(), limit(1)));
   return snap.empty;
+}
+
+// ── Trilha de auditoria (global collection, append-only) ────────
+// Registrada explicitamente pelas telas em ações discretas (clique em
+// "Salvar"/"Arquivar"/"Excluir"), nunca pelas funções genéricas de
+// upsert/patch acima — evita virar ruído com o auto-save por campo do
+// Custos. As regras do Firestore proíbem update/delete: uma vez gravado,
+// o evento é permanente.
+export async function logAudit(evt: {
+  acao: AuditAction;
+  entidade: AuditEntity;
+  entidadeId: string;
+  entidadeLabel: string;
+  detalhe?: string;
+}): Promise<void> {
+  const email = getCurrentUserEmail();
+  const id = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await setDoc(sDoc("auditLog", id), sanitizeUndefined({ ...evt, id, por: email, em: Date.now() }));
+}
+
+export function watchAuditLog(cb: (events: AuditEvent[]) => void, max = 200): () => void {
+  const q = query(sCol("auditLog"), orderBy("em", "desc"), limit(max));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => d.data() as AuditEvent));
+  });
 }

@@ -245,3 +245,25 @@ export function isTaskAtrasada(t: Task): boolean {
 export function appendAtividade(atual: TaskAtividade[] | undefined, evento: TaskAtividade, max = 20): TaskAtividade[] {
   return [...(atual ?? []), evento].slice(-max);
 }
+
+// ── Trilha de auditoria ─────────────────────────────────────────
+// Diferente de TaskAtividade (que vive dentro de UMA tarefa), isto é um log
+// GLOBAL e imutável (append-only, ver firestore.rules) de ações relevantes em
+// qualquer parte do app — quem criou/editou/arquivou/excluiu o quê. Só
+// registra ações discretas de usuário (clique em "Salvar"/"Arquivar"/
+// "Excluir"), não o auto-save por campo do Custos: logar cada tecla digitada
+// viraria ruído, não auditoria.
+export type AuditAction = "criar" | "editar" | "arquivar" | "reativar" | "excluir";
+export type AuditEntity = "custo" | "meta" | "acesso";
+
+export type AuditEvent = {
+  id: string;
+  acao: AuditAction;
+  entidade: AuditEntity;
+  entidadeId: string;
+  /** Rótulo legível da entidade no momento da ação (nome do custo, mês da meta, e-mail do acesso) — não depende de resolver o id depois, então continua fazendo sentido mesmo se o registro original for excluído. */
+  entidadeLabel: string;
+  por: string; // e-mail de quem fez a ação
+  em: number;  // timestamp
+  detalhe?: string;
+};
