@@ -135,7 +135,8 @@ function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): Previ
 }
 
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
-  const { canEdit } = useAccess();
+  const { canEditTab } = useAccess();
+  const canEdit = canEditTab("estoque");
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [estoqueML, setEstoqueML] = useState<EstoqueML>({});

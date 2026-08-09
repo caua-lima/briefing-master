@@ -22,7 +22,8 @@ function impactoMes(c: Cost, dias: number): number {
 }
 
 export default function CustosTab({ uid, data }: { uid: string; data: UserData }) {
-  const { canEdit } = useAccess();
+  const { canEditTab } = useAccess();
+  const canEdit = canEditTab("custos");
   const dias = diasNoMes(mesAtual());
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   // Arquivado (ativo:false) para de contar em tudo — mesmo filtro que a rota

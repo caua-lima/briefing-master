@@ -29,7 +29,8 @@ export default function MetasTab({
   uid: string;
   data: UserData;
 }) {
-  const { canEdit } = useAccess();
+  const { canEditTab } = useAccess();
+  const canEdit = canEditTab("metas");
   const [openNew, setOpenNew] = useState(false);
   const [editEntry, setEditEntry] = useState<GoalEntry | null>(null);
 
