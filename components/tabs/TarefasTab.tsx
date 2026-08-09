@@ -9,6 +9,7 @@ import Modal from "@/components/Modal";
 import { appendAtividade, isTaskAtrasada, type AccessEntry, type Task, type TaskAtividade, type TaskPriority, type TaskStatus } from "@/lib/domain/types";
 import { deleteTask, upsertTask, watchAccessList, watchTasks } from "@/lib/firebase/data";
 import { useAccess } from "@/components/tabs/AccessGuard";
+import { authedFetch } from "@/lib/api/authed-fetch";
 
 const PRIORIDADE_META: Record<TaskPriority, { label: string; cor: string; peso: number }> = {
   critica: { label: "Crítica", cor: "var(--danger,var(--red))", peso: 3 },
@@ -45,7 +46,7 @@ const isAtrasada = isTaskAtrasada;
 
 type Filtro = "todas" | "pra-mim" | "criei-eu";
 
-export default function TarefasTab() {
+export default function TarefasTab({ openTaskId }: { openTaskId?: string } = {}) {
   const { email } = useAccess();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pessoas, setPessoas] = useState<AccessEntry[]>([]);
@@ -56,6 +57,17 @@ export default function TarefasTab() {
   const [somenteAtrasadas, setSomenteAtrasadas] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [openNew, setOpenNew] = useState(false);
+
+  // Deep link de uma notificação de tarefa (?tab=tarefas&task=...) — abre o
+  // modal de edição assim que a tarefa aparecer na lista carregada. Mesmo
+  // padrão/mesma ressalva de PedidosTab.tsx (setState síncrono no efeito é
+  // sincronizar com um prop que só fica pronto depois da lista carregar).
+  useEffect(() => {
+    if (openTaskId) {
+      const t = tasks.find((x) => x.id === openTaskId);
+      if (t) setEditTask(t);
+    }
+  }, [openTaskId, tasks]);
 
   useEffect(() => {
     const u1 = watchTasks((ts) => { setTasks(ts); setLoading(false); });
@@ -312,6 +324,10 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
       // Rastro de atividade — compara contra a tarefa original (task) pra só
       // registrar o que de fato mudou nesta edição.
       let atividade = task?.atividade;
+      // Atribuição NOVA pra alguém (não vazio, diferente de antes) — é o
+      // gatilho da notificação abaixo. Comparado antes de sobrescrever
+      // `atividade`, pra não depender da string formatada do rastro.
+      const atribuicaoMudou = (task?.assignedTo ?? "") !== (assignedTo || "") && !!assignedTo;
       if (!task) {
         atividade = appendAtividade(atividade, { tipo: "criada", por: minhaEmail, em: Date.now() });
       } else {
@@ -339,6 +355,19 @@ function TaskModal({ pessoas, minhaEmail, task, onClose }: {
         atividade,
       };
       await upsertTask(next);
+
+      // Notifica quem recebeu a tarefa — só quando a atribuição é nova e não
+      // é a própria pessoa se auto-atribuindo (a rota também garante isso,
+      // aqui é só pra não gastar um round-trip à toa). Fire-and-forget: uma
+      // falha aqui não pode travar o salvamento da tarefa, que já aconteceu.
+      if (atribuicaoMudou && assignedTo !== minhaEmail) {
+        authedFetch("/api/notify/task-assigned", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId: next.id, assigneeEmail: assignedTo, title: next.title, priority: next.priority, dueDate: next.dueDate }),
+        }).catch(() => {});
+      }
+
       onClose();
     } finally {
       setSaving(false);
