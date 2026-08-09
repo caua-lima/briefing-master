@@ -773,6 +773,13 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
   .topbar{padding:10px 12px;gap:8px}
   /* PODE encolher aqui — era o flex-shrink:0 que estourava a largura */
   .topbar-actions{gap:6px;min-width:0}
+  /* Rede de segurança: com busca + sino da Central + toggle de push + menu
+     de mais ações + status da conta ML, ainda pode não caber num celular
+     bem estreito mesmo só com ícone. Em vez de cortar o último em silêncio
+     (era o que estava acontecendo), a própria fileira de ações rola. */
+  .topbar-actions{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .topbar-actions::-webkit-scrollbar{display:none}
+  .topbar-actions>*{flex-shrink:0}
   /* nickname/e-mail já estão no rodapé da sidebar; no topo só ocupavam espaço */
   .acct-text{display:none!important}
   /* botões viram só ícone: sino e tomada continuam legíveis sem o rótulo */

@@ -25,11 +25,18 @@ type ResultadoTeste = {
 };
 
 /**
- * Botão de sino na barra superior pra ligar/desligar notificação de venda
- * neste dispositivo, mais o menu de cenários de teste e o atalho pra
- * configurações. Tem um indicador visual sempre visível (a bolinha no canto
- * do sino) porque o rótulo de texto some no celular pra não estourar a
- * barra — sem a bolinha, não sobraria nenhum jeito de ver o estado lá.
+ * Botão pra ligar/desligar notificação de venda NESTE dispositivo, mais um
+ * menu único com os cenários de teste e o atalho pra configurações — os
+ * dois viviam em botões separados, e somados ao sino da Central de
+ * Notificações (componente irmão, no topbar) a barra ficava com dois ícones
+ * de sino visualmente idênticos e sem espaço pra todo mundo no celular
+ * (ver globals.css .topbar-actions). Reduzido pra 2 botões: o toggle em si
+ * (ícone de aparelho, não de sino — não é a Central, é "neste dispositivo")
+ * e um "⋯" que abre tanto o teste quanto as configurações.
+ *
+ * Tem um indicador visual sempre visível (a bolinha no canto do ícone)
+ * porque o rótulo de texto some no celular pra não estourar a barra — sem a
+ * bolinha, não sobraria nenhum jeito de ver o estado lá.
  */
 export function PushNotificationToggle() {
   const { user } = useAuth();
@@ -97,7 +104,10 @@ export function PushNotificationToggle() {
 
   if (status === "unsupported" || status === "loading") return null;
 
-  const icone = status === "denied" ? "🔕" : "🔔";
+  // 📱, não 🔔 — o sino já é o ícone da Central de Notificações (histórico
+  // de vendas/alertas). Este botão é sobre ESTE aparelho especificamente;
+  // usar o mesmo glifo dos dois lado a lado parecia um sino duplicado.
+  const icone = status === "denied" ? "🔕" : "📱";
   const texto = status === "on" ? "Notificações ativas" : status === "denied" ? "Bloqueado" : "Ativar notificações";
   const title = status === "denied"
     ? "Notificações bloqueadas nas configurações do navegador/site — libere lá antes de tentar de novo."
@@ -144,84 +154,98 @@ export function PushNotificationToggle() {
         )}
       </div>
 
-      {status === "on" && (
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs"
-            onClick={() => setMenuAberto((v) => !v)}
-            disabled={!!enviando}
-            title="Testa um cenário de notificação real neste aparelho, sem usar dado de venda de verdade."
-            aria-expanded={menuAberto}
+      <div style={{ position: "relative" }}>
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs"
+          onClick={() => setMenuAberto((v) => !v)}
+          disabled={!!enviando}
+          title="Testar notificação e configurações"
+          aria-label="Mais ações de notificação"
+          aria-expanded={menuAberto}
+        >
+          {enviando ? "…" : "⋯"}
+        </button>
+
+        {menuAberto && (
+          <div
+            role="menu"
+            style={{
+              position: "absolute", top: "100%", right: 0, marginTop: 6, width: 240,
+              background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
+              boxShadow: "var(--shadow)", zIndex: 30, overflow: "hidden",
+            }}
           >
-            {enviando ? "Enviando…" : "Testar ▾"}
-          </button>
-
-          {menuAberto && (
-            <div
-              role="menu"
+            {status === "on" ? (
+              <>
+                <div style={{ padding: "8px 12px 4px", fontSize: ".68rem", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)" }}>
+                  Testar cenário
+                </div>
+                {CENARIOS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => testarCenario(c.id)}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                      background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem", cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+                <div style={{ borderTop: "1px solid var(--border)" }} />
+              </>
+            ) : (
+              <div style={{ padding: "8px 12px", fontSize: ".76rem", color: "var(--muted)" }}>
+                Ative as notificações neste aparelho pra testar um cenário.
+              </div>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenuAberto(false); setSettingsOpen(true); }}
               style={{
-                position: "absolute", top: "100%", right: 0, marginTop: 6, width: 240,
-                background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
-                boxShadow: "var(--shadow)", zIndex: 30, overflow: "hidden",
+                display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem", fontWeight: 600, cursor: "pointer",
               }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
             >
-              {CENARIOS.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => testarCenario(c.id)}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
-                    background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem", cursor: "pointer",
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          )}
+              ⚙ Configurações
+            </button>
+          </div>
+        )}
 
-          {resultado && (
-            <div
-              style={{
-                position: "absolute", top: "100%", right: 0, marginTop: 6, fontSize: ".72rem",
-                width: 260, textAlign: "left", background: "var(--surface)", border: "1px solid var(--border)",
-                borderRadius: 8, padding: "10px 12px", zIndex: 20, lineHeight: 1.5,
-              }}
-            >
-              {resultado.ok ? (
-                <>
-                  <div style={{ fontWeight: 700, color: "var(--green)" }}>Evento criado</div>
-                  <div style={{ color: "var(--muted)" }}>{resultado.title}</div>
-                  <div style={{ marginTop: 4 }}>
-                    {resultado.enviados && resultado.enviados > 0
-                      ? <span style={{ color: "var(--green)" }}>Push enviado a {resultado.enviados} dispositivo(s)</span>
-                      : <span style={{ color: "var(--yellow)" }}>{resultado.bloqueioMotivo || "Nenhum dispositivo recebeu"}</span>}
-                  </div>
-                  {resultado.horario && <div style={{ color: "var(--muted)", marginTop: 2 }}>{new Date(resultado.horario).toLocaleTimeString("pt-BR")}</div>}
-                  <div style={{ color: "var(--muted)", marginTop: 4, fontStyle: "italic" }}>Se o app estiver em foreground, o toast deve ter aparecido no canto da tela.</div>
-                </>
-              ) : (
-                <div style={{ color: "var(--red)" }}>Falha ao enviar: {resultado.error}</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        type="button"
-        className="btn btn-ghost btn-xs"
-        onClick={() => setSettingsOpen(true)}
-        aria-label="Configurações de notificação"
-        title="Configurações de notificação"
-      >
-        ⚙
-      </button>
+        {resultado && (
+          <div
+            style={{
+              position: "absolute", top: "100%", right: 0, marginTop: 6, fontSize: ".72rem",
+              width: 260, textAlign: "left", background: "var(--surface)", border: "1px solid var(--border)",
+              borderRadius: 8, padding: "10px 12px", zIndex: 20, lineHeight: 1.5,
+            }}
+          >
+            {resultado.ok ? (
+              <>
+                <div style={{ fontWeight: 700, color: "var(--green)" }}>Evento criado</div>
+                <div style={{ color: "var(--muted)" }}>{resultado.title}</div>
+                <div style={{ marginTop: 4 }}>
+                  {resultado.enviados && resultado.enviados > 0
+                    ? <span style={{ color: "var(--green)" }}>Push enviado a {resultado.enviados} dispositivo(s)</span>
+                    : <span style={{ color: "var(--yellow)" }}>{resultado.bloqueioMotivo || "Nenhum dispositivo recebeu"}</span>}
+                </div>
+                {resultado.horario && <div style={{ color: "var(--muted)", marginTop: 2 }}>{new Date(resultado.horario).toLocaleTimeString("pt-BR")}</div>}
+                <div style={{ color: "var(--muted)", marginTop: 4, fontStyle: "italic" }}>Se o app estiver em foreground, o toast deve ter aparecido no canto da tela.</div>
+              </>
+            ) : (
+              <div style={{ color: "var(--red)" }}>Falha ao enviar: {resultado.error}</div>
+            )}
+          </div>
+        )}
+      </div>
 
       <NotificationSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
