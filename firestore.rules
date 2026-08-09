@@ -21,6 +21,16 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/controleAcesso/$(request.auth.token.email));
     }
 
+    // Owner edita tudo, sempre. Colaborador só edita a `tab` se o próprio
+    // dono liberou em permissoesEdicao — sem o campo (ou vazio), continua
+    // somente-leitura, igual ao comportamento de sempre. Espelha exatamente
+    // o canEditTab() de components/tabs/AccessGuard.tsx: aqui é o que
+    // realmente barra a escrita, lá é só a UX de esconder o botão.
+    function podeEditar(tab) {
+      return isOwner()
+        || (isAuthorized() && tab in requesterDoc().data.get('permissoesEdicao', []));
+    }
+
     // Autorizado (owner OU colaborador) mexendo só no próprio `photoURL` — é
     // o que permite a foto de perfil funcionar pra colaborador também, sem
     // abrir a porta pra ele mudar o próprio `role` ou qualquer outro campo.
@@ -71,28 +81,28 @@ service cloud.firestore {
     // escrita somente por admin/owner.
     match /metas/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwner();
+      allow write: if podeEditar('metas');
     }
 
     match /metasHistorico/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwner();
+      allow write: if podeEditar('metas');
     }
 
     match /custos/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwner();
+      allow write: if podeEditar('custos');
     }
 
     match /estoque/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwner();
+      allow write: if podeEditar('estoque');
     }
 
     // Livro de movimentações do estoque (entradas/baixas/ajustes)
     match /estoque_movimentos/{docId} {
       allow read: if isAuthorized();
-      allow write: if isOwner();
+      allow write: if podeEditar('estoque');
     }
 
     // Remessas do Full marcadas como resolvidas (sem gerar baixa)

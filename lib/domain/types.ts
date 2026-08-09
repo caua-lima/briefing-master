@@ -178,6 +178,13 @@ export type EstoqueMovimento = {
   createdAt?: number;
 };
 
+// Abas com formulário/mutação de verdade e que fazem sentido liberar
+// individualmente pra um colaborador. De propósito NÃO inclui:
+// "tarefas" (já é leitura+escrita pra todo autorizado, por design — ver
+// firestore.rules), "acesso" (sempre owner-only, nunca delegável) e
+// "pedidos"/"ads"/"dre" (telas só de leitura, sem nada pra "editar").
+export type PermissionTab = "custos" | "metas" | "estoque";
+
 export type AccessEntry = {
   email: string;
   // "admin"/"user" são papéis legados (contas cadastradas antes desta versão)
@@ -187,6 +194,12 @@ export type AccessEntry = {
   displayName?: string;
   photoURL?: string;
   addedAt?: number;
+  /**
+   * Abas em que ESTE colaborador pode editar, além do padrão somente-leitura.
+   * Ignorado pro owner (edita tudo sempre). Ausente/vazio = comportamento de
+   * sempre (colaborador só lê) — campo aditivo, não muda ninguém já existente.
+   */
+  permissoesEdicao?: PermissionTab[];
 };
 
 /** Rótulo de exibição do papel — normaliza os valores legados ("admin"/"user") para "Colaborador". */

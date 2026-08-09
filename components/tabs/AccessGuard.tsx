@@ -8,10 +8,20 @@ import {
   checkAccess,
   getAccessBootstrap,
 } from "@/lib/firebase/data";
-import type { AccessEntry } from "@/lib/domain/types";
+import type { AccessEntry, PermissionTab } from "@/lib/domain/types";
 
-type AccessInfo = { role: AccessEntry["role"]; email: string; isOwner: boolean; canEdit: boolean };
-const AccessCtx = createContext<AccessInfo>({ role: "colaborador", email: "", isOwner: false, canEdit: false });
+type AccessInfo = {
+  role: AccessEntry["role"];
+  email: string;
+  isOwner: boolean;
+  /** Edição de tudo-ou-nada (Acesso, Tarefas via regra própria, e qualquer tela ainda não migrada pro granular). */
+  canEdit: boolean;
+  /** Edição granular por aba — sempre true pro owner; pro colaborador, depende de permissoesEdicao. */
+  canEditTab: (tab: PermissionTab) => boolean;
+};
+const AccessCtx = createContext<AccessInfo>({
+  role: "colaborador", email: "", isOwner: false, canEdit: false, canEditTab: () => false,
+});
 export function useAccess() {
   return useContext(AccessCtx);
 }
@@ -196,9 +206,11 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
     return <DeniedScreen onLogout={signOut} userEmail={user.email ?? ""} />;
 
   const role = access.entry?.role ?? "colaborador";
-  const isOwner = role === "owner"; // só o owner edita; todo o resto é somente leitura
+  const isOwner = role === "owner"; // só o owner edita tudo; colaborador é somente-leitura por padrão
+  const permissoes = access.entry?.permissoesEdicao ?? [];
+  const canEditTab = (tab: PermissionTab) => isOwner || permissoes.includes(tab);
   return (
-    <AccessCtx.Provider value={{ role, email: currentEmail, isOwner, canEdit: isOwner }}>
+    <AccessCtx.Provider value={{ role, email: currentEmail, isOwner, canEdit: isOwner, canEditTab }}>
       {children}
     </AccessCtx.Provider>
   );
