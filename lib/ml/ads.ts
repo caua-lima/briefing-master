@@ -265,7 +265,17 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
   const ids = camps.map((c) => String(c.id ?? c.campaign_id ?? "")).filter(Boolean);
   if (ids.length === 0) throw new Error("ml_ads_sem_dados: nenhum item e nenhuma campanha retornados");
 
+  /**
+   * A deduplicação de buscar() é por chamada, então ela NÃO enxerga repetição
+   * entre campanhas: cada volta do laço é uma busca nova, com o próprio
+   * histórico. Se o candidato que responde ignorar o `filters[campaign_id]`
+   * (aceita o parâmetro e devolve a conta inteira), cada campanha traria todos
+   * os anúncios de novo e o gasto sairia multiplicado pelo número de
+   * campanhas — o mesmo erro de métrica dobrada, só que pior. O histórico
+   * compartilhado aqui garante que cada anúncio entra uma vez só.
+   */
   const out: Record<string, unknown>[] = [];
+  const vistosGeral = new Set<string>();
   for (const cid of ids) {
     const qc = (offset: number) => `${q(offset)}&filters[campaign_id]=${encodeURIComponent(cid)}`;
     const rows = await buscar(
@@ -279,7 +289,15 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
       token,
     );
     // Sem item: usa a própria campanha como linha (cada campanha aqui tem 1 anúncio)
-    out.push(...(rows.length ? rows : camps.filter((c) => String(c.id ?? c.campaign_id ?? "") === cid)));
+    const doCiclo = rows.length ? rows : camps.filter((c) => String(c.id ?? c.campaign_id ?? "") === cid);
+    for (const linha of doCiclo) {
+      const chave = chaveLinha(linha);
+      if (chave !== null) {
+        if (vistosGeral.has(chave)) continue;
+        vistosGeral.add(chave);
+      }
+      out.push(linha);
+    }
   }
   if (out.length === 0) throw new Error("ml_ads_sem_dados: campanhas existem mas nenhum item retornou");
   return out;
