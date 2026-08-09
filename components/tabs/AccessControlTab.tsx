@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { roleLabel, type AccessEntry } from "@/lib/domain/types";
+import { roleLabel, type AccessEntry, type AuditEvent } from "@/lib/domain/types";
 import {
   addAccessEntry,
+  logAudit,
   removeAccessEntry,
   updateAccessEntry,
   watchAccessList,
+  watchAuditLog,
 } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -40,6 +42,16 @@ export default function AccessControlTab({
       setLoading(false);
     });
 
+    return () => unsubscribe();
+  }, []);
+
+  const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+  useEffect(() => {
+    const unsubscribe = watchAuditLog((events) => {
+      setAuditLog(events);
+      setAuditLoading(false);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -107,8 +119,10 @@ export default function AccessControlTab({
           await removeAccessEntry(editingEmail);
         }
         await updateAccessEntry(normalizedEmail, payload);
+        logAudit({ acao: "editar", entidade: "acesso", entidadeId: normalizedEmail, entidadeLabel: normalizedEmail, detalhe: `papel: ${effectiveRole}` }).catch(() => {});
       } else {
         await addAccessEntry(payload);
+        logAudit({ acao: "criar", entidade: "acesso", entidadeId: normalizedEmail, entidadeLabel: normalizedEmail, detalhe: `papel: ${effectiveRole}` }).catch(() => {});
       }
 
       // Se informou senha, cria/atualiza o login por e-mail/senha
@@ -150,6 +164,7 @@ export default function AccessControlTab({
     try {
       setError("");
       await removeAccessEntry(entryEmail);
+      logAudit({ acao: "excluir", entidade: "acesso", entidadeId: entryEmail, entidadeLabel: entryEmail, detalhe: target ? `papel: ${target.role}` : undefined }).catch(() => {});
       if (editingEmail === entryEmail) {
         resetForm();
       }
@@ -159,6 +174,15 @@ export default function AccessControlTab({
   }
 
   const owners = entries.filter((e) => e.role === "owner").length;
+  const AUDIT_ACAO_LABEL: Record<AuditEvent["acao"], string> = {
+    criar: "criou", editar: "editou", arquivar: "arquivou", reativar: "reativou", excluir: "excluiu",
+  };
+  const AUDIT_ENTIDADE_LABEL: Record<AuditEvent["entidade"], string> = {
+    custo: "custo", meta: "meta", acesso: "acesso",
+  };
+  const AUDIT_TONE: Record<AuditEvent["acao"], string> = {
+    criar: "var(--green)", editar: "var(--brand)", arquivar: "var(--yellow)", reativar: "var(--green)", excluir: "var(--red)",
+  };
   const roleBadge = (r: AccessEntry["role"]) => {
     const isOwnerRole = r === "owner";
     const cor = isOwnerRole ? "#F4B942" : "#E9A92D";
@@ -307,6 +331,43 @@ export default function AccessControlTab({
               ))
             ) : (
               <div className="empty-state"><span className="empty-ico">🔐</span>Nenhum e-mail encontrado.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head" style={{ marginBottom: 4 }}>
+            <span className="panel-title">Trilha de auditoria</span>
+            <span className="panel-sub">últimas {auditLog.length} ações · owner e colaborador</span>
+          </div>
+          <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 14 }}>
+            Registro imutável de quem criou, editou, arquivou ou excluiu custos, metas e acessos. Não cobre edição campo a campo (ex.: digitar num valor de custo) — só ações discretas, pra não virar ruído.
+          </div>
+          <div className="list-stack">
+            {auditLoading ? (
+              <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>Carregando…</div>
+            ) : auditLog.length === 0 ? (
+              <div className="empty-state"><span className="empty-ico">📜</span>Nenhuma ação registrada ainda.</div>
+            ) : (
+              auditLog.map((evt) => (
+                <div key={evt.id} className="list-row" style={{ padding: "8px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <span
+                      className="severity-chip"
+                      style={{ color: AUDIT_TONE[evt.acao], background: "transparent", border: `1px solid ${AUDIT_TONE[evt.acao]}` }}
+                    >
+                      {AUDIT_ACAO_LABEL[evt.acao]}
+                    </span>
+                    <span style={{ fontSize: ".85rem" }}>
+                      {AUDIT_ENTIDADE_LABEL[evt.entidade]} <b style={{ overflowWrap: "anywhere" }}>{evt.entidadeLabel}</b>
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 3, fontSize: ".76rem", color: "var(--muted)" }}>
+                    {evt.por} · {new Date(evt.em).toLocaleString("pt-BR")}
+                    {evt.detalhe ? ` · ${evt.detalhe}` : ""}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>
