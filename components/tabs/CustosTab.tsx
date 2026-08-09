@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fmtBRL, mesAtual, todayStr, totalCustosMes, diasNoMes } from "@/lib/domain/calc";
 import { COST_CATEGORIA_LABEL, type Cost, type CostCategoria } from "@/lib/domain/types";
-import { deleteCost, upsertCost } from "@/lib/firebase/data";
+import { deleteCost, logAudit, upsertCost } from "@/lib/firebase/data";
 import type { UserData } from "@/components/useUserData";
 import { useAccess } from "@/components/tabs/AccessGuard";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -55,7 +55,9 @@ export default function CustosTab({ uid, data }: { uid: string; data: UserData }
   const impactoLucroPct = impactoRef && impactoRef.lucroSemCustos > 0 ? (totalMes / impactoRef.lucroSemCustos) * 100 : null;
 
   function onAdd() {
-    upsertCost(uid, { id: newId(), nome: "", valor: "", freq: "diario", data: todayStr() }).catch(() => {});
+    const id = newId();
+    upsertCost(uid, { id, nome: "", valor: "", freq: "diario", data: todayStr() }).catch(() => {});
+    logAudit({ acao: "criar", entidade: "custo", entidadeId: id, entidadeLabel: "(novo custo)" }).catch(() => {});
   }
 
   return (
@@ -238,18 +240,34 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
       {canEdit && (
         <div className="row-actions" style={{ marginTop: 12, justifyContent: "flex-end" }}>
           {cost.ativo === false ? (
-            <button type="button" className="btn btn-ghost btn-xs" onClick={() => upsertCost(uid, { ...cost, ativo: true }).catch(() => {})}>Reativar</button>
+            <button
+              type="button" className="btn btn-ghost btn-xs"
+              onClick={() => {
+                upsertCost(uid, { ...cost, ativo: true }).catch(() => {});
+                logAudit({ acao: "reativar", entidade: "custo", entidadeId: cost.id, entidadeLabel: cost.nome || "(sem nome)" }).catch(() => {});
+              }}
+            >
+              Reativar
+            </button>
           ) : (
             <button
               type="button" className="btn btn-ghost btn-xs"
-              onClick={() => { if (!confirm(`Arquivar "${cost.nome || "este custo"}"? Ele some da lista ativa, mas o histórico continua.`)) return; upsertCost(uid, { ...cost, ativo: false }).catch(() => {}); }}
+              onClick={() => {
+                if (!confirm(`Arquivar "${cost.nome || "este custo"}"? Ele some da lista ativa, mas o histórico continua.`)) return;
+                upsertCost(uid, { ...cost, ativo: false }).catch(() => {});
+                logAudit({ acao: "arquivar", entidade: "custo", entidadeId: cost.id, entidadeLabel: cost.nome || "(sem nome)" }).catch(() => {});
+              }}
             >
               Arquivar
             </button>
           )}
           <button
             type="button" className="btn btn-danger btn-xs"
-            onClick={() => { if (!confirm(`Excluir "${cost.nome || "este custo"}" definitivamente? Essa ação não pode ser desfeita — considere Arquivar em vez disso.`)) return; deleteCost(uid, cost.id).catch(() => {}); }}
+            onClick={() => {
+              if (!confirm(`Excluir "${cost.nome || "este custo"}" definitivamente? Essa ação não pode ser desfeita — considere Arquivar em vez disso.`)) return;
+              deleteCost(uid, cost.id).catch(() => {});
+              logAudit({ acao: "excluir", entidade: "custo", entidadeId: cost.id, entidadeLabel: cost.nome || "(sem nome)" }).catch(() => {});
+            }}
           >
             Excluir
           </button>
