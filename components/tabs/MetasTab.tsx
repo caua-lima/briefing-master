@@ -6,6 +6,7 @@ import { fmtBRL, formatMesBR, mesAtual, diasNoMes, diaAtualNoMes, projetarMes, s
 import type { GoalEntry } from "@/lib/domain/types";
 import {
   deleteGoalEntry,
+  logAudit,
   saveGoalEntry,
   updateGoalEntry,
 } from "@/lib/firebase/data";
@@ -326,7 +327,11 @@ export default function MetasTab({
                 isActive={entry.id === activeEntry?.id}
                 canEdit={canEdit}
                 onEdit={() => setEditEntry(entry)}
-                onDelete={() => { if (!confirm("Remover esta meta?")) return; deleteGoalEntry(uid, entry.id).catch(() => {}); }}
+                onDelete={() => {
+                  if (!confirm("Remover esta meta?")) return;
+                  deleteGoalEntry(uid, entry.id).catch(() => {});
+                  logAudit({ acao: "excluir", entidade: "meta", entidadeId: entry.id, entidadeLabel: formatMesBR(entry.mes) }).catch(() => {});
+                }}
               />
             ))}
           </div>
@@ -423,8 +428,10 @@ function GoalEntryModal({
     };
     if (entry) {
       await updateGoalEntry(uid, entry.id, newEntry);
+      logAudit({ acao: "editar", entidade: "meta", entidadeId: entry.id, entidadeLabel: formatMesBR(newEntry.mes) }).catch(() => {});
     } else {
       await saveGoalEntry(uid, newEntry);
+      logAudit({ acao: "criar", entidade: "meta", entidadeId: newEntry.id, entidadeLabel: formatMesBR(newEntry.mes) }).catch(() => {});
     }
     onClose();
   }
