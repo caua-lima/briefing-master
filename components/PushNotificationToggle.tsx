@@ -4,19 +4,42 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { disablePushNotifications, enablePushNotifications, getPushStatus } from "@/lib/firebase/push";
+import NotificationSettings from "@/components/NotificationSettings";
+
+const CENARIOS: { id: string; label: string }[] = [
+  { id: "sale_paid", label: "Venda padrão" },
+  { id: "sale_high_value", label: "Venda de alto valor" },
+  { id: "sale_low_margin", label: "Venda com margem baixa" },
+  { id: "sale_negative_margin", label: "Venda com prejuízo" },
+  { id: "sale_cancelled", label: "Cancelamento" },
+  { id: "return_completed", label: "Devolução concluída" },
+  { id: "sales_summary", label: "Resumo agrupado" },
+  { id: "unavailable", label: "Dados financeiros indisponíveis" },
+];
+
+type ResultadoTeste = {
+  ok: boolean;
+  scenario: string;
+  title?: string; body?: string; enviados?: number; horario?: string;
+  bloqueioMotivo?: string | null; error?: string;
+};
 
 /**
  * Botão de sino na barra superior pra ligar/desligar notificação de venda
- * neste dispositivo. Tem um indicador visual sempre visível (a bolinha no
- * canto do sino) porque o rótulo de texto some no celular pra não estourar
- * a barra — sem a bolinha, não sobraria nenhum jeito de ver o estado lá.
+ * neste dispositivo, mais o menu de cenários de teste e o atalho pra
+ * configurações. Tem um indicador visual sempre visível (a bolinha no canto
+ * do sino) porque o rótulo de texto some no celular pra não estourar a
+ * barra — sem a bolinha, não sobraria nenhum jeito de ver o estado lá.
  */
 export function PushNotificationToggle() {
   const { user } = useAuth();
   const [status, setStatus] = useState<"unsupported" | "off" | "on" | "denied" | "loading">("loading");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [teste, setTeste] = useState<"idle" | "enviando" | "enviado" | "erro" | "sem-dispositivo">("idle");
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [enviando, setEnviando] = useState<string | null>(null);
+  const [resultado, setResultado] = useState<ResultadoTeste | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     getPushStatus().then(setStatus);
@@ -26,7 +49,7 @@ export function PushNotificationToggle() {
     if (!user?.email || busy) return;
     setBusy(true);
     setError("");
-    setTeste("idle");
+    setResultado(null);
     try {
       if (status === "on") {
         await disablePushNotifications(user.email.toLowerCase());
@@ -46,24 +69,29 @@ export function PushNotificationToggle() {
   }
 
   /**
-   * O status "ativo" acima é só local (permissão do navegador + uma flag
-   * salva) — não prova que o pipeline inteiro funciona (token salvo no
-   * Firestore → FCM aceita → o aparelho de fato mostra o aviso). Este botão
-   * dispara uma notificação de verdade só pra você, sem esperar a próxima venda.
+   * Dispara um cenário de teste real (evento + push, só pro seu aparelho) —
+   * prova que o pipeline inteiro funciona (token salvo → FCM aceita →
+   * aparelho mostra o aviso) sem esperar a próxima venda de verdade. Mostra
+   * em tela exatamente o que a Fase 7 pediu: evento criado, quantos
+   * dispositivos, se enviou ou por que não.
    */
-  async function enviarTeste(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (teste === "enviando") return;
-    setTeste("enviando");
+  async function testarCenario(scenario: string) {
+    if (enviando) return;
+    setEnviando(scenario);
+    setMenuAberto(false);
     try {
-      const res = await authedFetch("/api/push/test", { method: "POST" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) { setTeste("erro"); return; }
-      setTeste(json.enviados > 0 ? "enviado" : "sem-dispositivo");
-    } catch {
-      setTeste("erro");
+      const res = await authedFetch("/api/push/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario }),
+      });
+      const json = (await res.json().catch(() => null)) as ResultadoTeste | null;
+      setResultado(json ?? { ok: false, scenario, error: "Resposta inválida" });
+    } catch (err) {
+      setResultado({ ok: false, scenario, error: err instanceof Error ? err.message : "Falha ao enviar" });
     } finally {
-      setTimeout(() => setTeste("idle"), 5000);
+      setEnviando(null);
+      setTimeout(() => setResultado(null), 12000);
     }
   }
 
@@ -121,28 +149,81 @@ export function PushNotificationToggle() {
           <button
             type="button"
             className="btn btn-ghost btn-xs"
-            onClick={enviarTeste}
-            disabled={teste === "enviando"}
-            title="Manda uma notificação de teste real pra este aparelho — prova que está funcionando de ponta a ponta."
+            onClick={() => setMenuAberto((v) => !v)}
+            disabled={!!enviando}
+            title="Testa um cenário de notificação real neste aparelho, sem usar dado de venda de verdade."
+            aria-expanded={menuAberto}
           >
-            {teste === "enviando" ? "Enviando…" : "Testar"}
+            {enviando ? "Enviando…" : "Testar ▾"}
           </button>
-          {teste !== "idle" && teste !== "enviando" && (
+
+          {menuAberto && (
             <div
+              role="menu"
               style={{
-                position: "absolute", top: "100%", right: 0, marginTop: 6, fontSize: ".68rem",
-                width: 210, textAlign: "right", background: "var(--surface)", border: "1px solid var(--border)",
-                borderRadius: 6, padding: "6px 8px", zIndex: 20,
-                color: teste === "enviado" ? "var(--green)" : teste === "sem-dispositivo" ? "var(--yellow)" : "var(--red)",
+                position: "absolute", top: "100%", right: 0, marginTop: 6, width: 240,
+                background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
+                boxShadow: "var(--shadow)", zIndex: 30, overflow: "hidden",
               }}
             >
-              {teste === "enviado" && "Enviada — chegou no seu aparelho?"}
-              {teste === "sem-dispositivo" && "Nenhum dispositivo seu está registrado ainda."}
-              {teste === "erro" && "Falha ao enviar o teste."}
+              {CENARIOS.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => testarCenario(c.id)}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                    background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem", cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {resultado && (
+            <div
+              style={{
+                position: "absolute", top: "100%", right: 0, marginTop: 6, fontSize: ".72rem",
+                width: 260, textAlign: "left", background: "var(--surface)", border: "1px solid var(--border)",
+                borderRadius: 8, padding: "10px 12px", zIndex: 20, lineHeight: 1.5,
+              }}
+            >
+              {resultado.ok ? (
+                <>
+                  <div style={{ fontWeight: 700, color: "var(--green)" }}>Evento criado</div>
+                  <div style={{ color: "var(--muted)" }}>{resultado.title}</div>
+                  <div style={{ marginTop: 4 }}>
+                    {resultado.enviados && resultado.enviados > 0
+                      ? <span style={{ color: "var(--green)" }}>Push enviado a {resultado.enviados} dispositivo(s)</span>
+                      : <span style={{ color: "var(--yellow)" }}>{resultado.bloqueioMotivo || "Nenhum dispositivo recebeu"}</span>}
+                  </div>
+                  {resultado.horario && <div style={{ color: "var(--muted)", marginTop: 2 }}>{new Date(resultado.horario).toLocaleTimeString("pt-BR")}</div>}
+                  <div style={{ color: "var(--muted)", marginTop: 4, fontStyle: "italic" }}>Se o app estiver em foreground, o toast deve ter aparecido no canto da tela.</div>
+                </>
+              ) : (
+                <div style={{ color: "var(--red)" }}>Falha ao enviar: {resultado.error}</div>
+              )}
             </div>
           )}
         </div>
       )}
+
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs"
+        onClick={() => setSettingsOpen(true)}
+        aria-label="Configurações de notificação"
+        title="Configurações de notificação"
+      >
+        ⚙
+      </button>
+
+      <NotificationSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
