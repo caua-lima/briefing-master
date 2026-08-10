@@ -7,6 +7,7 @@ import {
   buildReturnCompletedContent,
   buildSaleContent,
   classifySale,
+  taskAssignedDedupeKey,
   type SaleFinanceInput,
 } from "./notifications";
 
@@ -132,5 +133,25 @@ describe("buildGroupedSalesContent — resumo agrupado (anti-spam)", () => {
     expect(c.title).toContain("4");
     expect(c.body).toMatch(/486,20/);
     expect(c.body).toContain("2 min");
+  });
+});
+
+describe("taskAssignedDedupeKey (Fase 7: sem duplicar push em retry de rede)", () => {
+  it("dois timestamps dentro da mesma janela de 10s geram a MESMA chave (dedupe de retry)", () => {
+    const a = taskAssignedDedupeKey("t1", 1_000_000_000);
+    const b = taskAssignedDedupeKey("t1", 1_000_000_000 + 9_000);
+    expect(a).toBe(b);
+  });
+
+  it("timestamps em janelas de 10s diferentes geram chaves diferentes (reatribuição de verdade notifica de novo)", () => {
+    const a = taskAssignedDedupeKey("t1", 1_000_000_000);
+    const b = taskAssignedDedupeKey("t1", 1_000_000_000 + 11_000);
+    expect(a).not.toBe(b);
+  });
+
+  it("tarefas diferentes nunca colidem, mesmo no mesmo instante", () => {
+    const a = taskAssignedDedupeKey("t1", 1_000_000_000);
+    const b = taskAssignedDedupeKey("t2", 1_000_000_000);
+    expect(a).not.toBe(b);
   });
 });
