@@ -801,8 +801,15 @@ function LucroPorAnuncioPanel({ anuncios, from, to }: { anuncios: AnuncioResult[
 
   const indep = !!proprio && (range.from !== from || range.to !== to);
 
-  // Segue o dashboard enquanto o filtro próprio não estiver ativo.
+  // Falso positivo comprovado (auditoria Fase 9): "range" é um HÍBRIDO —
+  // segue o período do Dashboard normalmente, mas vira independente quando
+  // o usuário aplica um filtro próprio (proprio != null). Não dá pra
+  // derivar isso direto no render (não é uma função pura de from/to, também
+  // depende de uma AÇÃO passada — aplicar()) — é exatamente o caso que os
+  // próprios docs do React chamam de uso legítimo de efeito ("Adjusting
+  // state when a prop changes").
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!proprio) setRange({ from: from ?? "", to: to ?? "" });
   }, [from, to, proprio]);
 
@@ -992,7 +999,12 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Falso positivo comprovado (auditoria Fase 9): busca de dados disparada
+  // por mudança de período — o caso canônico de useEffect (fetch reagindo a
+  // prop/state), não um setState direto no corpo do efeito. O linter flagra
+  // porque fetchMetrics() em si faz setState de forma assíncrona.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMetrics(periodoRange.from, periodoRange.to);
   }, [periodoRange, fetchMetrics]);
 
@@ -1000,6 +1012,11 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   const prevRange = useMemo(() => prevPeriod(periodoRange.from, periodoRange.to), [periodoRange]);
   useEffect(() => {
     let alive = true;
+    // Falso positivo comprovado (auditoria Fase 9): limpa a comparação
+    // ANTERIOR antes de buscar a nova — sem isto, ao trocar de período a
+    // tela mostraria o "vs período anterior" do período VELHO por um
+    // instante, misturado com os números novos já atualizados.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPrevMetrics(null);
     (async () => {
       try {

@@ -162,6 +162,10 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
     finally { setLoading(false); }
   }, [range]);
 
+  // Falso positivo comprovado (auditoria Fase 9): fetch disparado por mudança
+  // de período — load() é quem faz setState de forma assíncrona, não o corpo
+  // do efeito em si.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const t = useMemo(() => items.reduce((a, i) => {
@@ -241,7 +245,6 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
 
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
   const vendasTot = pub ? t.direct : t.total;
-  const unTot = pub ? t.directUn : t.totalUn;
   const roas = t.cost > 0 ? vendasTot / t.cost : 0;
   const acos = vendasTot > 0 ? (t.cost / vendasTot) * 100 : 0;
   const pctViaAds = t.total > 0 ? (t.adSales / t.total) * 100 : 0;

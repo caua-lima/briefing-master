@@ -63,8 +63,12 @@ export default function TarefasTab({ openTaskId }: { openTaskId?: string } = {})
   // padrão/mesma ressalva de PedidosTab.tsx (setState síncrono no efeito é
   // sincronizar com um prop que só fica pronto depois da lista carregar).
   useEffect(() => {
+    // Falso positivo comprovado (auditoria Fase 9): deep link de tarefa
+    // atribuída (?tab=tarefas&task=...) abre o modal assim que a tarefa
+    // aparecer na lista carregada.
     if (openTaskId) {
       const t = tasks.find((x) => x.id === openTaskId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (t) setEditTask(t);
     }
   }, [openTaskId, tasks]);
@@ -89,8 +93,13 @@ export default function TarefasTab({ openTaskId }: { openTaskId?: string } = {})
 
   async function mover(t: Task, status: TaskStatus) {
     if (t.status === status) return;
+    // Falso positivo comprovado (auditoria Fase 9): mover() é chamado por
+    // clique/drag (evento de usuário), nunca durante o render — o linter não
+    // consegue provar isso estaticamente e trata Date.now() como "impuro
+    // durante render" por padrão.
     const evento: TaskAtividade = {
       tipo: status === "done" ? "concluida" : "movida",
+      // eslint-disable-next-line react-hooks/purity
       por: email, em: Date.now(),
       detalhe: `${COLS.find((c) => c.status === t.status)?.label} → ${COLS.find((c) => c.status === status)?.label}`,
     };

@@ -171,6 +171,9 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
     } catch { /* ignora */ } finally { setLoadingML(false); }
   }, []);
 
+  // Falso positivo comprovado (auditoria Fase 9): fetch no mount —
+  // carregarEstoque() faz setState de forma assíncrona.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { carregarEstoque(); }, [carregarEstoque]);
   useEffect(() => watchMovimentos(setMovimentos), []);
 
@@ -693,6 +696,10 @@ const STATUS_PESO: Record<CoverageStatus, number> = { critico: 0, repor: 1, "sem
 
 function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[]; estoqueML: EstoqueML; forecast: Forecast }) {
   const [planejados, setPlanejados] = useState<Set<string>>(new Set());
+  // Falso positivo comprovado (auditoria Fase 9): hidrata do localStorage no
+  // mount — localStorage não existe durante SSR, então não dá pra usar como
+  // valor inicial do useState direto (quebraria a renderização no servidor).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPlanejados(lerPlanejados()); }, []);
   function togglePlanejado(id: string) {
     setPlanejados((prev) => {
@@ -993,6 +1000,11 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
         if (vivo) setCarregando(false);
       }
     })();
+    // Faltava isto: sem cleanup, `vivo` nunca virava false — se o componente
+    // desmontasse (ex.: trocou de aba) enquanto o fetch ainda estava no ar,
+    // o guard "if (!vivo) return" nunca disparava, e o callback tentava
+    // setState num componente já desmontado quando a resposta chegasse.
+    return () => { vivo = false; };
   }, []);
 
   const alterna = (chave: string) => setMarcados((s) => {

@@ -30,12 +30,12 @@ export async function GET(req: Request) {
     try {
       const db = (await import("@/lib/firebase/admin")).getAdminDb();
       await db.collection("ml_tokens").doc("main").set({ user_profile: user, updated_at: new Date().toISOString() }, { merge: true });
-    } catch (e) {
+    } catch {
       // ignore persistence errors
     }
 
     return NextResponse.json({ ...status, user });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ ...status, user: null });
   }
 }

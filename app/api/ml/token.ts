@@ -7,7 +7,7 @@ export type MlTokenData = {
   refresh_token?: string | null;
   expires_in?: number | null;
   user_id?: string | number | null;
-  user_profile?: any | null;
+  user_profile?: unknown;
   updated_at?: string | null;
 };
 

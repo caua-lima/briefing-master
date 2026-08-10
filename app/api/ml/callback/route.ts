@@ -24,14 +24,14 @@ export async function GET(req: Request) {
     const db = getAdminDb();
 
     // try fetch the authenticated user's profile to store alongside tokens
-    let userProfile: any = null;
+    let userProfile: unknown = null;
     try {
       const profileRes = await fetch("https://api.mercadolibre.com/users/me", {
         headers: { Authorization: `Bearer ${token.access_token}` },
         cache: "no-store",
       });
       if (profileRes.ok) userProfile = await profileRes.json();
-    } catch (e) {
+    } catch {
       // ignore profile fetch errors, token still saved
     }
 
@@ -53,12 +53,10 @@ export async function GET(req: Request) {
     response.cookies.set("ml_disconnected", "false", { maxAge: 0 });
     response.cookies.set("ml_pkce_verifier", "", { maxAge: 0, path: "/" });
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      {
-        error: "Unexpected error in callback",
-        details: error?.message || String(error),
-      },
+      { error: "Unexpected error in callback", details: msg },
       { status: 500 }
     );
   }

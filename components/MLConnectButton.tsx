@@ -110,27 +110,37 @@ export function MLConnectButton() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleConnect}
-      disabled={connecting}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        background: connecting ? "var(--surface2)" : "var(--brand)",
-        color: connecting ? "var(--muted)" : "#10100E",
-        fontWeight: 700,
-        fontSize: ".78rem",
-        padding: "5px 12px",
-        borderRadius: 8,
-        border: connecting ? "1px solid var(--border)" : "none",
-        whiteSpace: "nowrap",
-        cursor: connecting ? 'not-allowed' : 'pointer',
-        opacity: connecting ? 0.6 : 1,
-      }}
-    >
-      {connecting ? '⏳ Conectando...' : '🛒 Conectar ML'}
-    </button>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <button
+        type="button"
+        onClick={handleConnect}
+        disabled={connecting}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: connecting ? "var(--surface2)" : "var(--brand)",
+          color: connecting ? "var(--muted)" : "#10100E",
+          fontWeight: 700,
+          fontSize: ".78rem",
+          padding: "5px 12px",
+          borderRadius: 8,
+          border: connecting ? "1px solid var(--border)" : "none",
+          whiteSpace: "nowrap",
+          cursor: connecting ? 'not-allowed' : 'pointer',
+          opacity: connecting ? 0.6 : 1,
+        }}
+      >
+        {connecting ? '⏳ Conectando...' : '🛒 Conectar ML'}
+      </button>
+      {/* Falha ao checar status ficava só no state, nunca chegava na tela —
+          quem via o botão "Conectar ML" não tinha como saber que na real
+          era um erro de rede, não simplesmente "ainda não conectado". */}
+      {error && (
+        <span title={error} style={{ fontSize: ".68rem", color: "var(--red)", cursor: "help" }}>
+          ⚠ falha ao checar
+        </span>
+      )}
+    </span>
   );
 }

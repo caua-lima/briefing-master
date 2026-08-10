@@ -141,7 +141,13 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
   const [centroCusto, setCentroCusto] = useState(cost.centroCusto ?? "");
   const [observacao, setObservacao] = useState(cost.observacao ?? "");
 
+  // Falso positivo comprovado (auditoria Fase 9): ressincroniza o rascunho
+  // local quando o documento do Firestore muda por FORA desta tela (outro
+  // usuário/aba editando o mesmo custo) — não dá pra derivar isso no render
+  // porque o rascunho tem vida própria enquanto o usuário está digitando
+  // (ver auto-save logo abaixo).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNome(cost.nome); setValor(cost.valor); setFreq(cost.freq); setDataAvulso(cost.data || todayStr());
     setEscopo(cost.escopo ?? "dash");
     setCategoria(cost.categoria ?? ""); setCentroCusto(cost.centroCusto ?? ""); setObservacao(cost.observacao ?? "");

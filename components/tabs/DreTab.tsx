@@ -179,6 +179,9 @@ export default function DreTab() {
     }
   }, [range]);
 
+  // Falso positivo comprovado (auditoria Fase 9): fetch disparado por
+  // mudança de período — load() faz setState de forma assíncrona.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const prevLabel = !isFullMonth(range.from, range.to)

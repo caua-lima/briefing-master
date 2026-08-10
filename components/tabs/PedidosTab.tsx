@@ -272,8 +272,13 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
   // assíncrono/externo) — aqui é sincronizar o drawer com um prop que só
   // fica pronto depois da lista de pedidos carregar, não dá pra fazer isso
   // durante o render.
+  // Falso positivo comprovado (auditoria Fase 9): deep link de notificação
+  // (?tab=pedidos&order=...) abre o drawer assim que o pedido aparecer na
+  // lista carregada — depende de um dado assíncrono (pedidos), não dá pra
+  // derivar isso puro no render.
   useEffect(() => {
     if (openOrderId && pedidos.some((p) => p.order_id === openOrderId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDetalhe(openOrderId);
     }
   }, [openOrderId, pedidos]);
@@ -297,6 +302,9 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
   // Filtros frequentes salvos no navegador (localStorage) — não é modelo
   // global, não precisa de Firestore nem de rule nova.
   const [filtrosSalvos, setFiltrosSalvos] = useState<FiltroSalvo[]>([]);
+  // Falso positivo comprovado (auditoria Fase 9): hidrata do localStorage no
+  // mount — não existe durante SSR, não dá pra usar como valor inicial direto.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setFiltrosSalvos(lerFiltrosSalvos()); }, []);
 
   function salvarFiltroAtual() {
@@ -342,6 +350,9 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
     }
   }, [range]);
 
+  // Falso positivo comprovado (auditoria Fase 9): fetch disparado por
+  // mudança de período — load() faz setState de forma assíncrona.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   async function atualizar() {

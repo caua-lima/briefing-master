@@ -27,6 +27,12 @@ export function AvatarUpload({ size = 28 }: { size?: number }) {
 
   useEffect(() => {
     const email = user?.email?.toLowerCase();
+    // Falso positivo comprovado (auditoria Fase 9): limpa o avatar/nome ANTES
+    // de assinar o listener novo — sem isto, ao trocar de conta a foto da
+    // conta ANTERIOR ficaria visível por um instante até o primeiro snapshot
+    // do Firestore chegar pra o e-mail novo. Não dá pra mover pro corpo do
+    // render porque depende de um valor assíncrono (watchAccessEntry).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!email) { setPhotoURL(null); setEntryName(null); return; }
     return watchAccessEntry(email, (entry) => {
       setPhotoURL(entry?.photoURL || user?.photoURL || null);
