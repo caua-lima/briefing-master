@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { roleLabel, type AccessEntry, type AuditEvent, type PermissionTab } from "@/lib/domain/types";
+import type { HealthSection, HealthStatus } from "@/lib/domain/health";
 import {
   addAccessEntry,
   logAudit,
@@ -60,6 +61,27 @@ export default function AccessControlTab({
     });
     return () => unsubscribe();
   }, []);
+
+  // Saúde da operação (Fase 1) — busca sob demanda (botão), não automática:
+  // a rota compara as regras publicadas de verdade contra o repositório
+  // (chamada à API de Security Rules do Firebase) e faz várias queries
+  // administrativas, não é algo pra rodar sozinho toda vez que a aba abre.
+  const [health, setHealth] = useState<{ geradoEm: string; statusGeral: HealthStatus; secoes: Record<string, HealthSection> } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState("");
+  async function carregarSaude() {
+    setHealthLoading(true);
+    setHealthError("");
+    try {
+      const res = await authedFetch("/api/admin/health", { cache: "no-store" });
+      if (!res.ok) { setHealthError(`Falhou (HTTP ${res.status})`); return; }
+      setHealth(await res.json());
+    } catch {
+      setHealthError("Falhou ao buscar — tente de novo.");
+    } finally {
+      setHealthLoading(false);
+    }
+  }
 
   const filteredEntries = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -200,6 +222,12 @@ export default function AccessControlTab({
   };
   const AUDIT_TONE: Record<AuditEvent["acao"], string> = {
     criar: "var(--green)", editar: "var(--brand)", arquivar: "var(--yellow)", reativar: "var(--green)", excluir: "var(--red)",
+  };
+  const HEALTH_STATUS_META: Record<HealthStatus, { label: string; cor: string; icone: string }> = {
+    saudavel: { label: "Saudável", cor: "var(--green)", icone: "✓" },
+    atencao: { label: "Atenção", cor: "var(--yellow)", icone: "!" },
+    critico: { label: "Crítico", cor: "var(--red)", icone: "✕" },
+    "sem-dados": { label: "Sem dados", cor: "var(--muted)", icone: "?" },
   };
   const roleBadge = (r: AccessEntry["role"]) => {
     const isOwnerRole = r === "owner";
@@ -408,6 +436,59 @@ export default function AccessControlTab({
               ))
             )}
           </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head" style={{ marginBottom: 4 }}>
+            <span className="panel-title">Saúde da operação</span>
+            {health && (
+              <span
+                className="severity-chip"
+                style={{ color: HEALTH_STATUS_META[health.statusGeral].cor, background: "transparent", border: `1px solid ${HEALTH_STATUS_META[health.statusGeral].cor}` }}
+              >
+                {HEALTH_STATUS_META[health.statusGeral].icone} {HEALTH_STATUS_META[health.statusGeral].label}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 14 }}>
+            Visão geral de integração ML, Ads, repasse do Mercado Pago, notificações e regras do Firestore. Onde ainda não existe dado persistido pra calcular de verdade (ex.: histórico do cron), mostra <b>&quot;sem dados&quot;</b> em vez de inventar um número — nunca gera confiança falsa.
+          </div>
+
+          <div className="row-actions" style={{ marginBottom: 14 }}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={carregarSaude} disabled={healthLoading}>
+              {healthLoading ? "Verificando…" : health ? "↻ Verificar de novo" : "Verificar agora"}
+            </button>
+            {health && <span style={{ fontSize: ".72rem", color: "var(--muted)", alignSelf: "center" }}>gerado em {new Date(health.geradoEm).toLocaleString("pt-BR")}</span>}
+          </div>
+
+          {healthError && <div className="note note-danger" role="alert" style={{ marginBottom: 12 }}>{healthError}</div>}
+
+          {health && (
+            <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+              {Object.values(health.secoes).map((secao) => {
+                const meta = HEALTH_STATUS_META[secao.status];
+                return (
+                  <div key={secao.titulo} style={{ background: "var(--surface-raised,var(--surface2))", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: ".85rem" }}>{secao.titulo}</span>
+                      <span style={{ fontSize: ".68rem", fontWeight: 700, color: meta.cor }}>{meta.icone} {meta.label}</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {secao.itens.map((item) => (
+                        <div key={item.label} style={{ fontSize: ".76rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                            <span style={{ color: "var(--muted)" }}>{item.label}</span>
+                            <span style={{ fontWeight: 600, color: item.status ? HEALTH_STATUS_META[item.status].cor : "var(--text)", whiteSpace: "nowrap" }}>{item.valor}</span>
+                          </div>
+                          {item.nota && <div style={{ color: "var(--muted)", fontSize: ".68rem", marginTop: 1 }}>{item.nota}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
