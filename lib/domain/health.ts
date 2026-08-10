@@ -9,6 +9,8 @@
 // AINDA não é persistido, ex.: histórico de execução do cron), o status vira
 // "sem-dados" e o item mostra "não verificado", não um chute otimista.
 
+import type { DataFreshness } from "./freshness";
+
 export type HealthStatus = "saudavel" | "atencao" | "critico" | "sem-dados";
 
 export type HealthItem = {
@@ -78,18 +80,39 @@ export function avaliarTokenML(input: {
   return { titulo: "Integração Mercado Livre", status: statusToken, itens };
 }
 
+// ── Freshness → HealthStatus ─────────────────────────────────────
+/** fresh/stale/partial/failed/unknown (lib/domain/freshness.ts) → saudavel/atencao/critico/sem-dados. */
+function freshnessParaHealthStatus(status: DataFreshness["status"]): HealthStatus {
+  switch (status) {
+    case "fresh": return "saudavel";
+    case "stale": return "atencao";
+    case "partial": return "atencao";
+    case "failed": return "critico";
+    case "unknown": return "sem-dados";
+  }
+}
+
 // ── Ads ──────────────────────────────────────────────────────────
-/** Hoje NADA aqui é persistido — a aba Ads busca tudo ao vivo, sem gravar histórico de coleta. Seção inteira "sem-dados" até a Fase 3/4 existirem de verdade. */
-export function avaliarAds(): HealthSection {
-  return {
-    titulo: "Ads",
-    status: "sem-dados",
-    itens: [
-      { label: "Última coleta", valor: "não verificado", status: "sem-dados", nota: "aba Ads busca ao vivo a cada abertura, sem persistir histórico" },
-      { label: "Status da última coleta", valor: "não verificado", status: "sem-dados" },
-      { label: "Campanhas processadas", valor: "não verificado", status: "sem-dados" },
-    ],
-  };
+/** Fase 4: app/api/ml/ads/route.ts agora grava tentativa/sucesso/falha em sync_runs — se `freshness` vier null (rota ainda não chamada), fica "sem-dados". */
+export function avaliarAds(freshness: DataFreshness | null): HealthSection {
+  if (!freshness) {
+    return {
+      titulo: "Ads",
+      status: "sem-dados",
+      itens: [{ label: "Última coleta", valor: "não verificado", status: "sem-dados", nota: "aba Ads ainda não foi aberta desde que o registro de freshness passou a existir" }],
+    };
+  }
+  const status = freshnessParaHealthStatus(freshness.status);
+  const itens: HealthItem[] = [
+    { label: "Última coleta com sucesso", valor: fmtQuando(freshness.lastSuccessAt ?? null), status },
+    { label: "Última tentativa", valor: fmtQuando(freshness.lastAttemptAt ?? null) },
+  ];
+  if (freshness.recordsProcessed != null) itens.push({ label: "Campanhas processadas na última coleta", valor: String(freshness.recordsProcessed) });
+  if (freshness.coverage?.expected != null) {
+    itens.push({ label: "Cobertura", valor: `${freshness.coverage.processed ?? 0}/${freshness.coverage.expected}`, status: freshness.status === "partial" ? "atencao" : undefined });
+  }
+  if (freshness.lastError) itens.push({ label: "Erro na última tentativa", valor: freshness.lastError, status: "critico" });
+  return { titulo: "Ads", status, itens };
 }
 
 // ── Mercado Pago (repasse) ──────────────────────────────────────
@@ -159,17 +182,34 @@ export function avaliarFirestoreRules(input: {
 }
 
 // ── Cron ─────────────────────────────────────────────────────────
-/** Nenhuma execução de cron é persistida hoje (achado A3/A4 da auditoria) — seção inteira "sem-dados" até a Fase 4 existir. */
-export function avaliarCron(): HealthSection {
-  return {
-    titulo: "Sincronização automática (cron)",
-    status: "sem-dados",
-    itens: [
-      { label: "Última execução", valor: "não verificado", status: "sem-dados", nota: "cron/route.ts calcula o resultado mas nunca grava — ver Fase 4 (DataFreshness)" },
-      { label: "Duração", valor: "não verificado", status: "sem-dados" },
-      { label: "Pedidos/devoluções atualizados na última execução", valor: "não verificado", status: "sem-dados" },
-    ],
-  };
+/**
+ * Fase 4: cron/route.ts e sync-all/route.ts (botão manual, mesma fonte) agora
+ * gravam tentativa/sucesso/falha em sync_runs pra "orders" e "claims" — o
+ * status geral é o pior entre as duas, já que o cron sincroniza as duas
+ * juntas numa única execução.
+ */
+export function avaliarCron(orders: DataFreshness | null, claims: DataFreshness | null): HealthSection {
+  if (!orders && !claims) {
+    return {
+      titulo: "Sincronização automática (cron)",
+      status: "sem-dados",
+      itens: [{ label: "Última execução", valor: "não verificado", status: "sem-dados", nota: "nenhuma execução de cron ou sync manual registrada ainda desde que o registro de freshness passou a existir" }],
+    };
+  }
+  const statusOrders = orders ? freshnessParaHealthStatus(orders.status) : "sem-dados";
+  const statusClaims = claims ? freshnessParaHealthStatus(claims.status) : "sem-dados";
+  const status = piorStatus([statusOrders, statusClaims]);
+  const itens: HealthItem[] = [
+    { label: "Pedidos — última sincronização com sucesso", valor: fmtQuando(orders?.lastSuccessAt ?? null), status: statusOrders },
+    { label: "Pedidos — última tentativa", valor: fmtQuando(orders?.lastAttemptAt ?? null) },
+    { label: "Devoluções/cancelamentos — última sincronização com sucesso", valor: fmtQuando(claims?.lastSuccessAt ?? null), status: statusClaims },
+    { label: "Devoluções/cancelamentos — última tentativa", valor: fmtQuando(claims?.lastAttemptAt ?? null) },
+  ];
+  if (orders?.recordsProcessed != null) itens.push({ label: "Pedidos atualizados na última execução", valor: String(orders.recordsProcessed) });
+  if (claims?.recordsProcessed != null) itens.push({ label: "Devoluções/cancelamentos atualizados na última execução", valor: String(claims.recordsProcessed) });
+  if (orders?.lastError) itens.push({ label: "Erro na última tentativa (pedidos)", valor: orders.lastError, status: "critico" });
+  if (claims?.lastError) itens.push({ label: "Erro na última tentativa (devoluções)", valor: claims.lastError, status: "critico" });
+  return { titulo: "Sincronização automática (cron)", status, itens };
 }
 
 export function statusGeral(secoes: HealthSection[]): HealthStatus {

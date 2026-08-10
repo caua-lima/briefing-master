@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdminDb, getAdminSecurityRules } from "@/lib/firebase/admin";
 import { getMlTokenData } from "../../ml/token";
+import { getFreshness } from "@/lib/sync-runs";
 import {
   avaliarAds,
   avaliarCron,
@@ -62,8 +63,14 @@ export async function GET(req: Request) {
     secaoMl = avaliarTokenML({ presente: false, expiraEmMin: null, ultimoRefresh: null, ultimoPedidoRegistrado: null, ultimaDevolucaoRegistrada: null });
   }
 
-  // ── Ads (nada persistido ainda) ──
-  const secaoAds = avaliarAds();
+  // ── Ads (Fase 4: freshness real gravado por app/api/ml/ads/route.ts) ──
+  let secaoAds: HealthSection;
+  try {
+    const freshnessAds = await getFreshness("ads");
+    secaoAds = avaliarAds(freshnessAds.status === "unknown" ? null : freshnessAds);
+  } catch {
+    secaoAds = avaliarAds(null);
+  }
 
   // ── Mercado Pago (repasse) ──
   let secaoMp: HealthSection;
@@ -145,8 +152,17 @@ export async function GET(req: Request) {
     secaoRules = avaliarFirestoreRules({ conexaoOk: false, publicadoIgual: null, publicadoEm: null });
   }
 
-  // ── Cron (nada persistido ainda) ──
-  const secaoCron = avaliarCron();
+  // ── Cron (Fase 4: freshness real gravado por cron/route.ts e sync-all/route.ts) ──
+  let secaoCron: HealthSection;
+  try {
+    const [freshnessOrders, freshnessClaims] = await Promise.all([getFreshness("orders"), getFreshness("claims")]);
+    secaoCron = avaliarCron(
+      freshnessOrders.status === "unknown" ? null : freshnessOrders,
+      freshnessClaims.status === "unknown" ? null : freshnessClaims,
+    );
+  } catch {
+    secaoCron = avaliarCron(null, null);
+  }
 
   const secoes = { ml: secaoMl, ads: secaoAds, mercadoPago: secaoMp, notificacoes: secaoNotif, firestore: secaoRules, cron: secaoCron };
   return NextResponse.json({

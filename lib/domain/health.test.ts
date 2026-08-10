@@ -44,18 +44,45 @@ describe("avaliarTokenML", () => {
   });
 });
 
-describe("avaliarAds — nada persistido ainda, nunca inventa dado", () => {
-  it("seção inteira é sem-dados", () => {
-    const s = avaliarAds();
+describe("avaliarAds — Fase 4: freshness real via sync_runs", () => {
+  it("sem registro de freshness ainda, fica sem-dados", () => {
+    const s = avaliarAds(null);
     expect(s.status).toBe("sem-dados");
-    expect(s.itens.every((i) => i.status === "sem-dados")).toBe(true);
+  });
+
+  it("freshness fresh vira saudável", () => {
+    const s = avaliarAds({ source: "ads", status: "fresh", lastSuccessAt: new Date().toISOString() });
+    expect(s.status).toBe("saudavel");
+  });
+
+  it("freshness failed vira crítico e mostra o erro", () => {
+    const s = avaliarAds({ source: "ads", status: "failed", lastError: "timeout" });
+    expect(s.status).toBe("critico");
+    expect(s.itens.some((i) => i.valor === "timeout")).toBe(true);
   });
 });
 
-describe("avaliarCron — nada persistido ainda, nunca inventa dado", () => {
-  it("seção inteira é sem-dados", () => {
-    const s = avaliarCron();
+describe("avaliarCron — Fase 4: freshness real via sync_runs", () => {
+  it("sem nenhum registro (nem orders nem claims), fica sem-dados", () => {
+    const s = avaliarCron(null, null);
     expect(s.status).toBe("sem-dados");
+  });
+
+  it("orders e claims frescos viram saudável", () => {
+    const agora = new Date().toISOString();
+    const s = avaliarCron(
+      { source: "orders", status: "fresh", lastSuccessAt: agora },
+      { source: "claims", status: "fresh", lastSuccessAt: agora },
+    );
+    expect(s.status).toBe("saudavel");
+  });
+
+  it("pior status entre orders/claims vence (claims falhou)", () => {
+    const s = avaliarCron(
+      { source: "orders", status: "fresh", lastSuccessAt: new Date().toISOString() },
+      { source: "claims", status: "failed", lastError: "ML 500" },
+    );
+    expect(s.status).toBe("critico");
   });
 });
 
