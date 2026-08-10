@@ -94,7 +94,7 @@ export async function GET(req: Request) {
     }
 
     await recordSyncSuccess("full_stock", Object.keys(estoque).length, { expected: arr.length, processed: Object.keys(estoque).length });
-    return NextResponse.json({ estoque });
+    return NextResponse.json({ estoque, atualizadoEm: new Date().toISOString() });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     await recordSyncFailure("full_stock", sanitizeErrorForStorage(msg));

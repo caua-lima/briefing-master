@@ -147,6 +147,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [estoqueML, setEstoqueML] = useState<EstoqueML>({});
   const [forecast, setForecast] = useState<Forecast>({ vendas: {}, dias: DIAS_ALVO });
   const [loadingML, setLoadingML] = useState(false);
+  const [atualizadoEmML, setAtualizadoEmML] = useState<string | null>(null);
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -166,7 +167,11 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         authedFetch("/api/ml/estoque-ml", { cache: "no-store" }),
         authedFetch(`/api/ml/estoque-forecast?dias=${DIAS_ALVO}`, { cache: "no-store" }),
       ]);
-      if (rMl.ok) setEstoqueML((await rMl.json()).estoque ?? {});
+      if (rMl.ok) {
+        const j = await rMl.json();
+        setEstoqueML(j.estoque ?? {});
+        setAtualizadoEmML(j.atualizadoEm ?? null);
+      }
       if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO }); }
     } catch { /* ignora */ } finally { setLoadingML(false); }
   }, []);
@@ -248,6 +253,11 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           <button type="button" className="btn btn-sm btn-ghost" onClick={carregarEstoque} disabled={loadingML}>
             {loadingML ? "Atualizando..." : "⟳ Atualizar Full (ML)"}
           </button>
+          {atualizadoEmML && (
+            <span className="tab-head-sub" title="Dado buscado ao vivo do ML nesta abertura — não é histórico">
+              Full atualizado às {new Date(atualizadoEmML).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
         </div>
         {canEdit && (
           <div className="tab-actions">

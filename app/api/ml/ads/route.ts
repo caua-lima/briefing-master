@@ -261,6 +261,7 @@ export async function GET(req: Request) {
     await recordSyncSuccess("ads", items.length, { expected: totalAntesDoFiltro, processed: items.length });
     return NextResponse.json({
       items, from, to,
+      atualizadoEm: new Date().toISOString(),
       semGastoNoPeriodo, // quantos anúncios ficaram de fora por não ter investido
       cfgAmostra: { campanha: cfg.amostraCampanha, campanhaOrfa: cfg.amostraCampanhaOrfa },
       cfgDiag: cfg.tentativas,

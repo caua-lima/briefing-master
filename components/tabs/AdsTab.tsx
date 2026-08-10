@@ -132,6 +132,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   // Totais da conta inteira no período (todos os itens, anunciados ou não) —
   // serve pra dizer quanto do faturamento os itens anunciados representam.
   const [conta, setConta] = useState<{ receita: number; unidades: number; lucroAntesAds: number; itens: number } | null>(null);
+  const [atualizadoEm, setAtualizadoEm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -157,6 +158,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
         setGastoSemVinculo(j.gastoSemVinculo ?? 0);
         setCampanhasOrfas(j.campanhasOrfas ?? []);
         setConta(j.conta ?? null);
+        setAtualizadoEm(j.atualizadoEm ?? null);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -306,6 +308,11 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
           <button type="button" className="btn btn-sm btn-ghost" onClick={load} disabled={loading}>
             {loading ? "..." : "⟳ Atualizar"}
           </button>
+          {atualizadoEm && (
+            <span className="tab-head-sub" title="Dado buscado ao vivo do ML nesta abertura — não é histórico">
+              Atualizado às {new Date(atualizadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
       </div>
