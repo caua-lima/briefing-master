@@ -209,10 +209,18 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const unFull = Object.values(estoqueML).reduce((s, v) => s + (ehFullLogistic(v.logistic) ? v.available : 0), 0);
   // Valor parado = (Full + estoque fora do Full) × custo médio. O próprio não
   // soma com casa: é o mesmo estoque exposto no anúncio.
+  // Produto com unidade em estoque mas SEM custo cadastrado contribui 0 pra
+  // soma — sem contar quantos ficaram de fora, o card "Valor em estoque"
+  // pareceria um total completo quando na verdade está subestimado (viola a
+  // regra de nunca esconder que um número é incompleto).
+  let produtosSemCustoComEstoque = 0;
   const valorEstoque = data.products.reduce((s, p) => {
     const casa = Math.max(p.qtdLocal ?? 0, 0);
     const { qtd: full, proprio } = fullDe(p, estoqueML);
-    return s + (full + foraDoFullDe(casa, proprio)) * custoMedioDe(p);
+    const qtdTotal = full + foraDoFullDe(casa, proprio);
+    const custo = custoMedioDe(p);
+    if (qtdTotal > 0 && custo <= 0) produtosSemCustoComEstoque++;
+    return s + qtdTotal * custo;
   }, 0);
   // Produtos NO FULL com estoque baixo E unidades em casa pra reabastecer.
   const reabastecer = data.products.filter((p) => {
@@ -225,19 +233,20 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   // Indicadores de reposição (Fase 5) — cobertura real via forecast, só
   // produtos ativos (produto descontinuado não precisa de alerta de compra).
   const resumoCobertura = useMemo(() => {
-    let ruptura = 0, critico = 0, repor = 0, encalhado = 0, valorEmRisco = 0;
+    let ruptura = 0, critico = 0, repor = 0, encalhado = 0, valorEmRisco = 0, semCusto = 0;
     for (const p of data.products) {
       if (!p.ativo) continue;
       const f = previsaoDe(p, estoqueML, forecast);
       const vendasPeriodo = forecast.vendas[p.id] ?? 0;
       const coberturaDias = Number.isFinite(f.cobertura) ? f.cobertura : null;
       const status = getCoverageStatus(coberturaDias, f.total, vendasPeriodo);
+      const custo = custoMedioDe(p);
       if (f.total <= 0) ruptura++;
-      if (status === "critico") { critico++; valorEmRisco += f.total * custoMedioDe(p); }
+      if (status === "critico") { critico++; valorEmRisco += f.total * custo; if (f.total > 0 && custo <= 0) semCusto++; }
       else if (status === "repor") repor++;
-      else if (status === "encalhado") { encalhado++; valorEmRisco += f.total * custoMedioDe(p); }
+      else if (status === "encalhado") { encalhado++; valorEmRisco += f.total * custo; if (f.total > 0 && custo <= 0) semCusto++; }
     }
-    return { ruptura, critico, repor, encalhado, valorEmRisco };
+    return { ruptura, critico, repor, encalhado, valorEmRisco, semCusto };
   }, [data.products, estoqueML, forecast]);
 
   function onAdd() {
@@ -275,7 +284,16 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
       {/* Resumo */}
       <div className="kpi-grid">
         <div className="kpi k-acc"><div className="k-lbl">Produtos</div><div className="k-val">{total}</div><div className="k-sub">{ativos} ativos</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">Valor em estoque</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div><div className="k-sub">(casa + Full) × custo médio</div></div>
+        <div className="kpi k-pos">
+          <div className="k-lbl">Valor em estoque</div>
+          <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div>
+          <div className="k-sub">
+            (casa + Full) × custo médio
+            {produtosSemCustoComEstoque > 0 && (
+              <> · <span style={{ color: "var(--yellow)" }}>{produtosSemCustoComEstoque} sem custo, fora deste total</span></>
+            )}
+          </div>
+        </div>
         <div className="kpi k-warn"><div className="k-lbl">Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
         <div className="kpi k-pos"><div className="k-lbl">No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
         <div className="kpi k-acc"><div className="k-lbl">Venda potencial</div><div className="k-val">{fmtBRL(valorPotencialVenda)}</div><div className="k-sub">estoque × preço ML atual</div></div>
@@ -283,7 +301,16 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         <div className="kpi k-neg"><div className="k-lbl">Cobertura crítica</div><div className="k-val" style={{ color: resumoCobertura.critico > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.critico}</div><div className="k-sub">&lt; 7 dias de giro</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Cobertura baixa</div><div className="k-val" style={{ color: resumoCobertura.repor > 0 ? "var(--yellow)" : "var(--muted)" }}>{resumoCobertura.repor}</div><div className="k-sub">7–15 dias, repor em breve</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Capital parado</div><div className="k-val" style={{ color: resumoCobertura.encalhado > 0 ? "#F4B942" : "var(--muted)" }}>{resumoCobertura.encalhado}</div><div className="k-sub">sem venda no período</div></div>
-        <div className="kpi k-neg"><div className="k-lbl">Valor em risco</div><div className="k-val" style={{ color: resumoCobertura.valorEmRisco > 0 ? "var(--red)" : "var(--muted)" }}>{fmtBRL(resumoCobertura.valorEmRisco)}</div><div className="k-sub">crítico + encalhado × custo médio</div></div>
+        <div className="kpi k-neg">
+          <div className="k-lbl">Valor em risco</div>
+          <div className="k-val" style={{ color: resumoCobertura.valorEmRisco > 0 ? "var(--red)" : "var(--muted)" }}>{fmtBRL(resumoCobertura.valorEmRisco)}</div>
+          <div className="k-sub">
+            crítico + encalhado × custo médio
+            {resumoCobertura.semCusto > 0 && (
+              <> · <span style={{ color: "var(--yellow)" }}>{resumoCobertura.semCusto} sem custo, fora deste total</span></>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Busca */}
@@ -535,7 +562,25 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
                     <td data-label="Custo un.">{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
                     <td data-label="Obs" style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
                     <td data-cell="acoes">
-                      <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => { if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return; deleteMovimento(m.id, product.id).catch(() => {}); }}>Excluir</button>
+                      <button
+                        type="button" className="btn btn-danger btn-xs" title="Excluir movimentação"
+                        onClick={() => {
+                          // A quantidade É recalculada do livro inteiro (recomputeProduto em
+                          // lib/firebase/data.ts), mas o custo médio NÃO — ele é um blend
+                          // incremental contra o estoque no momento do lançamento (inclusive
+                          // o Full, que vem ao vivo do ML, não do livro), então não dá pra
+                          // "desfazer" matematicamente sem saber o estoque de Full de quando
+                          // o lançamento foi feito. Avisar isso é mais seguro do que prometer
+                          // um recálculo que não acontece.
+                          const aviso = isCompra
+                            ? `Excluir esta movimentação?\n\nA quantidade em casa será recalculada, mas o CUSTO MÉDIO NÃO muda sozinho — esta movimentação tinha custo lançado (${m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}). Revise o custo médio do produto manualmente depois, se precisar.`
+                            : "Excluir esta movimentação? A quantidade em casa será recalculada.";
+                          if (!confirm(aviso)) return;
+                          deleteMovimento(m.id, product.id).catch(() => {});
+                        }}
+                      >
+                        Excluir
+                      </button>
                     </td>
                   </tr>
                 );
