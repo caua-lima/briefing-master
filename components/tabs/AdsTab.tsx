@@ -22,7 +22,7 @@ type AdItem = {
   /** false = sem venda vinculada no período pra calcular a margem do "direto"
    *  — não é prejuízo real, é falta de dado (ver route.ts). */
   diretoDisponivel: boolean;
-  dailyBudget: number; roasTarget: number; acosTarget: number; lastUpdated: string;
+  dailyBudget: number; roasTarget: number; acosTarget: number;
 };
 
 const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {
@@ -36,7 +36,7 @@ const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: strin
 function StatusTag({ item }: { item: AdItem }) {
   const m = STATUS_META[item.status];
   const tooltip = item.status === "config_indisponivel"
-    ? `Este anúncio está na campanha ${item.campaignId}, mas o Mercado Ads não devolveu a configuração dela (nem na lista de campanhas, nem na busca por id). Orçamento/ROAS alvo/alterado ficam vazios por isso — o gasto e as vendas continuam corretos.`
+    ? `Este anúncio está na campanha ${item.campaignId}, mas o Mercado Ads não devolveu a configuração dela (nem na lista de campanhas, nem na busca por id). Orçamento/ROAS alvo ficam vazios por isso — o gasto e as vendas continuam corretos.`
     : item.campaignId
       ? `Campanha: ${item.campaignName || item.campaignId}${item.mlStatus ? ` · catálogo: ${item.mlStatus}` : ""}`
       : "Não achamos a campanha deste anúncio na busca do Mercado Ads.";
@@ -65,26 +65,6 @@ function DiagCard({ label, nome, valor, tone }: { label: string; nome: string; v
       <div style={{ fontSize: ".72rem", color: "var(--text-secondary,var(--muted))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={nome}>{nome}</div>
     </div>
   );
-}
-
-/**
- * Data e hora exatas da última alteração, não só "hoje"/"há Nd" — o campo
- * `last_updated` da campanha pode não significar "você editou a campanha":
- * pode ser um timestamp que o próprio ML atualiza sozinho (ex.: toda vez que
- * a campanha gasta ou recalcula métrica). Mostrando o horário exato, você
- * julga se faz sentido pra sua campanha em vez de confiar só no resumo.
- */
-function alteracaoInfo(iso: string): { txt: string; dataHora: string; dias: number | null; podeAlterar: boolean } {
-  if (!iso) return { txt: "—", dataHora: "", dias: null, podeAlterar: true };
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return { txt: "—", dataHora: "", dias: null, podeAlterar: true };
-  const d = new Date(t);
-  const dataHora = d.toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit",
-    timeZone: "America/Sao_Paulo", hour12: false,
-  });
-  const dias = Math.floor((Date.now() - t) / 86400000);
-  return { txt: dataHora, dataHora, dias, podeAlterar: dias >= 3 };
 }
 
 type Modo = "pub" | "geral";
@@ -210,15 +190,14 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
     const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
     const breakEven = calculateBreakEvenRoas(v, pub ? i.lucroDiretoAntesAds : i.lucroAntesAds);
     const abaixoDoBreakEven = breakEven != null && i.cost > 0 && r < breakEven;
-    const alt = alteracaoInfo(i.lastUpdated);
     const lucroAtual = pub ? (i.diretoDisponivel ? i.lucroDiretoLiquido : null) : i.lucroLiquido;
     const margemAtual = v > 0 && lucroAtual != null ? (lucroAtual / v) * 100 : null;
     const reco = getAdRecommendation({
       clicks: i.clicks, vendas: v, cost: i.cost, lucro: lucroAtual, roas: r,
       roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
-      metaMargem, podeAlterar: alt.podeAlterar,
+      metaMargem,
     });
-    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, alt, lucroAtual, margemAtual, reco };
+    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, lucroAtual, margemAtual, reco };
   }), [items, pub, metaMargem]);
 
   // Diagnóstico de Ads: melhores/piores casos do período, pra achar o que
@@ -290,11 +269,11 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   // com "," como separador o Excel quebraria o número ao abrir.
   function exportarCsv() {
     const header = pub
-      ? ["Anúncio", "MLB", "Orç/dia", "ROAS alvo", "Alterado", "Impressões", "Cliques", "CTR %", "CPC", "Investido", "Vendas diretas", "Unidades", "ACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %"]
-      : ["Anúncio", "MLB", "Orç/dia", "ROAS alvo", "Alterado", "Investido", "Vendas totais", "Unidades", "% via ads", "TACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %"];
+      ? ["Anúncio", "MLB", "Orç/dia", "ROAS alvo", "Impressões", "Cliques", "CTR %", "CPC", "Investido", "Vendas diretas", "Unidades", "ACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %"]
+      : ["Anúncio", "MLB", "Orç/dia", "ROAS alvo", "Investido", "Vendas totais", "Unidades", "% via ads", "TACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %"];
 
-    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, alt, lucroAtual, margemAtual }) => {
-      const comuns = [i.title || i.itemId, i.itemId, i.dailyBudget > 0 ? num(i.dailyBudget, 2) : "", i.roasTarget > 0 ? num(i.roasTarget, 1) : "", alt.dataHora || ""];
+    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, lucroAtual, margemAtual }) => {
+      const comuns = [i.title || i.itemId, i.itemId, i.dailyBudget > 0 ? num(i.dailyBudget, 2) : "", i.roasTarget > 0 ? num(i.roasTarget, 1) : ""];
       const fim = [
         i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "",
         lucroAtual != null ? num(lucroAtual, 2) : "", margemAtual != null ? num(margemAtual, 1) : "",
@@ -528,7 +507,6 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                         <th style={{ textAlign: "left" }}>Anúncio</th>
                         <th style={{ textAlign: "right" }}>Orç/dia</th>
                         <th style={{ textAlign: "right" }}>ROAS alvo</th>
-                        <th style={{ textAlign: "right" }}>Alterado</th>
                         <th style={{ textAlign: "right" }}>Impr.</th>
                         <th style={{ textAlign: "right" }}>Cliques</th>
                         <th style={{ textAlign: "right" }}>CTR</th>
@@ -547,7 +525,6 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                         <th style={{ textAlign: "left" }}>Anúncio</th>
                         <th style={{ textAlign: "right" }}>Orç/dia</th>
                         <th style={{ textAlign: "right" }}>ROAS alvo</th>
-                        <th style={{ textAlign: "right" }}>Alterado</th>
                         <th style={{ textAlign: "right" }}>Investido</th>
                         <th style={{ textAlign: "right" }}>Vendas totais</th>
                         <th style={{ textAlign: "right" }}>Un</th>
@@ -561,7 +538,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                     )}
                   </thead>
                   <tbody>
-                    {linhasFiltradas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, alt }) => {
+                    {linhasFiltradas.map(({ i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven }) => {
                       return (
                         <tr key={i.itemId}>
                           <td className="ads-name" style={{ textAlign: "left", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.title || i.itemId}>
@@ -571,18 +548,6 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                           </td>
                           <td data-label="Orç/dia" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{i.dailyBudget > 0 ? fmtBRL(i.dailyBudget) : "—"}</td>
                           <td data-label="ROAS alvo" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{i.roasTarget > 0 ? `${num(i.roasTarget, 1)}x` : "—"}</td>
-                          {(() => {
-                            const cor = alt.dias == null ? "var(--muted)" : alt.podeAlterar ? "var(--green)" : "#F4B942";
-                            return (
-                              <td data-label="Alterado" style={{ textAlign: "right", whiteSpace: "nowrap", color: cor, fontWeight: alt.dias != null && !alt.podeAlterar ? 700 : 400 }}
-                                title={alt.dias == null
-                                  ? "Data de alteração não informada pelo ML"
-                                  : `${alt.dataHora} · ${alt.podeAlterar ? "já passou dos 3 dias, pode ajustar" : `${alt.dias} dia(s) desde então — espere 3 completos`}`}>
-                                {alt.dataHora || "—"}
-                                {alt.dias != null && !alt.podeAlterar ? " ⏳" : ""}
-                              </td>
-                            );
-                          })()}
                           {pub && <>
                             <td data-label="Impressões" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.prints)}</td>
                             <td data-label="Cliques" style={{ textAlign: "right", color: "var(--muted)", whiteSpace: "nowrap" }}>{num(i.clicks)}</td>
@@ -631,11 +596,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                     sem venda vinculada no período pra calcular a margem — não conta como prejuízo na soma do topo.</>
                 : "Vendas totais = tudo que o item vendeu (ads + orgânico) · TACOS = investido ÷ vendas totais (quanto menor, mais o ads se paga no geral)."}
               <div style={{ marginTop: 4 }}>
-                <b>Alterado</b> = data/hora de <code>last_updated</code> da campanha no ML. <span style={{ color: "#F4B942" }}>⏳</span> = menos de 3 dias,
-                espere completar antes de ajustar de novo. <b>Atenção:</b> este campo pode não significar &quot;você editou a campanha&quot; —
-                se aparecer &quot;hoje&quot; em campanha que você não mexeu, é provável que o ML atualize esse timestamp sozinho quando a
-                campanha gasta ou recalcula métrica; use a data exata mostrada pra julgar, não confie só no ⏳. <b>Orç/dia</b> e
-                <b> ROAS alvo</b> vêm da configuração da campanha no ML.
+                <b>Orç/dia</b> e <b>ROAS alvo</b> vêm da configuração da campanha no ML.
               </div>
               <div style={{ marginTop: 4 }}>
                 <b>Ativa</b>/<b>Pausada</b> é o status da CAMPANHA (não do anúncio no catálogo) — campanha pausada não gasta
@@ -643,9 +604,9 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
                 campanha dele não teve investimento neste período (campanhas zeradas no período são ignoradas de propósito).
                 Passe o mouse na etiqueta pra ver o nome da campanha.
               </div>
-              {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0 && !i.lastUpdated) && (
+              {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0) && (
                 <div style={{ marginTop: 8, color: "#F4B942" }}>
-                  <b>Orç/dia, ROAS alvo e Alterado vieram vazios em todos os anúncios</b>
+                  <b>Orç/dia e ROAS alvo vieram vazios em todos os anúncios</b>
                   {campanhasEncontradas === 0 ? " — nenhuma campanha com investimento neste período foi encontrada" : ` (${campanhasEncontradas} campanha(s) com investimento encontrada(s), mas sem cruzar com os anúncios)`}.
                   Abra &quot;Diagnóstico de configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
                 </div>

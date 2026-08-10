@@ -451,7 +451,6 @@ export type AdSettings = {
   acosTarget: number;    // meta de ACOS (%); 0 = não informado
   roasTarget: number;    // meta de ROAS (direta do ML ou derivada de ACOS); 0 = não informado
   strategy: string;      // estratégia da campanha (texto do ML)
-  lastUpdated: string;   // ISO da última alteração ou criação da CAMPANHA
   status: string;        // status da CAMPANHA (active/paused/...), não do anúncio
 };
 
@@ -481,19 +480,6 @@ function campanhaDe(id: string, c: Record<string, unknown>): AdSettings {
     acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
     roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
     strategy: texto(primeiro(c, ["strategy", "campaign_strategy", "goal"])),
-    /**
-     * SEM "date_created" aqui de propósito — já esteve na lista de
-     * fallback e causava exatamente o que foi reportado: campanha nunca
-     * editada (sem last_updated/last_modified de verdade vindo do ML) caía
-     * pra data de CRIAÇÃO, e a coluna "Alterado" mostrava isso como se
-     * fosse uma edição recente — inclusive travando o aviso de "espere 3
-     * dias" (podeAlterar) numa campanha que na real nunca foi tocada.
-     * Criação não é alteração. Sem nenhum dos campos de edição de verdade,
-     * fica vazio — alteracaoInfo("") já trata isso como "sem dado" (mostra
-     * "—" e libera podeAlterar), o que é honesto: não sabemos, então não
-     * inventamos.
-     */
-    lastUpdated: texto(primeiro(c, ["last_updated", "date_last_updated", "last_modified", "date_modified"])),
     status: texto(primeiro(c, ["status"])),
   };
 }
@@ -752,7 +738,7 @@ export async function getAdsSettingsByItem(
           // de ruído de propósito).
           campaignId: cid && !campanhas.has(cid) ? cid : "",
           campaignName: "",
-          dailyBudget: 0, acosTarget: 0, roasTarget: 0, strategy: "", lastUpdated: "", status: "",
+          dailyBudget: 0, acosTarget: 0, roasTarget: 0, strategy: "", status: "",
         };
   }
 

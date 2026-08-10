@@ -220,7 +220,6 @@ export async function GET(req: Request) {
         dailyBudget: c?.dailyBudget ?? 0,
         roasTarget: c?.roasTarget ?? 0,
         acosTarget: c?.acosTarget ?? 0,
-        lastUpdated: c?.lastUpdated ?? "",
       };
       // Sem campanha vai pro fim da lista, não importa o investimento — é
       // ruído pra quem quer olhar o que está rodando de verdade primeiro.

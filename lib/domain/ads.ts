@@ -17,7 +17,7 @@ export function calculateBreakEvenRoas(vendas: number, lucroAntesAds: number): n
 }
 
 export type AdRecommendation = {
-  acao: "pausar" | "reduzir" | "escalar" | "aguardar" | "sem-dados";
+  acao: "pausar" | "reduzir" | "escalar" | "sem-dados";
   label: string;
   tone: "critical" | "warning" | "opportunity" | "info";
 };
@@ -39,10 +39,8 @@ export function getAdRecommendation(input: {
   breakEvenRoas: number | null;
   margem: number | null;
   metaMargem: number;
-  /** false = alteração na campanha ainda dentro da janela de 3 dias (ver alteracaoInfo) */
-  podeAlterar: boolean;
 }): AdRecommendation {
-  const { clicks, vendas, cost, lucro, roas, roasTarget, breakEvenRoas, margem, metaMargem, podeAlterar } = input;
+  const { clicks, vendas, cost, lucro, roas, roasTarget, breakEvenRoas, margem, metaMargem } = input;
 
   if (clicks < CLIQUES_MIN && vendas === 0) {
     return { acao: "sem-dados", label: "Sem dados suficientes", tone: "info" };
@@ -50,10 +48,6 @@ export function getAdRecommendation(input: {
 
   if (lucro != null && lucro < 0 && cost >= INVESTIMENTO_RELEVANTE) {
     return { acao: "pausar", label: "Pausar ou revisar", tone: "critical" };
-  }
-
-  if (!podeAlterar) {
-    return { acao: "aguardar", label: "Aguardar aprendizado", tone: "info" };
   }
 
   const abaixoDoAlvo = roasTarget > 0 && roas < roasTarget;
