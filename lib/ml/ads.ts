@@ -481,7 +481,19 @@ function campanhaDe(id: string, c: Record<string, unknown>): AdSettings {
     acosTarget: acos > 0 ? acos : (roasDireto > 0 ? 100 / roasDireto : 0),
     roasTarget: roasDireto > 0 ? roasDireto : (acos > 0 ? 100 / acos : 0),
     strategy: texto(primeiro(c, ["strategy", "campaign_strategy", "goal"])),
-    lastUpdated: texto(primeiro(c, ["last_updated", "date_last_updated", "last_modified", "date_modified", "date_created"])),
+    /**
+     * SEM "date_created" aqui de propósito — já esteve na lista de
+     * fallback e causava exatamente o que foi reportado: campanha nunca
+     * editada (sem last_updated/last_modified de verdade vindo do ML) caía
+     * pra data de CRIAÇÃO, e a coluna "Alterado" mostrava isso como se
+     * fosse uma edição recente — inclusive travando o aviso de "espere 3
+     * dias" (podeAlterar) numa campanha que na real nunca foi tocada.
+     * Criação não é alteração. Sem nenhum dos campos de edição de verdade,
+     * fica vazio — alteracaoInfo("") já trata isso como "sem dado" (mostra
+     * "—" e libera podeAlterar), o que é honesto: não sabemos, então não
+     * inventamos.
+     */
+    lastUpdated: texto(primeiro(c, ["last_updated", "date_last_updated", "last_modified", "date_modified"])),
     status: texto(primeiro(c, ["status"])),
   };
 }
