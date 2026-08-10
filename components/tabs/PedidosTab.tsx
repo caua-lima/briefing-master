@@ -264,7 +264,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
   );
 }
 
-export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMargem?: number; openOrderId?: string }) {
+export default function PedidosTab({ metaMargem = 10, openOrderId, onOrderOpened }: { metaMargem?: number; openOrderId?: string; onOrderOpened?: () => void }) {
   const [range, setRange] = useState(() => monthRange());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
@@ -287,8 +287,14 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
     if (openOrderId && pedidos.some((p) => p.order_id === openOrderId)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDetalhe(openOrderId);
+      // Avisa o pai (app/page.tsx) que este deep link já foi consumido, senão
+      // `openOrderId` continua preso no estado do pai pra sempre — como esta
+      // aba só monta quando está ativa (activeTab === "pedidos" em
+      // app/page.tsx), sair e voltar pra aba reabriria o mesmo pedido de
+      // novo mesmo depois do usuário ter fechado o drawer manualmente.
+      onOrderOpened?.();
     }
-  }, [openOrderId, pedidos]);
+  }, [openOrderId, pedidos, onOrderOpened]);
   // Fase 5 (auditoria): antes disto, um pedido fora do período carregado (por
   // padrão, o mês atual) fazia o deep link falhar em silêncio — sem erro, sem
   // aviso, o botão "Ver pedido" da notificação simplesmente não abria nada.

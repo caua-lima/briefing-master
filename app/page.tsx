@@ -496,7 +496,13 @@ function AppShell() {
                     onNavigate={(t) => setTab(t as Tab)}
                   />
                 )}
-                {activeTab === "pedidos" && <PedidosTab metaMargem={data.goals?.metaMargem ?? undefined} openOrderId={openOrderId} />}
+                {activeTab === "pedidos" && (
+                  <PedidosTab
+                    metaMargem={data.goals?.metaMargem ?? undefined}
+                    openOrderId={openOrderId}
+                    onOrderOpened={() => setOpenOrderId(undefined)}
+                  />
+                )}
                 {activeTab === "ads" && <AdsTab metaMargem={data.goals?.metaMargem ?? undefined} />}
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
