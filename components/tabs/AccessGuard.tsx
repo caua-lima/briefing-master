@@ -14,13 +14,21 @@ type AccessInfo = {
   role: AccessEntry["role"];
   email: string;
   isOwner: boolean;
+  /**
+   * Nome de exibição vindo do registro de acesso (controleAcesso), o mesmo
+   * que aparece na aba Acesso — não o `displayName` do Firebase Auth, que
+   * fica vazio pra quem nunca logou com Google (ex.: login por e-mail/senha
+   * criado pelo owner) e nesse caso a saudação do Dashboard caía pro e-mail
+   * inteiro. Cai pro e-mail só se nem o registro de acesso tiver nome.
+   */
+  displayName: string;
   /** Edição de tudo-ou-nada (Acesso, Tarefas via regra própria, e qualquer tela ainda não migrada pro granular). */
   canEdit: boolean;
   /** Edição granular por aba — sempre true pro owner; pro colaborador, depende de permissoesEdicao. */
   canEditTab: (tab: PermissionTab) => boolean;
 };
 const AccessCtx = createContext<AccessInfo>({
-  role: "colaborador", email: "", isOwner: false, canEdit: false, canEditTab: () => false,
+  role: "colaborador", email: "", isOwner: false, displayName: "", canEdit: false, canEditTab: () => false,
 });
 export function useAccess() {
   return useContext(AccessCtx);
@@ -209,8 +217,9 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   const isOwner = role === "owner"; // só o owner edita tudo; colaborador é somente-leitura por padrão
   const permissoes = access.entry?.permissoesEdicao ?? [];
   const canEditTab = (tab: PermissionTab) => isOwner || permissoes.includes(tab);
+  const displayName = access.entry?.displayName || user.displayName || currentEmail;
   return (
-    <AccessCtx.Provider value={{ role, email: currentEmail, isOwner, canEdit: isOwner, canEditTab }}>
+    <AccessCtx.Provider value={{ role, email: currentEmail, isOwner, displayName, canEdit: isOwner, canEditTab }}>
       {children}
     </AccessCtx.Provider>
   );

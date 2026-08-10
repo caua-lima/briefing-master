@@ -18,7 +18,7 @@ import {
   prevPeriod,
 } from "@/lib/domain/calc";
 import type { UserData } from "@/components/useUserData";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAccess } from "@/components/tabs/AccessGuard";
 import ExpensesDoughnut from "./ExpensesDoughnut";
 import PerformanceGauge from "./PerformanceGauge";
 import DateRangePicker from "./DateRangePicker";
@@ -905,8 +905,12 @@ function saudacao(): string {
 }
 
 export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }: Props) {
-  const { user } = useAuth();
-  const primeiroNome = (user?.displayName ?? user?.email ?? "").split(/[ @]/)[0];
+  // Nome de exibição vem do registro de acesso (controleAcesso), não do
+  // Firebase Auth direto — quem entra por login e-mail/senha (criado pelo
+  // owner na aba Acesso) nunca teve um displayName do Google, e a saudação
+  // caía pro e-mail inteiro em vez do nome de verdade.
+  const { displayName } = useAccess();
+  const primeiroNome = displayName.split(/[ @]/)[0];
   const mes = mesAtual();
 
   const [range, setRange] = useState<{ from: string; to: string }>(() => monthRange(mes));
