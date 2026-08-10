@@ -508,7 +508,7 @@ function AppShell() {
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
                 {activeTab === "dre" && <DreTab />}
-                {activeTab === "tarefas" && <TarefasTab openTaskId={openTaskId} />}
+                {activeTab === "tarefas" && <TarefasTab openTaskId={openTaskId} onTaskOpened={() => setOpenTaskId(undefined)} />}
                 {activeTab === "acesso" && isOwner && <AccessControlTab uid={user.uid} data={data} />}
               </>
             )}

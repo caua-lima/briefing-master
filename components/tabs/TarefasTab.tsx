@@ -46,7 +46,7 @@ const isAtrasada = isTaskAtrasada;
 
 type Filtro = "todas" | "pra-mim" | "criei-eu";
 
-export default function TarefasTab({ openTaskId }: { openTaskId?: string } = {}) {
+export default function TarefasTab({ openTaskId, onTaskOpened }: { openTaskId?: string; onTaskOpened?: () => void } = {}) {
   const { email } = useAccess();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pessoas, setPessoas] = useState<AccessEntry[]>([]);
@@ -68,10 +68,18 @@ export default function TarefasTab({ openTaskId }: { openTaskId?: string } = {})
     // aparecer na lista carregada.
     if (openTaskId) {
       const t = tasks.find((x) => x.id === openTaskId);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (t) setEditTask(t);
+      if (t) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setEditTask(t);
+        // Fase 5 (auditoria): sem isto, `openTaskId` fica preso pra sempre no
+        // estado do pai (app/page.tsx) — como esta aba só monta quando está
+        // ativa, sair e voltar reabriria o mesmo modal de novo mesmo depois
+        // do usuário ter fechado manualmente. Mesmo padrão de correção do
+        // deep link de pedido em PedidosTab.tsx.
+        onTaskOpened?.();
+      }
     }
-  }, [openTaskId, tasks]);
+  }, [openTaskId, tasks, onTaskOpened]);
 
   useEffect(() => {
     const u1 = watchTasks((ts) => { setTasks(ts); setLoading(false); });
