@@ -12,6 +12,7 @@ import {
   diasNoMes,
   clamp,
   yesterdayStr,
+  daysAgoStr,
   projetarMes,
   todayStr,
   isFullMonth,
@@ -387,7 +388,8 @@ function MelhoresDias({ serie, from, to }: { serie: { data: string; faturamento:
 
       <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.5 }}>
         Média por dia, não o total — assim compara justo mesmo quando um dia da semana
-        aparece mais vezes no período. Amplie a data no topo para basear em mais semanas.
+        aparece mais vezes no período. Sempre os últimos 30 dias corridos, independente
+        do período selecionado no topo do Dashboard.
       </div>
     </div>
   );
@@ -923,6 +925,12 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   // métricas com from=to=ontem, igual ao "hoje" que a rota já calcula
   // sempre — nenhuma mudança na rota, nenhum cálculo novo.
   const [ontemMetrics, setOntemMetrics] = useState<MlMetrics | null>(null);
+  // Últimos 30 dias corridos fixos (independe do período selecionado no
+  // topo) — alimenta só "Melhores dias da semana". Com o range padrão (mês
+  // corrente), começar o mês dava poucas amostras por dia da semana e a
+  // "média mais forte" balançava muito; 30 dias fixos garante ~4 semanas
+  // completas sempre, não importa que dia do mês seja hoje.
+  const [melhoresDiasMetrics, setMelhoresDiasMetrics] = useState<MlMetrics | null>(null);
   const [estoqueForecast, setEstoqueForecast] = useState<{ vendas: Record<string, number>; dias: number } | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   useEffect(() => watchTasks(setTasks), []);
@@ -1016,6 +1024,13 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
     authedFetch(`/api/ml/metrics?from=${ontemISO}&to=${ontemISO}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (mountedRef.current) setOntemMetrics(j); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    authedFetch(`/api/ml/metrics?from=${daysAgoStr(29)}&to=${todayStr()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (mountedRef.current) setMelhoresDiasMetrics(j); })
       .catch(() => {});
   }, []);
 
@@ -1447,7 +1462,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
           <ConferenciaMP reconc={mlMetrics?.reconc} />
 
           {/* Melhores dias da semana */}
-          <MelhoresDias serie={mlMetrics?.serieDiaria ?? []} from={mlMetrics?.from} to={mlMetrics?.to} />
+          <MelhoresDias serie={melhoresDiasMetrics?.serieDiaria ?? []} from={melhoresDiasMetrics?.from} to={melhoresDiasMetrics?.to} />
 
           {/* Curva ABC de produtos */}
           <CurvaABC anuncios={mlMetrics?.anuncios ?? []} />
