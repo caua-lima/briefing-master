@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, getAdsSettingsByItem, getItemStatusByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
+import { recordSyncAttempt, recordSyncFailure, recordSyncSuccess } from "@/lib/sync-runs";
+import { sanitizeErrorForStorage } from "@/lib/domain/freshness";
 
 /**
  * Etiqueta é sobre a CAMPANHA (o que o vendedor pediu), não o anúncio no
@@ -80,6 +82,11 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  // Fase 4: registra que uma coleta de Ads foi tentada, mesmo sem lock (não
+  // há risco de escrita concorrente aqui — é leitura, sem upsert em disputa).
+  // Serve só pra Saúde da operação saber "quando foi a última vez que a aba
+  // Ads foi aberta com sucesso" — hoje isso não era rastreado em lugar nenhum.
+  await recordSyncAttempt("ads");
   try {
     const url = new URL(req.url);
     const from = url.searchParams.get("from") || todayISO(29);
@@ -101,6 +108,7 @@ export async function GET(req: Request) {
         ads = from <= ontem ? await getAdsFullByItem(from, ontem) : [];
       } catch (e2) {
         const diag = await probeAds(from, adsTo);
+        await recordSyncFailure("ads", sanitizeErrorForStorage(String(e2)));
         return NextResponse.json({ error: "ads_failed", details: String(e2).slice(0, 200), diag, from, to: adsTo, items: [] });
       }
     }
@@ -250,6 +258,7 @@ export async function GET(req: Request) {
     // orçamento/ROAS vierem 0, mostra o objeto para achar o campo certo sem
     // chutar. cfgDiag: status HTTP das URLs de campanhas tentadas — se
     // nenhuma respondeu 200, o problema é o endpoint, não o nome do campo.
+    await recordSyncSuccess("ads", items.length, { expected: totalAntesDoFiltro, processed: items.length });
     return NextResponse.json({
       items, from, to,
       semGastoNoPeriodo, // quantos anúncios ficaram de fora por não ter investido
@@ -271,6 +280,7 @@ export async function GET(req: Request) {
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    await recordSyncFailure("ads", sanitizeErrorForStorage(msg));
     return NextResponse.json({ error: "unexpected", details: msg, items: [] }, { status: 500 });
   }
 }

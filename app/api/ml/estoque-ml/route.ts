@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getMlAccessToken } from "../token";
+import { recordSyncAttempt, recordSyncFailure, recordSyncSuccess } from "@/lib/sync-runs";
+import { sanitizeErrorForStorage } from "@/lib/domain/freshness";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -16,9 +18,13 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  await recordSyncAttempt("full_stock");
   try {
     const token = await getMlAccessToken();
-    if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
+    if (!token) {
+      await recordSyncFailure("full_stock", "sem token");
+      return NextResponse.json({ error: "sem token" }, { status: 400 });
+    }
     const db = getAdminDb();
 
     // Coleta todos os MLBs cadastrados
@@ -87,9 +93,11 @@ export async function GET(req: Request) {
       await Promise.all(idsPromo.slice(i, i + 8).map((id) => enrichPromo(id)));
     }
 
+    await recordSyncSuccess("full_stock", Object.keys(estoque).length, { expected: arr.length, processed: Object.keys(estoque).length });
     return NextResponse.json({ estoque });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    await recordSyncFailure("full_stock", sanitizeErrorForStorage(msg));
     return NextResponse.json({ error: "estoque_ml_failed", details: msg }, { status: 500 });
   }
 }
