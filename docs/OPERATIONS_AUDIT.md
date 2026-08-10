@@ -25,6 +25,17 @@ O projeto passou por um ciclo de desenvolvimento muito intenso nos últimos 14 d
 
 ## Achados
 
+### Atualização (Fase 2 concluída)
+
+A Fase 2 (rules e autorização) auditou os 9 pontos exigidos contra o código real. 7 já estavam corretos; 2 tinham lacuna real, corrigidas nesta mesma fase:
+
+- **Lacuna real:** `notification_events` permitia que qualquer autorizado marcasse `readBy`/`dismissedBy` em nome de **qualquer e-mail**, não só o próprio — um colaborador podia, por exemplo, forjar que o owner já leu um aviso. Corrigido com `isSelfReadOrDismissUpdate()`, que valida a chave específica dentro do mapa, não só o campo inteiro.
+- **Endurecimento (defesa em profundidade):** `ml_tokens`, `ml_orders`, `ml_returns` nunca tiveram `match` no `firestore.rules` — já eram bloqueadas pelo default-deny do Firestore (confirmado: nenhum código client-side as referencia, só Admin SDK server-side, que ignora regras). Adicionado `allow read, write: if false` explícito pra essas três, deixando a intenção clara em vez de depender de omissão.
+
+Isso **piora temporariamente** o achado A1 abaixo: agora há ainda mais mudança em `firestore.rules` esperando deploy. Ver `docs/FIRESTORE_RULES_DEPLOY.md` pro passo a passo e os cenários de teste owner/colaborador.
+
+---
+
 ### A1 — `firestore.rules` modificado sem confirmação de deploy
 
 - **Severidade:** 🔴 Bloqueador de produção

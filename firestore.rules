@@ -150,20 +150,34 @@ service cloud.firestore {
       allow delete: if isAuthorized() && resource.data.email == request.auth.token.email;
     }
 
+    // Cliente só marca leitura/dispensa NO PRÓPRIO e-mail dentro dos mapas
+    // readBy/dismissedBy — antes só travava os campos de negócio (valor,
+    // título) mas deixava qualquer autorizado escrever na chave de e-mail de
+    // QUALQUER outra pessoa (ex.: colaborador forjar que o owner já leu um
+    // aviso, ou apagar a marca de leitura de outro usuário). lib/firebase/
+    // data.ts (markNotificationRead/markNotificationDismissed) sempre grava
+    // só a própria chave — auditado na Fase 2, então isto não quebra nenhum
+    // uso legítimo, só fecha a brecha.
+    function isSelfReadOrDismissUpdate() {
+      let beforeRead = resource.data.get('readBy', {});
+      let afterRead = request.resource.data.get('readBy', {});
+      let beforeDismiss = resource.data.get('dismissedBy', {});
+      let afterDismiss = request.resource.data.get('dismissedBy', {});
+      return isAuthorized()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy', 'dismissedBy'])
+        && afterRead.diff(beforeRead).affectedKeys().hasOnly([request.auth.token.email])
+        && afterDismiss.diff(beforeDismiss).affectedKeys().hasOnly([request.auth.token.email]);
+    }
+
     // Central de notificações (Fase 7): venda/cancelamento/devolução/alerta,
     // um doc por evento, id = dedupeKey (garante idempotência — ver
     // lib/notification-events.ts). Criação/entrega são só backend via Admin
     // SDK, que ignora estas regras; o cliente só pode marcar como lido ou
-    // dispensado, mexendo em readBy/dismissedBy. NÃO valida qual e-mail
-    // específico foi escrito dentro do mapa (like isSelfPhotoUpdate faz pro
-    // campo inteiro) — é informação de leitura, não crítica o suficiente pra
-    // justificar a regra mais complexa; o que importa é travar os campos de
-    // negócio (valor, margem, título) contra edição pelo cliente.
+    // dispensado, e só na própria chave (ver isSelfReadOrDismissUpdate acima).
     match /notification_events/{eventId} {
       allow read: if isAuthorized();
       allow create, delete: if false;
-      allow update: if isAuthorized()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy', 'dismissedBy']);
+      allow update: if isSelfReadOrDismissUpdate();
     }
 
     // Preferências de notificação por usuário — cada um só lê/escreve as
@@ -188,6 +202,22 @@ service cloud.firestore {
     match /usuarios/{uid}/{document=**} {
       allow read: if isAuthorized();
       allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Coleções só-backend (Admin SDK, que ignora estas regras). Sem match
+    // nenhum, o Firestore já nega por padrão — estes blocos existem pra
+    // deixar EXPLÍCITO (auditoria Fase 2) que nenhum client-side deve tocar
+    // aqui, em vez de depender de "ninguém escreveu a regra ainda" ficar
+    // certo pra sempre. ml_tokens guarda o token OAuth do Mercado Livre —
+    // jamais pode ser lido pelo navegador.
+    match /ml_tokens/{docId} {
+      allow read, write: if false;
+    }
+    match /ml_orders/{docId} {
+      allow read, write: if false;
+    }
+    match /ml_returns/{docId} {
+      allow read, write: if false;
     }
   }
 }
