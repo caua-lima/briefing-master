@@ -42,6 +42,20 @@ service cloud.firestore {
         && request.resource.data.photoURL.size() < 900000;
     }
 
+    // Mesma ideia, pra "Meu Perfil": autorizado troca o PRÓPRIO nome de
+    // exibição, sem poder tocar em role/permissoesEdicao/e-mail. Campo
+    // separado do de foto (em vez de juntar tudo num "isSelfProfileUpdate")
+    // pra manter cada allow o mais restrito possível — o front nunca manda
+    // os dois de uma vez mesmo, então não custa nada não juntar.
+    function isSelfNameUpdate(email) {
+      return isAuthorized()
+        && request.auth.token.email == email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() < 120;
+    }
+
     match /controleAcessoMeta/{docId} {
       allow read: if signedIn();
       allow create: if signedIn()
@@ -62,7 +76,8 @@ service cloud.firestore {
       );
       allow update: if isOwner()
         || (signedIn() && request.auth.token.email == email && resource.data.role == "owner")
-        || isSelfPhotoUpdate(email);
+        || isSelfPhotoUpdate(email)
+        || isSelfNameUpdate(email);
       allow delete: if isOwner() || (signedIn() && request.auth.token.email == email && resource.data.role == "owner");
     }
 

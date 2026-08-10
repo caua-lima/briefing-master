@@ -21,6 +21,7 @@ import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
 import { ZxpMark } from "@/components/ZxpMark";
 import { AvatarUpload } from "@/components/AvatarUpload";
+import MyProfileModal from "@/components/MyProfileModal";
 import CommandPalette from "@/components/CommandPalette";
 import { SaleNotificationProvider } from "@/components/SaleNotificationProvider";
 
@@ -162,7 +163,8 @@ function AppShell() {
   }, [sidebarOpen]);
 
   const data = useUserData(user?.uid);
-  const { isOwner } = useAccess();
+  const { isOwner, displayName } = useAccess();
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // Sem isto, uma venda que chega com o app ABERTO não mostra notificação
   // nenhuma — o navegador só faz isso sozinho quando o app está em segundo
@@ -346,12 +348,22 @@ function AppShell() {
               borderTop: "1px solid var(--border)",
             }}
           >
-            <div
+            <button
+              type="button"
+              onClick={() => setProfileOpen(true)}
+              title="Editar meu perfil"
+              aria-label="Editar meu perfil"
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
                 marginBottom: 10,
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
               }}
             >
               <AvatarUpload size={28} />
@@ -365,9 +377,14 @@ function AppShell() {
                   flex: 1,
                 }}
               >
-                {user.displayName || user.email}
+                {displayName}
               </span>
-            </div>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--muted)" }} aria-hidden>
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            {profileOpen && <MyProfileModal onClose={() => setProfileOpen(false)} />}
             <button
               type="button"
               className="btn btn-primary btn-xs"

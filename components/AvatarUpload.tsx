@@ -21,14 +21,16 @@ export function AvatarUpload({ size = 28 }: { size?: number }) {
   const { user } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [photoURL, setPhotoURL] = useState<string | null>(null);
+  const [entryName, setEntryName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const email = user?.email?.toLowerCase();
-    if (!email) { setPhotoURL(null); return; }
+    if (!email) { setPhotoURL(null); setEntryName(null); return; }
     return watchAccessEntry(email, (entry) => {
       setPhotoURL(entry?.photoURL || user?.photoURL || null);
+      setEntryName(entry?.displayName || null);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
@@ -51,7 +53,7 @@ export function AvatarUpload({ size = 28 }: { size?: number }) {
     }
   }
 
-  const initials = (user?.displayName || user?.email || "?").trim().charAt(0).toUpperCase();
+  const initials = (entryName || user?.displayName || user?.email || "?").trim().charAt(0).toUpperCase();
   const badgeSize = Math.max(14, Math.round(size * 0.5));
 
   return (
