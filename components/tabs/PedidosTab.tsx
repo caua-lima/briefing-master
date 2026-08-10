@@ -181,20 +181,36 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
             {itens.length} produtos nesta venda
             {(p.pedidosNoPacote ?? 1) > 1 && ` · pacote de ${p.pedidosNoPacote} pedidos do ML`}
           </div>
-          {itens.map((it, i) => (
-            <div key={`${it.mlb}-${i}`} style={{ padding: "6px 0", borderTop: i ? "1px solid var(--border)" : undefined }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontSize: ".8rem", fontWeight: 600 }}>{it.qtd}× {it.produto || it.mlb}</span>
-                <span style={{ fontSize: ".8rem", fontWeight: 700, whiteSpace: "nowrap", color: it.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
-                  {fmtBRL(it.lucro)}
-                </span>
+          {itens.map((it, i) => {
+            // Margem deste PRODUTO, não do pedido inteiro — mesma fórmula
+            // (lucro ÷ valor da venda) já usada pro pedido como um todo
+            // (p.margem), só que aplicada por item. Sem isso a tela só dava
+            // pra ver o lucro em R$ de cada produto, não se ele estava
+            // puxando a margem da venda pra baixo ou pra cima.
+            const margemItem = it.valor > 0 ? (it.lucro / it.valor) * 100 : 0;
+            return (
+              <div key={`${it.mlb}-${i}`} style={{ padding: "6px 0", borderTop: i ? "1px solid var(--border)" : undefined }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <span style={{ fontSize: ".8rem", fontWeight: 600 }}>{it.qtd}× {it.produto || it.mlb}</span>
+                  <span style={{ textAlign: "right", flexShrink: 0 }}>
+                    <span style={{ display: "block", fontSize: ".8rem", fontWeight: 700, whiteSpace: "nowrap", color: it.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
+                      {fmtBRL(it.lucro)}
+                    </span>
+                    <span style={{ display: "block", fontSize: ".68rem", fontWeight: 600, whiteSpace: "nowrap", color: it.lucro >= 0 ? "var(--green)" : "var(--red)" }}>
+                      {margemItem.toFixed(1)}% margem
+                    </span>
+                  </span>
+                </div>
+                {!it.vinculado && (
+                  <div style={{ fontSize: ".68rem", color: "#F4B942" }}>sem cadastro no Estoque — custo entra como zero, margem real é menor</div>
+                )}
+                <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>
+                  venda {fmtBRL(it.valor)} · taxa {fmtBRL(it.taxaML)} · frete {fmtBRL(it.envio)} ·
+                  custo {fmtBRL(it.cmv)} · imposto {fmtBRL(it.imposto)}
+                </div>
               </div>
-              <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>
-                venda {fmtBRL(it.valor)} · taxa {fmtBRL(it.taxaML)} · frete {fmtBRL(it.envio)} ·
-                custo {fmtBRL(it.cmv)} · imposto {fmtBRL(it.imposto)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
