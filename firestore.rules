@@ -219,5 +219,14 @@ service cloud.firestore {
     match /ml_returns/{docId} {
       allow read, write: if false;
     }
+    // Fase 4: freshness por fonte de dado e lock de sincronização — só o
+    // backend lê/escreve (a Saúde da operação lê via Admin SDK na rota, não
+    // direto do client).
+    match /sync_runs/{docId} {
+      allow read, write: if false;
+    }
+    match /sync_locks/{docId} {
+      allow read, write: if false;
+    }
   }
 }
