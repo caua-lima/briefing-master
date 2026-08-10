@@ -229,8 +229,14 @@ function KanbanColuna({ status, label, dot, count, children }: {
   );
 }
 
-/** Envolve o card com o arrasto — só o "grip" no topo inicia o drag, então
- *  clicar em Editar/Excluir/mover continua funcionando normalmente. */
+/**
+ * Envolve o card com o arrasto — o card INTEIRO é a área de arrastar agora
+ * (antes só um grip de 12x16px no canto era arrastável, fácil de não achar).
+ * Continua seguro clicar em Editar/Excluir/mover: o PointerSensor do
+ * DndContext (ver activationConstraint mais abaixo) só considera "arrasto"
+ * depois de 6px de movimento — um clique parado num botão nunca dispara o
+ * drag, só o clique normal do botão.
+ */
 function DraggableTaskCard({ task, onMover, onEditar, onExcluir }: {
   task: Task;
   onMover: (s: TaskStatus) => void;
@@ -239,31 +245,33 @@ function DraggableTaskCard({ task, onMover, onEditar, onExcluir }: {
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
-    <div ref={setNodeRef} style={{ opacity: isDragging ? 0.35 : 1 }}>
-      <TaskCard task={task} onMover={onMover} onEditar={onEditar} onExcluir={onExcluir} dragHandleProps={{ ...attributes, ...listeners }} />
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{ opacity: isDragging ? 0.35 : 1, cursor: "grab", touchAction: "none" }}
+    >
+      <TaskCard task={task} onMover={onMover} onEditar={onEditar} onExcluir={onExcluir} arrastavel />
     </div>
   );
 }
 
-function TaskCard({ task, onMover, onEditar, onExcluir, dragHandleProps, arrastando }: {
+function TaskCard({ task, onMover, onEditar, onExcluir, arrastavel, arrastando }: {
   task: Task;
   onMover: (s: TaskStatus) => void;
   onEditar: () => void;
   onExcluir: () => void;
-  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+  /** Só visual (ícone de grip) — quem de fato liga o arrasto é o wrapper em DraggableTaskCard. */
+  arrastavel?: boolean;
   arrastando?: boolean;
 }) {
   const idx = COLS.findIndex((c) => c.status === task.status);
   const atrasada = isAtrasada(task);
   return (
-    <div className={`kanban-card pri-${task.status}`} style={arrastando ? { boxShadow: "0 10px 30px rgba(0,0,0,.45)", cursor: "grabbing" } : undefined}>
+    <div className={`kanban-card pri-${task.status}`} title={arrastavel ? "Arraste o card pra mover entre colunas" : undefined} style={arrastando ? { boxShadow: "0 10px 30px rgba(0,0,0,.45)", cursor: "grabbing" } : undefined}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-        {dragHandleProps && (
-          <span
-            {...dragHandleProps}
-            title="Arraste pra mover"
-            style={{ cursor: "grab", color: "var(--muted)", flexShrink: 0, marginTop: 2, padding: "2px 2px", touchAction: "none" }}
-          >
+        {arrastavel && (
+          <span aria-hidden style={{ color: "var(--muted)", flexShrink: 0, marginTop: 2, padding: "2px 2px" }}>
             <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden>
               <circle cx="3" cy="2" r="1.4" /><circle cx="9" cy="2" r="1.4" />
               <circle cx="3" cy="8" r="1.4" /><circle cx="9" cy="8" r="1.4" />
