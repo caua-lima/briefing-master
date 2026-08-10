@@ -71,13 +71,18 @@ function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: numbe
 }
 
 /**
- * Estoque físico FORA do Full. O disponível no anúncio próprio é o MESMO
- * estoque de casa — você só expõe no ML parte do que já tem em casa — então
- * não se soma. Quando há controle de casa, ele é a verdade; sem controle
- * (produto novo), cai no que o ML mostra disponível.
+ * Estoque físico FORA do Full: casa (controle manual, ex.: compras ainda não
+ * lançadas no anúncio) MAIS o que está disponível no(s) anúncio(s) próprio(s)
+ * (envio por conta do vendedor/agência) — são dois lotes físicos distintos,
+ * não o mesmo estoque contado duas vezes. Reportado com exemplo real: 23+8
+ * unidades em dois anúncios "Clássico" (agência, não Full) mais 10 no
+ * controle manual = 41 no total; a versão anterior descartava os 31 do
+ * anúncio sempre que havia QUALQUER controle manual (nem que fosse 1
+ * unidade), mostrando só "10 un" e separando os 31 como se fossem só
+ * informativos.
  */
 function foraDoFullDe(casa: number, proprio: number): number {
-  return casa > 0 ? casa : proprio;
+  return casa + proprio;
 }
 
 // Full considerado "baixo" sugere reabastecer com o estoque de casa.
@@ -446,7 +451,7 @@ function ProductRow({
         <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#F4B942" }}>reabastecer</span>}
-          {proprio > 0 && <span title="Disponível no anúncio próprio — é o mesmo estoque de casa exposto no ML, não soma ao total" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
+          {proprio > 0 && <span title="Disponível no(s) anúncio(s) próprio(s) (envio por conta do vendedor/agência) — soma no Total ao lado, junto com o que está em casa" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
         </td>
         <td data-label="Total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
         <td data-label="Custo médio" style={{ textAlign: "right", whiteSpace: "nowrap", color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
@@ -554,7 +559,7 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   const cNum = parseNum(custo);
 
   // ENTRADA: blenda a compra nova contra tudo que você tem (Full + fora do
-  // Full). O próprio não soma: é o mesmo estoque de casa exposto no anúncio.
+  // Full, onde fora do Full já é casa + anúncio próprio somados).
   const estoqueAtual = full + foraDoFullDe(casa, proprio);
   const novoAvgEntrada = qNum > 0 && estoqueAtual + qNum > 0
     ? (estoqueAtual * avgAtual + qNum * cNum) / (estoqueAtual + qNum)
