@@ -5,7 +5,7 @@ import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product 
 import { movIdRemessa, remessaTemBaixa, type Remessa } from "@/lib/domain/remessas";
 import { addMovimento, deleteMovimento, deleteProduct, ignorarRemessaFull, reabrirRemessaFull, upsertProduct, watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
-import { getCoverageStatus, COVERAGE_STATUS_LABEL, type CoverageStatus } from "@/lib/domain/estoque";
+import { calcularCustoMedioEntrada, calcularCustoMedioSaldoInicial, getCoverageStatus, COVERAGE_STATUS_LABEL, type CoverageStatus } from "@/lib/domain/estoque";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -619,9 +619,7 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   // ENTRADA: blenda a compra nova contra tudo que você tem (Full + fora do
   // Full, onde fora do Full já é casa + anúncio próprio somados).
   const estoqueAtual = full + foraDoFullDe(casa, proprio);
-  const novoAvgEntrada = qNum > 0 && estoqueAtual + qNum > 0
-    ? (estoqueAtual * avgAtual + qNum * cNum) / (estoqueAtual + qNum)
-    : avgAtual;
+  const novoAvgEntrada = calcularCustoMedioEntrada(estoqueAtual, avgAtual, qNum, cNum);
 
   // SALDO INICIAL (Full): as unidades do Full ainda não têm custo. Blenda elas,
   // ao custo informado, contra o que está FORA do Full (casa + próprio), que já
@@ -629,11 +627,7 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   // o próprio custo médio. Antes o saldo SOBRESCREVIA o custo médio — errado
   // quando já havia estoque em casa com custo.
   const foraDoFull = foraDoFullDe(casa, proprio);
-  const novoAvgSaldo = qNum > 0
-    ? (avgAtual > 0 && foraDoFull > 0
-        ? (foraDoFull * avgAtual + qNum * cNum) / (foraDoFull + qNum)
-        : cNum)
-    : avgAtual;
+  const novoAvgSaldo = calcularCustoMedioSaldoInicial(foraDoFull, avgAtual, qNum, cNum);
 
   const novoAvg = isEntrada ? novoAvgEntrada : novoAvgSaldo;
 
