@@ -4,78 +4,15 @@ import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, getAdsSettingsByItem, getItemStatusByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
 import { recordSyncAttempt, recordSyncFailure, recordSyncSuccess } from "@/lib/sync-runs";
 import { sanitizeErrorForStorage } from "@/lib/domain/freshness";
-
-/**
- * Etiqueta é sobre a CAMPANHA (o que o vendedor pediu), não o anúncio no
- * catálogo — uma campanha pausada não gasta nem gira, mesmo com o anúncio
- * "active" no catálogo. Sem campaignId resolvido = "sem_campanha" (não é erro,
- * é um anúncio que nunca foi posto em nenhuma campanha, ou a campanha não foi
- * encontrada na busca).
- */
-function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pausado" | "sem_campanha" | "config_indisponivel" {
-  if (!campaignId) return "sem_campanha";
-  const s = campaignStatus.toLowerCase();
-  if (s === "active") return "ativo";
-  if (s === "paused") return "pausado";
-  // Tem campanha (sabemos o id), mas não conseguimos carregar a config dela —
-  // "sem campanha" aqui seria falso.
-  return "config_indisponivel";
-}
+import { buildAdItem, normId, normSku, reconciliarConta, sortAdItems, vendasPorItem, type ProdutoData } from "@/lib/domain/ads";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 
 export const maxDuration = 30;
 
-type ProdutoData = { custo: number; imposto: number };
-type OrderItem = { sku?: string; item_id?: string; quantity?: number; unit_price?: number; sale_fee?: number };
-
 function todayISO(offsetDays = 0): string {
   const d = new Date(Date.now() - 3 * 3600 * 1000 - offsetDays * 86400000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-const normSku = (s: string) => s.trim().toLowerCase();
-const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
-const isNaoVenda = (s: unknown) => {
-  const v = String(s ?? "").toLowerCase();
-  return v === "cancelled" || v === "invalid";
-};
-
-type VendaItem = { receita: number; unidades: number; cmv: number; imposto: number; taxaML: number; envio: number };
-
-/**
- * Vendas + lucro (antes de ads) por item MLB, a partir dos MESMOS pedidos que o
- * dashboard usa (ao vivo do ML). Exclui cancelados e devolvidos, igual ao lucro
- * do dashboard — assim "vendas totais" e "lucro" batem com a tela principal.
- */
-function vendasPorItem(
-  orders: FirebaseFirestore.DocumentData[],
-  porMlb: Map<string, ProdutoData>, porSku: Map<string, ProdutoData>,
-  cancelIds: Set<string>, devolIds: Set<string>,
-): Map<string, VendaItem> {
-  const map = new Map<string, VendaItem>();
-  for (const o of orders) {
-    const oid = String(o.order_id ?? "");
-    if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
-    const items = (o.items as OrderItem[]) ?? [];
-    const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
-    const envioPerUnit = totalUnits > 0 ? Number(o.shipping_cost ?? 0) / totalUnits : 0;
-    for (const it of items) {
-      const id = String(it.item_id ?? "").trim().toUpperCase();
-      if (!id) continue;
-      const qty = Number(it.quantity ?? 1);
-      const receita = Number(it.unit_price ?? 0) * qty;
-      const prod = porMlb.get(normId(id)) ?? porSku.get(normSku(String(it.sku ?? "")));
-      const cur = map.get(id) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
-      cur.receita += receita;
-      cur.unidades += qty;
-      cur.taxaML += Number(it.sale_fee ?? 0) * qty;
-      cur.envio += envioPerUnit * qty;
-      cur.cmv += (prod?.custo ?? 0) * qty;
-      cur.imposto += receita * ((prod?.imposto ?? 0) / 100);
-      map.set(id, cur);
-    }
-  }
-  return map;
 }
 
 export async function GET(req: Request) {
@@ -189,70 +126,27 @@ export async function GET(req: Request) {
     // vira só um dado extra no tooltip agora; a etiqueta principal é da campanha.
     const statusPorItem = await getItemStatusByItem(mlbsAds).catch(() => ({} as Record<string, string>));
 
-    const items = ads.map((a) => {
+    const items = sortAdItems(ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
-      const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
-      const lucroLiquido = lucroAntesAds - a.cost; // GERAL: todas as vendas − ads
-
-      /**
-       * Lucro considerando SÓ as vendas diretas do anúncio. Aplica a margem do
-       * produto (lucro/receita) sobre a receita direta — não temos CMV/taxa
-       * separados por venda direta, então a proporção é a melhor aproximação.
-       * Responde: o ad se paga só com o que ele converte na hora?
-       *
-       * Sem v.receita (produto não vinculado no Estoque, ou nenhuma venda
-       * nossa achada no período — acontece mesmo o ML atribuindo venda direta
-       * ao clique), a margem cai pra 0 e o cálculo virava "0 de lucro − custo
-       * do ad inteiro" = -100%, puxando a soma geral pra negativo mesmo com
-       * ROAS bom. Isso não é um prejuízo real, é falta de dado — marcamos
-       * como indisponível em vez de inventar perda.
-       */
-      const diretoDisponivel = v.receita > 0;
-      const margemItem = diretoDisponivel ? lucroAntesAds / v.receita : 0;
-      const lucroDiretoAntesAds = a.directSales * margemItem;
-      const lucroDiretoLiquido = diretoDisponivel ? lucroDiretoAntesAds - a.cost : 0;
-
       const c = cfg.porItem[a.itemId.toUpperCase()];
       const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? ""; // status do catálogo — só informativo
-      return {
-        itemId: a.itemId, title: a.title,
-        status: statusLabel(c?.campaignId ?? "", c?.status ?? ""),
-        campaignId: c?.campaignId ?? "", campaignName: c?.campaignName ?? "", mlStatus,
-        clicks: a.clicks, prints: a.prints, cost: a.cost,
-        directSales: a.directSales, directUnits: a.directUnits,
-        adSales: a.sales, adUnits: a.units,
-        totalSales: v.receita, totalUnits: v.unidades,
-        lucroAntesAds, lucroLiquido,
-        lucroDiretoAntesAds, lucroDiretoLiquido, diretoDisponivel,
-        // Configuração da campanha do anúncio (0/"" quando não achamos a campanha).
-        dailyBudget: c?.dailyBudget ?? 0,
-        roasTarget: c?.roasTarget ?? 0,
-        acosTarget: c?.acosTarget ?? 0,
-      };
-      // Sem campanha vai pro fim da lista, não importa o investimento — é
-      // ruído pra quem quer olhar o que está rodando de verdade primeiro.
-    }).sort((x, y) => {
-      const semA = x.status === "sem_campanha" ? 1 : 0;
-      const semB = y.status === "sem_campanha" ? 1 : 0;
-      if (semA !== semB) return semA - semB;
-      return y.cost - x.cost;
-    });
+      return buildAdItem(
+        { itemId: a.itemId, title: a.title, clicks: a.clicks, prints: a.prints, cost: a.cost, directSales: a.directSales, directUnits: a.directUnits, sales: a.sales, units: a.units },
+        v, c, mlStatus,
+      );
+    }));
 
     /**
-     * Reconciliação com o dashboard. A tabela cobre SÓ os itens anunciados, mas
-     * o rótulo "Geral (todas as vendas)" dava a entender que o total era o
-     * faturamento inteiro do período — e não é: R$ 9.465 dos itens anunciados
-     * contra R$ 12.040 de faturamento líquido do dashboard. Os dois estão
-     * certos e medem coisas diferentes; devolvendo o total da conta, a tela
-     * consegue dizer quanto do faturamento esses anúncios representam em vez de
-     * deixar o vendedor achar que um dos números está quebrado.
+     * Reconciliação com o dashboard (lib/domain/ads.ts::reconciliarConta). A
+     * tabela cobre SÓ os itens anunciados, mas o rótulo "Geral (todas as
+     * vendas)" dava a entender que o total era o faturamento inteiro do
+     * período — e não é: R$ 9.465 dos itens anunciados contra R$ 12.040 de
+     * faturamento líquido do dashboard. Os dois estão certos e medem coisas
+     * diferentes; devolvendo o total da conta, a tela consegue dizer quanto
+     * do faturamento esses anúncios representam em vez de deixar o vendedor
+     * achar que um dos números está quebrado. Ver docs/ADS_RECONCILIATION.md.
      */
-    let receitaConta = 0, unidadesConta = 0, lucroContaAntesAds = 0;
-    for (const v of vendas.values()) {
-      receitaConta += v.receita;
-      unidadesConta += v.unidades;
-      lucroContaAntesAds += v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
-    }
+    const contaReconciliada = reconciliarConta(vendas);
 
     // amostraCampanha: primeira campanha crua devolvida pelo ML — se
     // orçamento/ROAS vierem 0, mostra o objeto para achar o campo certo sem
@@ -274,10 +168,7 @@ export async function GET(req: Request) {
       campanhasOrfas: cfg.campanhasOrfas,
       gastoOrfao: cfg.gastoOrfao,
       gastoSemVinculo: cfg.gastoSemVinculo,
-      conta: {
-        receita: receitaConta, unidades: unidadesConta,
-        lucroAntesAds: lucroContaAntesAds, itens: vendas.size,
-      },
+      conta: contaReconciliada,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
