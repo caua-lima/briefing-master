@@ -7,10 +7,16 @@ import { addAdsAlteracao, deleteAdsAlteracao, watchAdsAlteracoes } from "@/lib/f
 import { useAccess } from "@/components/tabs/AccessGuard";
 
 type Campanha = { id: string; name: string; status: string };
+type ItemCampanha = { itemId: string; campaignId: string };
 
 function fmtQuando(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function normMlb(s: string): string {
+  const up = s.trim().toUpperCase();
+  return up.startsWith("MLB") ? up : up ? `MLB${up}` : "";
 }
 
 /**
@@ -21,7 +27,7 @@ function fmtQuando(ts: number): string {
  * (não recalculados depois), então filtrar é só comparar o campo, mesmo que
  * o vínculo campanha↔produto mude no ML depois.
  */
-export default function AdsChangelogPanel({ campanhas, products }: { campanhas: Campanha[]; products: Product[] }) {
+export default function AdsChangelogPanel({ campanhas, products, itemCampaigns = [] }: { campanhas: Campanha[]; products: Product[]; itemCampaigns?: ItemCampanha[] }) {
   const { canEditTab, displayName } = useAccess();
   const canEdit = canEditTab("ads");
 
@@ -37,6 +43,43 @@ export default function AdsChangelogPanel({ campanhas, products }: { campanhas: 
 
   const produtosOrdenados = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
   const campanhasOrdenadas = useMemo(() => [...campanhas].sort((a, b) => a.name.localeCompare(b.name)), [campanhas]);
+
+  /**
+   * Produto(s) de verdade vinculado(s) a cada campanha, via MLB (o mesmo
+   * vínculo que a aba "Publicidade" usa pra atribuir gasto por anúncio) — não
+   * é chute nem depende de registro anterior. Uma campanha pode cobrir mais
+   * de um produto (ex.: "kit" de anúncios na mesma campanha); nesse caso o
+   * primeiro é pré-selecionado e um aviso avisa que tem mais de um.
+   */
+  const produtosPorCampanha = useMemo(() => {
+    const mlbParaProduto = new Map<string, Product>();
+    for (const p of products) {
+      const mlbs = p.mlbs?.length ? p.mlbs : p.mlb ? [p.mlb] : [];
+      for (const m of mlbs) {
+        const n = normMlb(m);
+        if (n) mlbParaProduto.set(n, p);
+      }
+    }
+    const map = new Map<string, Product[]>();
+    for (const ic of itemCampaigns) {
+      if (!ic.campaignId) continue;
+      const prod = mlbParaProduto.get(normMlb(ic.itemId));
+      if (!prod) continue;
+      const arr = map.get(ic.campaignId) ?? [];
+      if (!arr.some((x) => x.id === prod.id)) arr.push(prod);
+      map.set(ic.campaignId, arr);
+    }
+    return map;
+  }, [products, itemCampaigns]);
+
+  function selecionarCampanha(id: string) {
+    setCampaignId(id);
+    const vinculados = produtosPorCampanha.get(id) ?? [];
+    // Pré-seleciona o produto vinculado; usuário ainda pode trocar manualmente.
+    if (vinculados.length >= 1) setProductId(vinculados[0].id);
+  }
+
+  const produtosDaCampanhaAtual = produtosPorCampanha.get(campaignId) ?? [];
 
   async function salvar() {
     const campanha = campanhas.find((c) => c.id === campaignId);
@@ -72,7 +115,7 @@ export default function AdsChangelogPanel({ campanhas, products }: { campanhas: 
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
             <div className="config-field">
               <label>Campanha</label>
-              <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
+              <select value={campaignId} onChange={(e) => selecionarCampanha(e.target.value)}>
                 <option value="">Selecione…</option>
                 {campanhasOrdenadas.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}{c.status ? ` (${c.status})` : ""}</option>
@@ -83,13 +126,18 @@ export default function AdsChangelogPanel({ campanhas, products }: { campanhas: 
               )}
             </div>
             <div className="config-field">
-              <label>Produto</label>
+              <label>Produto{produtosDaCampanhaAtual.length >= 1 ? " (preenchido pela campanha)" : ""}</label>
               <select value={productId} onChange={(e) => setProductId(e.target.value)}>
                 <option value="">Selecione…</option>
                 {produtosOrdenados.map((p) => (
                   <option key={p.id} value={p.id}>{p.name || "Sem nome"}</option>
                 ))}
               </select>
+              {produtosDaCampanhaAtual.length > 1 && (
+                <div className="hint">
+                  Esta campanha está vinculada a {produtosDaCampanhaAtual.length} produtos ({produtosDaCampanhaAtual.map((p) => p.name || "sem nome").join(", ")}) — confirme se selecionou o certo.
+                </div>
+              )}
             </div>
           </div>
           <div className="config-field" style={{ marginTop: 10 }}>

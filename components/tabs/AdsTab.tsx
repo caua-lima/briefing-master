@@ -317,7 +317,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
       </div>
 
       {modo === "log" ? (
-        <AdsChangelogPanel campanhas={campanhasResumo} products={products} />
+        <AdsChangelogPanel campanhas={campanhasResumo} products={products} itemCampaigns={items} />
       ) : (
       <>
       <div style={{ fontSize: ".78rem", color: "var(--muted)", marginTop: -6 }}>
