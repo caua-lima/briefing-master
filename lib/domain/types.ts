@@ -215,6 +215,38 @@ export type AdsAlteracao = {
   createdAt: number;
 };
 
+// Coleta agendada pro Full — registro MANUAL (a API pública do Mercado Livre
+// não expõe "envio agendado"/"em trânsito", só o recebimento já processado —
+// ver comentário em app/api/ml/gestao-full/route.ts). O vendedor registra
+// quando agenda a coleta com a transportadora; o app tenta casar com uma
+// remessa REAL (recebida, vinda de /api/ml/gestao-full) só quando os dados
+// batem, mas nunca aplica isso sozinho — sempre pede confirmação (ver
+// lib/domain/full-coletas.ts).
+export type FullColetaStatus = "agendado" | "em_transporte" | "recebido" | "cancelado";
+
+export const FULL_COLETA_STATUS_LABEL: Record<FullColetaStatus, string> = {
+  agendado: "Agendado",
+  em_transporte: "Em transporte",
+  recebido: "Recebido",
+  cancelado: "Cancelado",
+};
+
+export type FullColeta = {
+  id: string;
+  productId: string;
+  productName: string;
+  quantidade: number;
+  dataAgendada: string; // yyyy-mm-dd
+  status: FullColetaStatus;
+  /** Preenchido só quando casado (confirmado pelo usuário) com uma remessa real do ML. */
+  remessaVinculada?: string;
+  obs?: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: number;
+  updatedAt?: number;
+};
+
 // Abas com formulário/mutação de verdade e que fazem sentido liberar
 // individualmente pra um colaborador. De propósito NÃO inclui:
 // "tarefas" (já é leitura+escrita pra todo autorizado, por design — ver

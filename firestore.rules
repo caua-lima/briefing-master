@@ -127,6 +127,13 @@ service cloud.firestore {
       allow write: if podeEditar('ads');
     }
 
+    // Coletas agendadas pro Full — registro manual (a API do ML não expõe
+    // "agendado"/"em trânsito", ver lib/domain/full-coletas.ts).
+    match /full_coletas/{docId} {
+      allow read: if isAuthorized();
+      allow write: if podeEditar('estoque');
+    }
+
     // Remessas do Full marcadas como resolvidas (sem gerar baixa)
     match /full_remessas/{docId} {
       allow read: if isAuthorized();

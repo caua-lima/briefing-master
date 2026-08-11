@@ -25,6 +25,8 @@ import type {
   Cost,
   DraftToday,
   EstoqueMovimento,
+  FullColeta,
+  FullColetaStatus,
   GoalEntry,
   Goals,
   Product,
@@ -571,4 +573,36 @@ export async function addAdsAlteracao(entry: Omit<AdsAlteracao, "id" | "createdB
 
 export async function deleteAdsAlteracao(id: string): Promise<void> {
   await deleteDoc(sDoc(ADS_LOG_COL, id));
+}
+
+// ── Coletas agendadas pro Full ────────────────────────────────────
+// Registro MANUAL (a API pública do ML não expõe "agendado"/"em trânsito" —
+// ver lib/domain/full-coletas.ts). Ciclo: agendado → em_transporte →
+// recebido/cancelado.
+const FULL_COLETA_COL = "full_coletas";
+
+export function watchFullColetas(cb: (coletas: FullColeta[]) => void, max = 200): () => void {
+  // limit() desde o primeiro commit — mesma lição da cota do Firestore
+  // estourada aplicada em todo listener novo desde então.
+  const q = query(sCol(FULL_COLETA_COL), orderBy("dataAgendada", "desc"), limit(max));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => d.data() as FullColeta));
+  });
+}
+
+export async function addFullColeta(entry: Omit<FullColeta, "id" | "status" | "createdBy" | "createdAt">): Promise<void> {
+  const email = getCurrentUserEmail();
+  const id = `fullcol_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await setDoc(
+    sDoc(FULL_COLETA_COL, id),
+    sanitizeUndefined({ ...entry, id, status: "agendado" as FullColetaStatus, createdBy: email, createdAt: Date.now() }),
+  );
+}
+
+export async function atualizarStatusFullColeta(id: string, status: FullColetaStatus, remessaVinculada?: string): Promise<void> {
+  await updateDoc(sDoc(FULL_COLETA_COL, id), sanitizeUndefined({ status, remessaVinculada, updatedAt: Date.now() }));
+}
+
+export async function deleteFullColeta(id: string): Promise<void> {
+  await deleteDoc(sDoc(FULL_COLETA_COL, id));
 }
