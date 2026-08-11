@@ -178,17 +178,37 @@ export type EstoqueMovimento = {
   createdAt?: number;
 };
 
-// Registro manual de alteração de campanha de Ads (ex.: "subi o ROAS pra
+// Tipo do que foi alterado — estruturado (Fase 6 da reforma de Ads) pra dar
+// pra montar frases automáticas ("ROAS alvo: 16x → 20x") e filtrar por tipo,
+// sem depender de parsear texto livre.
+export type AdsAlteracaoTipo = "orcamento" | "roas_alvo" | "status" | "criativo" | "preco" | "outro";
+
+export const ADS_ALTERACAO_TIPO_LABEL: Record<AdsAlteracaoTipo, string> = {
+  orcamento: "Orçamento",
+  roas_alvo: "ROAS alvo",
+  status: "Status",
+  criativo: "Criativo/título",
+  preco: "Preço/oferta",
+  outro: "Outro",
+};
+
+// Registro MANUAL de alteração de campanha de Ads (ex.: "subi o ROAS pra
 // 20x") — não vem do Mercado Livre, é o vendedor documentando a PRÓPRIA
 // mudança pra saber quando mexeu da última vez. campaignId/productId são
 // gravados junto (não recalculados depois) pra o filtro por produto
 // continuar funcionando mesmo que o vínculo campanha↔produto mude no ML.
+// `tipo`/`valorAnterior`/`valorNovo`/`motivo` são novos e opcionais — registro
+// antigo (só com `nota`) continua válido e exibível, não precisa de migração.
 export type AdsAlteracao = {
   id: string;
   campaignId: string;
   campaignName: string;
   productId: string;
   productName: string;
+  tipo?: AdsAlteracaoTipo;
+  valorAnterior?: string;
+  valorNovo?: string;
+  motivo?: string;
   nota: string;
   createdBy: string;
   createdByName?: string;

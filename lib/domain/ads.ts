@@ -46,14 +46,18 @@ export function getAdRecommendation(input: {
     return { acao: "sem-dados", label: "Sem dados suficientes", tone: "info" };
   }
 
+  // "acao" interna continua "pausar" (usada por quem filtra/agrupa por tipo
+  // de ação), mas o TEXTO nunca afirma pausa definitiva — o ML não garante
+  // que pausar é reversível sem perder histórico de aprendizado da campanha,
+  // e a decisão final é sempre de quem lê a tela, não do sistema.
   if (lucro != null && lucro < 0 && cost >= INVESTIMENTO_RELEVANTE) {
-    return { acao: "pausar", label: "Pausar ou revisar", tone: "critical" };
+    return { acao: "pausar", label: "Revisar ou reduzir — prejuízo confirmado", tone: "critical" };
   }
 
   const abaixoDoAlvo = roasTarget > 0 && roas < roasTarget;
   const abaixoDoBreakEven = breakEvenRoas != null && roas < breakEvenRoas;
   if (cost > 0 && abaixoDoAlvo && abaixoDoBreakEven) {
-    return { acao: "reduzir", label: "Reduzir orçamento", tone: "warning" };
+    return { acao: "reduzir", label: "Revisar ou reduzir orçamento", tone: "warning" };
   }
 
   const margemSaudavel = margem != null && margem >= metaMargem;
