@@ -25,11 +25,6 @@ export default function DayDetailModal({ date, onClose }: { date: string; onClos
 
   useEffect(() => {
     let alive = true;
-    // Falso positivo comprovado (auditoria Fase 9): reseta loading/erro no
-    // início do fetch disparado por "date" mudar — sem isto, se o dia
-    // clicado mudasse com o modal já aberto (mesma instância), a tela
-    // continuaria mostrando erro/dado do dia ANTERIOR até a resposta nova chegar.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setErro(false);
     authedFetch(`/api/ml/metrics?from=${date}&to=${date}`, { cache: "no-store" })

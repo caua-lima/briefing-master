@@ -5,7 +5,6 @@ import { sendPushToUserIfAllowed } from "@/lib/push-send";
 import {
   buildTaskAssignedContent,
   buildTaskDeepLink,
-  taskAssignedDedupeKey,
   taskAssignedSeverity,
   type SalePushPayload,
 } from "@/lib/domain/notifications";
@@ -45,12 +44,11 @@ export async function POST(req: Request) {
   const content = buildTaskAssignedContent(title, priority, dueDate);
   const severity = taskAssignedSeverity(priority);
   // Cada atribuição é um evento NOVO (diferente de venda, aqui não faz
-  // sentido "idempotência contra retry de longo prazo" — reatribuir a mesma
-  // pessoa depois de um tempo deve notificar de novo). O clique duplo não é
-  // risco (botão "Salvar" desabilita durante o envio), mas uma falha de rede
-  // seguida de nova tentativa (navegador ou usuário) PODE gerar duas
-  // chamadas a esta rota em segundos — ver taskAssignedDedupeKey.
-  const dedupeKey = taskAssignedDedupeKey(taskId, Date.now());
+  // sentido "idempotência contra retry" — reatribuir a mesma pessoa depois
+  // de um tempo deve notificar de novo). O timestamp no dedupeKey só existe
+  // pra dar uma chave única por documento; o botão "Salvar" já fica
+  // desabilitado durante o envio, então clique duplo não é um risco real aqui.
+  const dedupeKey = `task_assigned:${taskId}:${Date.now()}`;
 
   const { eventId } = await createNotificationEventIdempotent({
     type: "task_assigned", severity, entityType: "task", entityId: taskId, dedupeKey,

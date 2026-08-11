@@ -32,10 +32,9 @@ export async function POST(req: Request) {
     });
     
     return response;
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "force_logout_failed", details: msg },
+      { error: "force_logout_failed", details: error?.message || String(error) },
       { status: 500 }
     );
   }

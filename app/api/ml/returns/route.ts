@@ -56,11 +56,11 @@ export async function GET(req: Request) {
       );
     }
 
-    const data = (await response.json()) as { results?: Record<string, unknown>[] };
+    const data = await response.json();
     const orders = data.results ?? [];
     const db = getAdminDb();
 
-    const returns = orders.map((order) => ({
+    const returns = orders.map((order: any) => ({
       id: String(order.id),
       date_created: order.date_created ?? null,
       status: order.status ?? null,
@@ -74,7 +74,7 @@ export async function GET(req: Request) {
 
     const batch = db.batch();
 
-    returns.forEach((item) => {
+    returns.forEach((item: any) => {
       const ref = db.collection("ml_returns").doc(item.id);
       batch.set(ref, item, { merge: true });
     });
@@ -86,10 +86,12 @@ export async function GET(req: Request) {
       count: returns.length,
       data: returns,
     });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "Unexpected error syncing returns", details: msg },
+      {
+        error: "Unexpected error syncing returns",
+        details: error?.message || String(error),
+      },
       { status: 500 }
     );
   }

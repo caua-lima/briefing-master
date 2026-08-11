@@ -24,7 +24,7 @@ export function MlAccountStatus() {
         const json = await res.json();
         setData(json);
         if (json.connected) localStorage.removeItem('ml_disconnected');
-      } catch {
+      } catch (e) {
         setData({ connected: false });
       } finally {
         setLoading(false);

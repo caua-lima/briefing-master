@@ -46,7 +46,7 @@ const isAtrasada = isTaskAtrasada;
 
 type Filtro = "todas" | "pra-mim" | "criei-eu";
 
-export default function TarefasTab({ openTaskId, onTaskOpened }: { openTaskId?: string; onTaskOpened?: () => void } = {}) {
+export default function TarefasTab({ openTaskId }: { openTaskId?: string } = {}) {
   const { email } = useAccess();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pessoas, setPessoas] = useState<AccessEntry[]>([]);
@@ -63,23 +63,11 @@ export default function TarefasTab({ openTaskId, onTaskOpened }: { openTaskId?: 
   // padrão/mesma ressalva de PedidosTab.tsx (setState síncrono no efeito é
   // sincronizar com um prop que só fica pronto depois da lista carregar).
   useEffect(() => {
-    // Falso positivo comprovado (auditoria Fase 9): deep link de tarefa
-    // atribuída (?tab=tarefas&task=...) abre o modal assim que a tarefa
-    // aparecer na lista carregada.
     if (openTaskId) {
       const t = tasks.find((x) => x.id === openTaskId);
-      if (t) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setEditTask(t);
-        // Fase 5 (auditoria): sem isto, `openTaskId` fica preso pra sempre no
-        // estado do pai (app/page.tsx) — como esta aba só monta quando está
-        // ativa, sair e voltar reabriria o mesmo modal de novo mesmo depois
-        // do usuário ter fechado manualmente. Mesmo padrão de correção do
-        // deep link de pedido em PedidosTab.tsx.
-        onTaskOpened?.();
-      }
+      if (t) setEditTask(t);
     }
-  }, [openTaskId, tasks, onTaskOpened]);
+  }, [openTaskId, tasks]);
 
   useEffect(() => {
     const u1 = watchTasks((ts) => { setTasks(ts); setLoading(false); });
@@ -101,13 +89,8 @@ export default function TarefasTab({ openTaskId, onTaskOpened }: { openTaskId?: 
 
   async function mover(t: Task, status: TaskStatus) {
     if (t.status === status) return;
-    // Falso positivo comprovado (auditoria Fase 9): mover() é chamado por
-    // clique/drag (evento de usuário), nunca durante o render — o linter não
-    // consegue provar isso estaticamente e trata Date.now() como "impuro
-    // durante render" por padrão.
     const evento: TaskAtividade = {
       tipo: status === "done" ? "concluida" : "movida",
-      // eslint-disable-next-line react-hooks/purity
       por: email, em: Date.now(),
       detalhe: `${COLS.find((c) => c.status === t.status)?.label} → ${COLS.find((c) => c.status === status)?.label}`,
     };

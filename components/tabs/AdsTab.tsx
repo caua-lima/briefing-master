@@ -132,7 +132,6 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
   // Totais da conta inteira no período (todos os itens, anunciados ou não) —
   // serve pra dizer quanto do faturamento os itens anunciados representam.
   const [conta, setConta] = useState<{ receita: number; unidades: number; lucroAntesAds: number; itens: number } | null>(null);
-  const [atualizadoEm, setAtualizadoEm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErro(null); setDiag(null);
@@ -158,16 +157,11 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
         setGastoSemVinculo(j.gastoSemVinculo ?? 0);
         setCampanhasOrfas(j.campanhasOrfas ?? []);
         setConta(j.conta ?? null);
-        setAtualizadoEm(j.atualizadoEm ?? null);
       }
     } catch (e) { setErro(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [range]);
 
-  // Falso positivo comprovado (auditoria Fase 9): fetch disparado por mudança
-  // de período — load() é quem faz setState de forma assíncrona, não o corpo
-  // do efeito em si.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const t = useMemo(() => items.reduce((a, i) => {
@@ -247,6 +241,7 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
 
   // Valores do modo: vendas/unidades/roas/acos conforme "só ads" ou "geral"
   const vendasTot = pub ? t.direct : t.total;
+  const unTot = pub ? t.directUn : t.totalUn;
   const roas = t.cost > 0 ? vendasTot / t.cost : 0;
   const acos = vendasTot > 0 ? (t.cost / vendasTot) * 100 : 0;
   const pctViaAds = t.total > 0 ? (t.adSales / t.total) * 100 : 0;
@@ -308,11 +303,6 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
           <button type="button" className="btn btn-sm btn-ghost" onClick={load} disabled={loading}>
             {loading ? "..." : "⟳ Atualizar"}
           </button>
-          {atualizadoEm && (
-            <span className="tab-head-sub" title="Dado buscado ao vivo do ML nesta abertura — não é histórico">
-              Atualizado às {new Date(atualizadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
       </div>

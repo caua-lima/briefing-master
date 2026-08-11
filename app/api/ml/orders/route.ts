@@ -37,16 +37,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const data = (await response.json()) as { results?: Record<string, unknown>[] };
+    const data = await response.json();
     const results = data.results ?? [];
 
     const batch = adminDb.batch();
 
     for (const order of results) {
       const orderId = String(order.id);
-      const buyer = order.buyer as Record<string, unknown> | undefined;
-      const shipping = order.shipping as Record<string, unknown> | undefined;
-      const orderItems = (order.order_items as Record<string, unknown>[] | undefined) ?? [];
 
       batch.set(
         adminDb.collection("ml_orders").doc(orderId),
@@ -56,17 +53,14 @@ export async function POST(req: Request) {
           date_created: order.date_created ?? null,
           total_amount: order.total_amount ?? 0,
           currency: order.currency_id ?? "BRL",
-          buyer_id: buyer?.id ? String(buyer.id) : null,
-          shipping_status: shipping?.status ?? null,
-          items: orderItems.map((item) => {
-            const it = item.item as Record<string, unknown> | undefined;
-            return {
-              sku: it?.seller_sku ?? it?.id ?? null,
-              title: it?.title ?? null,
-              quantity: item.quantity ?? 0,
-              unit_price: item.unit_price ?? 0,
-            };
-          }),
+          buyer_id: order.buyer?.id ? String(order.buyer.id) : null,
+          shipping_status: order.shipping?.status ?? null,
+          items: (order.order_items ?? []).map((item: any) => ({
+            sku: item.item?.seller_sku ?? item.item?.id ?? null,
+            title: item.item?.title ?? null,
+            quantity: item.quantity ?? 0,
+            unit_price: item.unit_price ?? 0,
+          })),
           raw: order,
           updatedAt: new Date().toISOString(),
         },

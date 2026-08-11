@@ -38,12 +38,7 @@ export function useUserData(uid: string | undefined): UserData {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Falso positivo comprovado (auditoria Fase 9): limpa TODO o dado do
-    // usuário anterior quando uid vira null (sign-out/troca de conta) — sem
-    // isto, dado da conta anterior vazaria por um instante pra tela de login
-    // ou pra próxima conta que logar.
     if (!uid) {
-      /* eslint-disable react-hooks/set-state-in-effect -- ver justificativa acima */
       setDraft(null);
       setDays([]);
       setGoals(null);
@@ -51,7 +46,6 @@ export function useUserData(uid: string | undefined): UserData {
       setCosts([]);
       setProducts([]);
       setReady(false);
-      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 

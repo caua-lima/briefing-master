@@ -194,17 +194,6 @@ export function taskAssignedSeverity(priority: string): NotificationEventSeverit
   return priority === "critica" || priority === "alta" ? "warning" : "info";
 }
 
-/**
- * Chave de dedupe pra atribuição de tarefa (Fase 7). Cada atribuição é um
- * evento novo por design (reatribuir a mesma pessoa depois de um tempo deve
- * notificar de novo) — arredondar o timestamp pra uma janela curta só existe
- * pra colapsar um retry de rede em segundos (falha + nova tentativa) na
- * MESMA notificação, sem impedir uma reatribuição de verdade minutos depois.
- */
-export function taskAssignedDedupeKey(taskId: string, now: number, windowMs = 10000): string {
-  return `task_assigned:${taskId}:${Math.floor(now / windowMs)}`;
-}
-
 /** N vendas agrupadas numa janela curta (anti-spam) — ver lib/notification-groups.ts. */
 export function buildGroupedSalesContent(count: number, totalGross: number, windowMinutes: number): SaleContent {
   return {

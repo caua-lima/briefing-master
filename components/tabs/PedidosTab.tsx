@@ -104,15 +104,6 @@ function monthRange() {
   return { from: `${d.getFullYear()}-${mm}-01`, to: `${d.getFullYear()}-${mm}-${String(last).padStart(2, "0")}` };
 }
 
-/** Janela ampla (2 anos) pra achar um pedido de deep link que caiu fora do mês corrente — não é o range padrão da tela, só usado sob demanda. */
-function janelaAmpliada() {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 730);
-  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return { from: iso(from), to: iso(to) };
-}
-
 /**
  * Cascata do pedido, na ordem em que o dinheiro sai: o cliente paga, o ML
  * retém taxa e frete (isso é o retorno), e do retorno saem custo, imposto e
@@ -264,7 +255,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
   );
 }
 
-export default function PedidosTab({ metaMargem = 10, openOrderId, onOrderOpened }: { metaMargem?: number; openOrderId?: string; onOrderOpened?: () => void }) {
+export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMargem?: number; openOrderId?: string }) {
   const [range, setRange] = useState(() => monthRange());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
@@ -273,41 +264,19 @@ export default function PedidosTab({ metaMargem = 10, openOrderId, onOrderOpened
   const [modo, setModo] = useState<"pedido" | "produto">("pedido");
   const [detalhe, setDetalhe] = useState<string | null>(null);
   // Deep link de uma notificação de venda (?tab=pedidos&order=...) — abre o
-  // drawer assim que o pedido aparecer na lista carregada.
+  // drawer assim que o pedido aparecer na lista carregada. Limitação
+  // conhecida: só funciona pra pedido dentro do período/range já carregado
+  // (por padrão, o mês atual); pedido mais antigo não abre sozinho.
   // setState síncrono no efeito é o mesmo falso positivo já documentado em
   // outros pontos do app (ex.: hidratação de estado a partir de dado
   // assíncrono/externo) — aqui é sincronizar o drawer com um prop que só
   // fica pronto depois da lista de pedidos carregar, não dá pra fazer isso
   // durante o render.
-  // Falso positivo comprovado (auditoria Fase 9): deep link de notificação
-  // (?tab=pedidos&order=...) abre o drawer assim que o pedido aparecer na
-  // lista carregada — depende de um dado assíncrono (pedidos), não dá pra
-  // derivar isso puro no render.
   useEffect(() => {
     if (openOrderId && pedidos.some((p) => p.order_id === openOrderId)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDetalhe(openOrderId);
-      // Avisa o pai (app/page.tsx) que este deep link já foi consumido, senão
-      // `openOrderId` continua preso no estado do pai pra sempre — como esta
-      // aba só monta quando está ativa (activeTab === "pedidos" em
-      // app/page.tsx), sair e voltar pra aba reabriria o mesmo pedido de
-      // novo mesmo depois do usuário ter fechado o drawer manualmente.
-      onOrderOpened?.();
     }
-  }, [openOrderId, pedidos, onOrderOpened]);
-  // Fase 5 (auditoria): antes disto, um pedido fora do período carregado (por
-  // padrão, o mês atual) fazia o deep link falhar em silêncio — sem erro, sem
-  // aviso, o botão "Ver pedido" da notificação simplesmente não abria nada.
-  // `buscaAmpliadaPara` marca PRA QUAL openOrderId já tentamos a busca de
-  // fallback (últimos 2 anos), pra não ficar re-tentando em loop nem re-abrir
-  // a busca ampliada se o usuário trocar o período manualmente depois.
-  const [buscaAmpliadaPara, setBuscaAmpliadaPara] = useState<string | null>(null);
-  const pedidoAlvoNaoEncontrado = !!openOrderId && !loading && !pedidos.some((p) => p.order_id === openOrderId);
-  function buscarPedidoEmPeriodoMaior() {
-    if (!openOrderId) return;
-    setBuscaAmpliadaPara(openOrderId);
-    setRange(janelaAmpliada());
-  }
+  }, [openOrderId, pedidos]);
   const [adsByItem, setAdsByItem] = useState<Record<string, number>>({});
   // Fecha o drawer com Esc — sem isso, teclado só fecha clicando no X ou fora.
   useEffect(() => {
@@ -328,9 +297,6 @@ export default function PedidosTab({ metaMargem = 10, openOrderId, onOrderOpened
   // Filtros frequentes salvos no navegador (localStorage) — não é modelo
   // global, não precisa de Firestore nem de rule nova.
   const [filtrosSalvos, setFiltrosSalvos] = useState<FiltroSalvo[]>([]);
-  // Falso positivo comprovado (auditoria Fase 9): hidrata do localStorage no
-  // mount — não existe durante SSR, não dá pra usar como valor inicial direto.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setFiltrosSalvos(lerFiltrosSalvos()); }, []);
 
   function salvarFiltroAtual() {
@@ -376,9 +342,6 @@ export default function PedidosTab({ metaMargem = 10, openOrderId, onOrderOpened
     }
   }, [range]);
 
-  // Falso positivo comprovado (auditoria Fase 9): fetch disparado por
-  // mudança de período — load() faz setState de forma assíncrona.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   async function atualizar() {
@@ -500,24 +463,6 @@ export default function PedidosTab({ metaMargem = 10, openOrderId, onOrderOpened
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
       </div>
-
-      {/* Fase 5 (auditoria): antes disto, um deep link de notificação
-          (?tab=pedidos&order=...) pra um pedido fora do período carregado
-          falhava em silêncio — o botão "Ver pedido" simplesmente não abria
-          nada, sem erro nem explicação. */}
-      {pedidoAlvoNaoEncontrado && (
-        <div style={{ padding: "10px 14px", background: "rgba(244,185,66,.08)", border: "1px solid rgba(244,185,66,.35)", borderRadius: 8, fontSize: ".8rem", color: "var(--text)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span>
-            Pedido <b>#{openOrderId}</b> não está no período atual ({range.from.split("-").reverse().join("/")} a {range.to.split("-").reverse().join("/")}).
-            {buscaAmpliadaPara === openOrderId && " Não foi encontrado mesmo nos últimos 2 anos — pode ser mais antigo, ou o ID veio de outra conta."}
-          </span>
-          {buscaAmpliadaPara !== openOrderId && (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={buscarPedidoEmPeriodoMaior}>
-              Buscar nos últimos 2 anos
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Resumo */}
       <div className="kpi-grid">

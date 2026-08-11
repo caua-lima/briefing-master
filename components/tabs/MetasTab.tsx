@@ -75,10 +75,6 @@ export default function MetasTab({
   // o Dashboard já usa, só filtrando pelo mês da meta em vez do período livre.
   const [metricsAtivo, setMetricsAtivo] = useState<MetricsAtivo | null>(null);
   useEffect(() => {
-    // Falso positivo comprovado (auditoria Fase 9): limpa a métrica quando
-    // não há meta ativa — evita mostrar o progresso da meta ANTERIOR por um
-    // instante ao trocar de mês/meta.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!activeEntry) { setMetricsAtivo(null); return; }
     let vivo = true;
     authedFetch(`/api/ml/metrics?month=${activeEntry.mes}`, { cache: "no-store" })
