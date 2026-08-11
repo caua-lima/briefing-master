@@ -198,3 +198,101 @@ Todas dependem do deploy do `firestore.rules` atual (ver A1) pra funcionar por c
 2. Fase 2 (regras/autorização) — já auditadas nesta Fase 0 nos pontos que dependem de código; falta o documento de deploy/teste (`docs/FIRESTORE_RULES_DEPLOY.md`).
 3. Fase 9, parte de testes — maior alavancagem de confiabilidade por esforço, porque nada disso existe hoje.
 4. Fase 1 (Saúde da operação) — depende de A3/A4 estarem resolvidos primeiro (não dá pra mostrar dado que não é persistido).
+
+---
+
+## Fechamento — Fases 1 a 10 concluídas (2026-08-10)
+
+Todas as fases abaixo foram executadas nesta mesma janela de trabalho, em
+commits pequenos e individualmente verificados (`npx tsc --noEmit`, `npm run
+lint`, `npx vitest run`, `npm run build` — sempre os 4, sempre antes do
+commit). Nenhuma fórmula financeira foi alterada sem teste; nenhum `git push`
+foi executado (fica com o dono do repositório). Resumo por fase, com o que
+mudou e o que ainda fica em aberto:
+
+### Fase 9 — Testes e lint
+Instalado Vitest (`vitest.config.ts`, stub de `server-only` pra testes fora
+do bundler do Next). 73 testes iniciais cobrindo `lib/domain/calc.ts`,
+`lib/domain/types.ts`, `lib/ml/order-finance.ts`, `lib/domain/notifications.ts`,
+`lib/domain/notification-preferences.ts`. Lint zerado (era 40 problemas): A5
+(`any`→`unknown`) corrigido em 7 arquivos, `EstoqueTab.tsx` ganhou um cleanup
+de `useEffect` que faltava de verdade (bug real, não só lint), `no-require-imports`
+escopado só pra `scripts/**/*.js` em vez de desabilitado globalmente.
+
+### Fase 1 — Saúde da operação
+Nova tela em **Acesso → Saúde da operação** (`lib/domain/health.ts` puro +
+`app/api/admin/health/route.ts`, owner-only). Resolve A1 automaticamente:
+`getAdminSecurityRules()` (Security Rules API do `firebase-admin`) compara o
+que está publicado no Firebase contra o `firestore.rules` do repositório —
+"as regras estão em dia?" deixa de ser pergunta manual.
+
+### Fase 4 — Sincronização e freshness
+`lib/domain/freshness.ts` (tipo `DataFreshness` puro) + `lib/sync-runs.ts`
+(persistência real por fonte: orders/claims/ads/full_stock) + `lib/sync-lock.ts`
+(trava self-expiring, evita sync concorrente desperdiçando cota de API).
+Resolve A3/A4 do achado original. Cron, sync manual, Ads e estoque Full agora
+gravam tentativa/sucesso/falha; a Saúde da operação passou a mostrar dado
+real em vez de "sem-dados" hardcoded. Ads e Estoque mostram "atualizado às
+HH:mm" na própria tela. **Pendente:** deploy de `firestore.rules` com as
+novas coleções `sync_runs`/`sync_locks` (deny explícito pro client).
+
+### Fase 3 — Confiabilidade de Ads
+Extraída toda a matemática de lucro por anúncio e reconciliação de
+`app/api/ml/ads/route.ts` pra `lib/domain/ads.ts` (puro, 26 testes) —
+mesmo cálculo de antes, agora testável sem token ML. `docs/ADS_RECONCILIATION.md`
+documenta por que "Vendas totais" da aba Ads e "Faturamento" do Dashboard
+mostram números diferentes (escopo: só itens anunciados vs. conta toda) e
+confirma que os dois usam a mesma regra de exclusão de cancelado/devolvido.
+
+### Fase 5 — Pedidos e deep links
+Mapeado o fluxo completo notificação → pedido (nomes de parâmetro
+consistentes ponta a ponta). Dois problemas reais corrigidos: (1) deep link
+pra pedido fora do período carregado falhava em silêncio — agora avisa e
+oferece busca ampliada (últimos 2 anos); (2) `openOrderId`/`openTaskId`
+ficavam presos no estado do componente pai, causando reabertura indesejada
+do drawer/modal ao revisitar a aba — corrigido em Pedidos e Tarefas.
+
+### Fase 6 — Estoque e Full
+Confirmado que remessa Full nunca vira venda nem mexe no custo médio
+(regra não-negociável, compliant). Dois problemas de honestidade de UI
+corrigidos: KPIs "Valor em estoque"/"Valor em risco" agora avisam quantos
+produtos com estoque ficaram de fora por falta de custo cadastrado (antes
+somavam 0 em silêncio); o diálogo de excluir movimentação parou de prometer
+um recálculo de custo médio que não acontece de verdade (o custo médio é um
+blend incremental contra o estoque do Full no momento do lançamento — não é
+matematicamente reversível sem esse dado histórico). Fórmula do blend
+extraída pra `lib/domain/estoque.ts` com 18 testes.
+
+### Fase 7 — Notificações
+Mapeados todos os gatilhos de push (webhook, task-assigned, push de teste).
+Mecanismo central de dedupe (`create()` atômico do Firestore) confirmado
+correto em todos os pontos vivos — cron/sync-all nunca tocam a pipeline de
+notificação, então webhook é a única fonte de `sale_paid`/`sale_cancelled`,
+sem risco de duplo disparo. Único gap real corrigido: `task_assigned` usava
+`Date.now()` cru na chave de dedupe, sem proteção contra retry de rede —
+agora usa uma janela de 10s.
+
+### Fase 8 — Mobile e usabilidade
+**Sem credencial de login real disponível nesta sessão** — feita por revisão
+estática de código, não navegação ao vivo. CSS mobile já bem tratado (23
+breakpoints, tabelas sempre com scroll horizontal, sidebar com padrão mobile
+próprio). Único achado concreto corrigido: `.btn-xs` com 34px de alvo de
+toque no mobile, abaixo do piso pragmático de 36px.
+
+### Fase 10 — Modularização
+`components/tabs/EstoqueTab.tsx` (1684 linhas, maior arquivo do repo) quebrado
+em `components/tabs/estoque/{helpers,VincularSkuModal,ImpostoMassaModal,
+PrevisaoPanel,RemessasFull}` — 723 linhas no arquivo principal, zero mudança
+de comportamento (code motion puro).
+
+### Fases não executadas nesta janela
+Fase 10 (parte 2, se quiser continuar modularizando `Dashboard.tsx` e
+`app/api/ml/metrics/route.ts`, os próximos maiores arquivos) fica como
+trabalho futuro opcional — não há achado de risco pendente ali, só tamanho.
+
+### Pendências operacionais (ação humana, fora do escopo de código)
+- `firebase deploy --only firestore:rules` — regras acumularam mudanças em
+  várias fases (Fase 2: `notification_events`/`ml_*`; Fase 4:
+  `sync_runs`/`sync_locks`) sem confirmação de deploy nesta sessão.
+- `git push origin main` — todo o trabalho está commitado localmente, em
+  commits pequenos e individualmente verificados, pronto pra revisão e push.
