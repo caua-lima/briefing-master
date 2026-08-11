@@ -139,7 +139,11 @@ export function watchGoalEntries(
   _uid: string,
   cb: (entries: GoalEntry[]) => void,
 ): () => void {
-  const q = query(sCol("metasHistorico"), orderBy("createdAt", "desc"));
+  // limit(60) = 5 anos de metas mensais — nunca deveria ser o gargalo, mas
+  // sem teto nenhum um listener global fica mais caro pra sempre conforme o
+  // histórico cresce (achado da cota do Firestore estourada: metasHistorico,
+  // dias e estoque_movimentos eram os únicos listeners sem limit() no app).
+  const q = query(sCol("metasHistorico"), orderBy("createdAt", "desc"), limit(60));
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => d.data() as GoalEntry));
   });
@@ -245,7 +249,14 @@ async function recomputeProduto(productId: string, custoMedio?: number): Promise
 export function watchMovimentos(
   cb: (movs: EstoqueMovimento[]) => void,
 ): () => void {
-  return onSnapshot(query(sCol(MOV_COL), orderBy("data", "desc")), (snap) => {
+  // limit(1500) generoso de propósito: o cálculo REAL de qtdLocal
+  // (recomputeProduto, logo abaixo) usa um getDocs() separado e SEM limite —
+  // esse listener só alimenta a exibição de histórico e a checagem de "esta
+  // remessa do Full já teve baixa" (RemessasFull), que só olha remessas dos
+  // últimos ~25 dias. 1500 movimentos cobre anos de operação com folga; nunca
+  // limitar isto era o maior consumidor de leitura do app (uma coleção que só
+  // cresce, relida por inteiro toda vez que a aba Estoque abre).
+  return onSnapshot(query(sCol(MOV_COL), orderBy("data", "desc"), limit(1500)), (snap) => {
     cb(snap.docs.map((d) => d.data() as EstoqueMovimento));
   });
 }

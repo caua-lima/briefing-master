@@ -3,14 +3,12 @@
 import { useEffect, useState } from "react";
 import {
   watchCosts,
-  watchDays,
   watchDraft,
   watchGoalEntries,
   watchGoals,
   watchProducts,
 } from "@/lib/firebase/data";
 import type {
-  ArchivedDay,
   Cost,
   DraftToday,
   GoalEntry,
@@ -20,7 +18,6 @@ import type {
 
 export type UserData = {
   draft: DraftToday | null;
-  days: ArchivedDay[];
   goals: Goals | null;
   goalEntries: GoalEntry[];
   costs: Cost[];
@@ -30,7 +27,6 @@ export type UserData = {
 
 export function useUserData(uid: string | undefined): UserData {
   const [draft, setDraft] = useState<DraftToday | null>(null);
-  const [days, setDays] = useState<ArchivedDay[]>([]);
   const [goals, setGoals] = useState<Goals | null>(null);
   const [goalEntries, setGoalEntries] = useState<GoalEntry[]>([]);
   const [costs, setCosts] = useState<Cost[]>([]);
@@ -40,7 +36,6 @@ export function useUserData(uid: string | undefined): UserData {
   useEffect(() => {
     if (!uid) {
       setDraft(null);
-      setDays([]);
       setGoals(null);
       setGoalEntries([]);
       setCosts([]);
@@ -50,21 +45,23 @@ export function useUserData(uid: string | undefined): UserData {
     }
 
     let loaded = 0;
-    const TOTAL = 6;
+    // Fase de emergência (cota do Firestore estourada): watchDays foi removido
+    // daqui — a coleção `dias` (histórico arquivado) não tinha NENHUM
+    // consumidor de verdade (GoalsProgressBars, o único componente que
+    // recebia essa prop, nunca era renderizado em lugar nenhum) e era relida
+    // por inteiro em todo carregamento, sem limit(). Zero leitura é melhor
+    // que leitura limitada quando o dado não tem uso nenhum.
+    const TOTAL = 5;
     const markReady = () => {
       loaded += 1;
       if (loaded >= TOTAL) setReady(true);
     };
 
-    let f1 = true, f2 = true, f3 = true, f4 = true, f5 = true, f6 = true;
+    let f1 = true, f3 = true, f4 = true, f5 = true, f6 = true;
 
     const u1 = watchDraft(uid, (d) => {
       setDraft(d);
       if (f1) { f1 = false; markReady(); }
-    });
-    const u2 = watchDays(uid, (ds) => {
-      setDays(ds);
-      if (f2) { f2 = false; markReady(); }
     });
     const u3 = watchGoals(uid, (g) => {
       setGoals(g);
@@ -83,8 +80,8 @@ export function useUserData(uid: string | undefined): UserData {
       if (f6) { f6 = false; markReady(); }
     });
 
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+    return () => { u1(); u3(); u4(); u5(); u6(); };
   }, [uid]);
 
-  return { draft, days, goals, goalEntries, costs, products, ready };
+  return { draft, goals, goalEntries, costs, products, ready };
 }
