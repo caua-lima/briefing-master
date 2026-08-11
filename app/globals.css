@@ -691,7 +691,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 @media(max-width:720px){
   /* alvo de toque mínimo confortável */
   .btn{min-height:40px}
-  .btn-xs{min-height:34px;padding:6px 12px}
+  .btn-xs{min-height:36px;padding:6px 12px}
   .btn-sm{min-height:38px}
   .tab-head{gap:10px}
   .tab-actions{width:100%}
