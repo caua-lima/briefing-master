@@ -7,6 +7,21 @@ import { addFullColeta, atualizarStatusFullColeta, deleteFullColeta, watchFullCo
 import { ehTerminal, podeCancelar, proximaTransicao, sugerirVinculoRecebimento } from "@/lib/domain/full-coletas";
 import { authedFetch } from "@/lib/api/authed-fetch";
 
+/**
+ * Avisa o time (push) que uma coleta foi agendada ou recebida — melhor
+ * esforço, fire-and-forget: se a notificação falhar, a coleta já foi
+ * gravada normalmente, só ninguém foi avisado por push (ainda aparece na
+ * Central de Notificações de qualquer forma, já que o evento é criado antes
+ * do envio — ver app/api/notify/full-coleta/route.ts).
+ */
+function notificarColeta(coletaId: string, productName: string, quantidade: number, tipo: "agendada" | "recebida", dataAgendada?: string) {
+  authedFetch("/api/notify/full-coleta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ coletaId, productName, quantidade, tipo, dataAgendada }),
+  }).catch(() => {});
+}
+
 const STATUS_COR: Record<FullColeta["status"], { cor: string; bg: string }> = {
   agendado: { cor: "var(--accent,#5b9bd5)", bg: "rgba(91,155,213,.12)" },
   em_transporte: { cor: "#F4B942", bg: "rgba(244,185,66,.12)" },
@@ -61,7 +76,8 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
     if (!dataAgendada) { alert("Informe a data prevista da coleta."); return; }
     setSalvando(true);
     try {
-      await addFullColeta({ productId: produto.id, productName: produto.name, quantidade: qtd, dataAgendada, obs: obs.trim() || undefined });
+      const id = await addFullColeta({ productId: produto.id, productName: produto.name, quantidade: qtd, dataAgendada, obs: obs.trim() || undefined });
+      notificarColeta(id, produto.name, qtd, "agendada", dataAgendada);
       setQuantidade(""); setObs("");
     } catch (err) {
       alert("Erro ao registrar: " + (err instanceof Error ? err.message : String(err)));
@@ -126,7 +142,10 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
             const sugestao = c.status === "em_transporte"
               ? sugerirVinculoRecebimento(c, remessas, jaVinculadas)
               : null;
-            const proximo = proximaTransicao(c.status);
+            // "recebido" só via confirmação (sugestão casada ou link manual
+            // abaixo) — nunca pelo botão genérico, pra sempre passar pela
+            // notificação e (quando possível) pelo vínculo com a remessa real.
+            const proximo = c.status === "agendado" ? proximaTransicao(c.status) : null;
             const cor = STATUS_COR[c.status];
             return (
               <div key={c.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px" }}>
@@ -167,7 +186,13 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
                       Bate com a remessa <b>#{sugestao.remessa}</b> recebida em {fmtData(sugestao.data)} ({sugestao.qtdRecebida} un) — confirmar que é esta?
                     </span>
                     {canEdit && (
-                      <button type="button" className="btn btn-success btn-xs" onClick={() => atualizarStatusFullColeta(c.id, "recebido", sugestao.remessa).catch(() => {})}>
+                      <button
+                        type="button" className="btn btn-success btn-xs"
+                        onClick={() => {
+                          atualizarStatusFullColeta(c.id, "recebido", sugestao.remessa).catch(() => {});
+                          notificarColeta(c.id, c.productName, c.quantidade, "recebida");
+                        }}
+                      >
                         Confirmar recebimento
                       </button>
                     )}
@@ -183,7 +208,11 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
                     {" · ou "}
                     <button
                       type="button"
-                      onClick={() => { if (confirm("Marcar como recebido manualmente, sem vincular a uma remessa específica?")) atualizarStatusFullColeta(c.id, "recebido").catch(() => {}); }}
+                      onClick={() => {
+                        if (!confirm("Marcar como recebido manualmente, sem vincular a uma remessa específica?")) return;
+                        atualizarStatusFullColeta(c.id, "recebido").catch(() => {});
+                        notificarColeta(c.id, c.productName, c.quantidade, "recebida");
+                      }}
                       style={{ background: "none", border: "none", color: "var(--accent,#5b9bd5)", cursor: "pointer", textDecoration: "underline", fontSize: ".72rem", padding: 0 }}
                     >
                       marcar recebido manualmente

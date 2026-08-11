@@ -18,6 +18,8 @@ export type NotificationEventType =
   | "return_completed"
   | "sync_warning"
   | "task_assigned"
+  | "full_coleta_agendada"
+  | "full_coleta_recebida"
   | "system";
 
 export type NotificationEventSeverity = "success" | "info" | "warning" | "danger";
@@ -32,7 +34,7 @@ export type NotificationEvent = {
   id: string;
   type: NotificationEventType;
   severity: NotificationEventSeverity;
-  entityType: "order" | "return" | "task" | "system";
+  entityType: "order" | "return" | "task" | "full_coleta" | "system";
   entityId: string;
   /** Chave estável de deduplicação, ex.: "sale_paid:2000123456". Também é o id do documento — reaproveita a garantia de unicidade do próprio Firestore. */
   dedupeKey: string;
@@ -91,6 +93,11 @@ export function buildOrderDeepLink(orderId: string): string {
 /** deepLink pra abrir Tarefas já com o modal daquela tarefa — ver app/page.tsx (?tab=&task=). */
 export function buildTaskDeepLink(taskId: string): string {
   return `/?tab=tarefas&task=${encodeURIComponent(taskId)}`;
+}
+
+/** deepLink pra abrir a aba Full direto — sem drawer/id específico (ainda não existe deep link por coleta), só leva pra tela certa. */
+export function buildFullDeepLink(): string {
+  return "/?tab=full";
 }
 
 export type SaleFinanceInput = {
@@ -194,6 +201,21 @@ export function taskAssignedSeverity(priority: string): NotificationEventSeverit
   return priority === "critica" || priority === "alta" ? "warning" : "info";
 }
 
+/**
+ * Coleta agendada/recebida pro Full — registro MANUAL (a API do ML não avisa
+ * isso sozinha, ver lib/domain/full-coletas.ts). Vai pro TIME inteiro
+ * (sendSalePushToAll), igual venda: estoque saindo/chegando no Full é
+ * informação de todo mundo, não só de quem registrou.
+ */
+export function buildFullColetaAgendadaContent(productName: string, quantidade: number, dataAgendada: string): SaleContent {
+  const data = dataAgendada ? dataAgendada.split("-").reverse().join("/") : "";
+  return { title: "Coleta agendada pro Full", body: `${productName} · ${quantidade} un${data ? ` · prevista pra ${data}` : ""}` };
+}
+
+export function buildFullColetaRecebidaContent(productName: string, quantidade: number): SaleContent {
+  return { title: "Coleta recebida no Full", body: `${productName} · ${quantidade} un` };
+}
+
 /** N vendas agrupadas numa janela curta (anti-spam) — ver lib/notification-groups.ts. */
 export function buildGroupedSalesContent(count: number, totalGross: number, windowMinutes: number): SaleContent {
   return {
@@ -215,5 +237,7 @@ export const NOTIFICATION_TYPE_META: Record<
   return_completed: { label: "Devolução concluída", severity: "warning", group: "alertas" },
   sync_warning: { label: "Aviso de sincronização", severity: "warning", group: "sistema" },
   task_assigned: { label: "Tarefa atribuída", severity: "info", group: "alertas" },
+  full_coleta_agendada: { label: "Coleta agendada (Full)", severity: "info", group: "alertas" },
+  full_coleta_recebida: { label: "Coleta recebida (Full)", severity: "success", group: "alertas" },
   system: { label: "Sistema", severity: "info", group: "sistema" },
 };

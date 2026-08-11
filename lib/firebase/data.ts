@@ -590,13 +590,15 @@ export function watchFullColetas(cb: (coletas: FullColeta[]) => void, max = 200)
   });
 }
 
-export async function addFullColeta(entry: Omit<FullColeta, "id" | "status" | "createdBy" | "createdAt">): Promise<void> {
+/** Retorna o id gerado — quem chama usa pra disparar a notificação de "coleta agendada" (ver ColetasAgendadas.tsx). */
+export async function addFullColeta(entry: Omit<FullColeta, "id" | "status" | "createdBy" | "createdAt">): Promise<string> {
   const email = getCurrentUserEmail();
   const id = `fullcol_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await setDoc(
     sDoc(FULL_COLETA_COL, id),
     sanitizeUndefined({ ...entry, id, status: "agendado" as FullColetaStatus, createdBy: email, createdAt: Date.now() }),
   );
+  return id;
 }
 
 export async function atualizarStatusFullColeta(id: string, status: FullColetaStatus, remessaVinculada?: string): Promise<void> {
