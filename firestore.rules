@@ -120,6 +120,13 @@ service cloud.firestore {
       allow write: if podeEditar('estoque');
     }
 
+    // Registro manual de alterações de campanha de Ads ("subi o ROAS pra
+    // 20x") — não vem do ML, é o vendedor documentando a própria mudança.
+    match /ads_alteracoes/{docId} {
+      allow read: if isAuthorized();
+      allow write: if podeEditar('ads');
+    }
+
     // Remessas do Full marcadas como resolvidas (sem gerar baixa)
     match /full_remessas/{docId} {
       allow read: if isAuthorized();

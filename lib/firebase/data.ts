@@ -17,6 +17,7 @@ import {
 import { getAuth } from "firebase/auth";
 import type {
   AccessEntry,
+  AdsAlteracao,
   ArchivedDay,
   AuditAction,
   AuditEntity,
@@ -542,4 +543,32 @@ export function watchNotificationPreferences(
 
 export async function saveNotificationPreferences(uid: string, prefs: Record<string, unknown>): Promise<void> {
   await setDoc(prefsDoc(uid), prefs);
+}
+
+// ── Últimas alterações de Ads ────────────────────────────────────
+// Registro manual (não vem do ML): "alterei o ROAS pra 20x" — serve pra
+// saber quando cada campanha foi mexida da última vez. campaignId/productId
+// já vêm prontos de quem chama (AdsChangelogPanel), não são recalculados
+// aqui — filtrar por produto depois é só uma query direta em productId.
+const ADS_LOG_COL = "ads_alteracoes";
+
+export function watchAdsAlteracoes(cb: (entries: AdsAlteracao[]) => void, max = 300): () => void {
+  // limit() desde o primeiro commit desta coleção — lição da cota do
+  // Firestore estourada (achado: listener sem teto é o jeito mais fácil de
+  // zerar as 50k leituras/dia do plano gratuito). 300 cobre bastante
+  // histórico sem custo crescente pra sempre.
+  const q = query(sCol(ADS_LOG_COL), orderBy("createdAt", "desc"), limit(max));
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => d.data() as AdsAlteracao));
+  });
+}
+
+export async function addAdsAlteracao(entry: Omit<AdsAlteracao, "id" | "createdBy" | "createdAt">): Promise<void> {
+  const email = getCurrentUserEmail();
+  const id = `adslog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await setDoc(sDoc(ADS_LOG_COL, id), sanitizeUndefined({ ...entry, id, createdBy: email, createdAt: Date.now() }));
+}
+
+export async function deleteAdsAlteracao(id: string): Promise<void> {
+  await deleteDoc(sDoc(ADS_LOG_COL, id));
 }

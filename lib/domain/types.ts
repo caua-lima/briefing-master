@@ -178,12 +178,31 @@ export type EstoqueMovimento = {
   createdAt?: number;
 };
 
+// Registro manual de alteração de campanha de Ads (ex.: "subi o ROAS pra
+// 20x") — não vem do Mercado Livre, é o vendedor documentando a PRÓPRIA
+// mudança pra saber quando mexeu da última vez. campaignId/productId são
+// gravados junto (não recalculados depois) pra o filtro por produto
+// continuar funcionando mesmo que o vínculo campanha↔produto mude no ML.
+export type AdsAlteracao = {
+  id: string;
+  campaignId: string;
+  campaignName: string;
+  productId: string;
+  productName: string;
+  nota: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: number;
+};
+
 // Abas com formulário/mutação de verdade e que fazem sentido liberar
 // individualmente pra um colaborador. De propósito NÃO inclui:
 // "tarefas" (já é leitura+escrita pra todo autorizado, por design — ver
 // firestore.rules), "acesso" (sempre owner-only, nunca delegável) e
-// "pedidos"/"ads"/"dre" (telas só de leitura, sem nada pra "editar").
-export type PermissionTab = "custos" | "metas" | "estoque";
+// "pedidos"/"dre" (telas só de leitura, sem nada pra "editar"). "ads" entrou
+// quando o registro de alterações de campanha (ads_alteracoes) foi criado —
+// as MÉTRICAS de Ads continuam só-leitura, só o changelog é editável.
+export type PermissionTab = "custos" | "metas" | "estoque" | "ads";
 
 export type AccessEntry = {
   email: string;

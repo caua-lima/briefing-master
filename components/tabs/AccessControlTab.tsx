@@ -14,9 +14,9 @@ import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { useAccess } from "@/components/tabs/AccessGuard";
 
-const PERMISSION_TABS: PermissionTab[] = ["custos", "metas", "estoque"];
+const PERMISSION_TABS: PermissionTab[] = ["custos", "metas", "estoque", "ads"];
 const PERMISSION_TAB_LABEL: Record<PermissionTab, string> = {
-  custos: "Custos", metas: "Metas", estoque: "Estoque",
+  custos: "Custos", metas: "Metas", estoque: "Estoque", ads: "Ads (últimas alterações)",
 };
 
 export default function AccessControlTab({

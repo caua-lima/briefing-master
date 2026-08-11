@@ -5,6 +5,8 @@ import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
 import { calculateBreakEvenRoas, getAdRecommendation } from "@/lib/domain/ads";
+import type { Product } from "@/lib/domain/types";
+import AdsChangelogPanel from "@/components/tabs/ads/AdsChangelogPanel";
 
 // Status da CAMPANHA (não do anúncio no catálogo) — é o que decide se o
 // investimento está de fato rodando agora.
@@ -67,7 +69,7 @@ function DiagCard({ label, nome, valor, tone }: { label: string; nome: string; v
   );
 }
 
-type Modo = "pub" | "geral";
+type Modo = "pub" | "geral" | "log";
 
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -85,7 +87,7 @@ const corAcos = (a: number, tem: boolean) => (!tem ? "var(--muted)" : a <= 25 ? 
 // negativo — mesmos limiares usados no resto do dashboard.
 const corMargem = (m: number) => (m >= 15 ? "var(--green)" : m >= 0 ? "var(--yellow)" : "var(--red)");
 
-export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
+export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?: number; products?: Product[] }) {
   const [range, setRange] = useState(() => mesAteHoje());
   const [modo, setModo] = useState<Modo>("pub");
   const [items, setItems] = useState<AdItem[]>([]);
@@ -309,9 +311,15 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
 
       {/* Toggle de análise */}
       <div className="seg" style={{ alignSelf: "flex-start" }}>
-        <button type="button" className={`seg-btn ${pub ? "active" : ""}`} onClick={() => setModo("pub")}>Publicidade (ads direto)</button>
-        <button type="button" className={`seg-btn ${!pub ? "active" : ""}`} onClick={() => setModo("geral")}>Geral (todas as vendas)</button>
+        <button type="button" className={`seg-btn ${modo === "pub" ? "active" : ""}`} onClick={() => setModo("pub")}>Publicidade (ads direto)</button>
+        <button type="button" className={`seg-btn ${modo === "geral" ? "active" : ""}`} onClick={() => setModo("geral")}>Geral (todas as vendas)</button>
+        <button type="button" className={`seg-btn ${modo === "log" ? "active" : ""}`} onClick={() => setModo("log")}>Últimas alterações</button>
       </div>
+
+      {modo === "log" ? (
+        <AdsChangelogPanel campanhas={campanhasResumo} products={products} />
+      ) : (
+      <>
       <div style={{ fontSize: ".78rem", color: "var(--muted)", marginTop: -6 }}>
         {pub
           ? "Só o que saiu direto do anúncio — mede a eficiência do ad em si."
@@ -709,6 +717,8 @@ export default function AdsTab({ metaMargem = 10 }: { metaMargem?: number }) {
             </div>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );
