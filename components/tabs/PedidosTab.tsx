@@ -346,7 +346,11 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
 
   async function atualizar() {
     setLoading(true);
-    try { await authedFetch("/api/ml/sync-all", { method: "POST" }); } catch { /* ignora */ }
+    // Re-sincroniza o PERÍODO que está sendo visto, não o mês corrente (sync-all
+    // sem from/to cai no mês atual — se o pedido é de um mês anterior, o status
+    // do envio nunca era re-buscado e ficava travado em "a caminho"/"ready_to_ship"
+    // pra sempre, mesmo já tendo sido entregue de verdade no Mercado Livre).
+    try { await authedFetch(`/api/ml/sync-all?from=${range.from}&to=${range.to}`, { method: "POST" }); } catch { /* ignora */ }
     await load();
   }
 

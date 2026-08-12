@@ -113,10 +113,7 @@ export default function ReputacaoPanel({
       )}
 
       <div style={{ fontSize: ".7rem", color: "var(--muted)", lineHeight: 1.5 }}>
-        O Mercado Livre não divulga publicamente os critérios exatos (nem o valor mínimo de faturamento) pra
-        subir de selo — a tela &quot;O que falta para se tornar MercadoLíder&quot; só existe dentro do próprio
-        Mercado Livre. Aqui mostramos o nível atual, o selo e as métricas reais que alimentam esse cálculo, sem
-        inventar um checklist com números que não temos como confirmar.
+        Ver o checklist completo de requisitos no painel &quot;O que falta pra ser MercadoLíder&quot; ao lado.
       </div>
     </div>
   );

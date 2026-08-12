@@ -2,9 +2,25 @@
 
 import type { ResultadoCompradores } from "@/lib/domain/repurchase";
 
-export default function CompradoresPanel({ compradores, months }: { compradores: ResultadoCompradores; months: number }) {
+function fmtDataBR(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+export default function CompradoresPanel({
+  compradores, months, periodoInicio, historicoDesde,
+}: {
+  compradores: ResultadoCompradores;
+  months: number;
+  periodoInicio: string;
+  historicoDesde: string | null;
+}) {
   const cor = (t: number) => (t >= 20 ? "var(--green)" : t >= 10 ? "var(--yellow)" : "var(--red)");
   const pctFrequentes = compradores.total > 0 ? (compradores.frequentes / compradores.total) * 100 : 0;
+  // Se o pedido mais antigo sincronizado é de DENTRO do período (ou nem existe
+  // margem antes dele), não dá pra saber quem já comprava antes — "novos"
+  // fica inflado por falta de dado, não porque ninguém recomprou de verdade.
+  const historicoIncompleto = historicoDesde != null && historicoDesde >= periodoInicio;
 
   return (
     <div className="panel">
@@ -43,6 +59,17 @@ export default function CompradoresPanel({ compradores, months }: { compradores:
               </div>
             </div>
           </div>
+          {historicoIncompleto && (
+            <div style={{
+              marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: ".76rem", lineHeight: 1.5,
+              background: "rgba(244,185,66,.1)", border: "1px solid rgba(244,185,66,.35)", color: "#F4B942",
+            }}>
+              O pedido mais antigo que temos sincronizado é de {historicoDesde ? fmtDataBR(historicoDesde) : "—"},
+              já dentro (ou perto) do início do período. Sem pedido de antes pra comparar, ninguém consegue ser
+              marcado como &quot;frequente&quot; — a taxa de recompra abaixo está subestimada. Tente uma janela
+              menor (3m) ou espere o histórico completo terminar de sincronizar.
+            </div>
+          )}
           <div style={{ fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.5 }}>
             Frequente = já tinha comprado de você ANTES do período. Novo = primeira compra dentro do período.
             Taxa de recompra = frequentes ÷ total de compradores do período — mesmo critério do painel

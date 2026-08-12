@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import ReputacaoPanel from "./desempenho/ReputacaoPanel";
+import RequisitosMercadoLiderPanel from "./desempenho/RequisitosMercadoLiderPanel";
 import CompradoresPanel from "./desempenho/CompradoresPanel";
 import HeatmapVendas from "./desempenho/HeatmapVendas";
 import EntregasPanel from "./desempenho/EntregasPanel";
@@ -74,7 +75,18 @@ export default function DesempenhoTab() {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
             <ReputacaoPanel reputation={dados.reputacao} indisponivel={dados.reputacaoIndisponivel} />
-            <CompradoresPanel compradores={dados.compradores} months={dados.months} />
+            <RequisitosMercadoLiderPanel
+              requisitos={dados.requisitosMercadoLider}
+              registrationDate={dados.registrationDate}
+              vendasConcluidas={dados.reputacao?.transactions?.completed}
+              jaEhLider={!!dados.reputacao?.power_seller_status}
+            />
+            <CompradoresPanel
+              compradores={dados.compradores}
+              months={dados.months}
+              periodoInicio={dados.from}
+              historicoDesde={dados.historicoDesde}
+            />
           </div>
 
           <HeatmapVendas heatmap={dados.heatmap} from={dados.from} to={dados.to} />
