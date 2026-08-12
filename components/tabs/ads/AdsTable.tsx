@@ -83,7 +83,7 @@ export default function AdsTable({
           <button type="button" className={`seg-btn ${densidade === "compacta" ? "active" : ""}`} onClick={() => setDensidade("compacta")}>Compacta</button>
         </div>
       </div>
-      <div className="table-wrapper" style={{ border: "none", maxHeight: 620, overflowY: "auto" }}>
+      <div className="table-wrapper ads-table-scroll" style={{ border: "none" }}>
         <table className="tbl-modern tbl-cards" style={{ fontVariantNumeric: "tabular-nums" }}>
           <thead>
             <tr>
@@ -115,7 +115,7 @@ export default function AdsTable({
           </thead>
           <tbody>
             {linhasOrdenadas.map((l) => (
-              <tr key={l.i.itemId} style={{ fontSize: fontRow }}>
+              <tr key={l.i.itemId} style={{ fontSize: fontRow, cursor: "pointer" }} onClick={() => onAbrirAnuncio(l.i.itemId)}>
                 <td
                   className="ads-name"
                   style={{ textAlign: "left", fontWeight: 600, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", position: "sticky", left: 0, background: "var(--surface)", padding: padCel }}
@@ -137,11 +137,22 @@ export default function AdsTable({
                 <td data-label="Break-even" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.abaixoDoBreakEven ? "var(--red)" : "var(--muted)", fontWeight: l.abaixoDoBreakEven ? 700 : 400 }}>
                   {l.breakEven != null ? `${num(l.breakEven, 2)}x` : "—"}{l.abaixoDoBreakEven ? " ⚠" : ""}
                 </td>
-                <td data-label="Decisão" style={{ textAlign: "left", color: corDaDecisao(l), fontSize: ".76rem", maxWidth: 260, padding: padCel }}>
+                <td
+                  data-label="Decisão"
+                  style={{
+                    textAlign: "left", color: corDaDecisao(l), fontSize: ".76rem", padding: padCel,
+                    width: 280, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.4,
+                  }}
+                >
                   {textoDecisao(l)}
                 </td>
-                <td style={{ textAlign: "right", padding: padCel }}>
-                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => onAbrirAnuncio(l.i.itemId)}>Ver detalhes</button>
+                <td data-cell="acoes" style={{ textAlign: "right", padding: padCel, whiteSpace: "nowrap" }}>
+                  <button
+                    type="button" className="btn btn-ghost btn-xs"
+                    onClick={(e) => { e.stopPropagation(); onAbrirAnuncio(l.i.itemId); }}
+                  >
+                    Ver detalhes
+                  </button>
                 </td>
               </tr>
             ))}
