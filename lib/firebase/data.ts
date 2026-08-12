@@ -15,20 +15,22 @@ import {
   where,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import type {
-  AccessEntry,
-  AdsAlteracao,
-  ArchivedDay,
-  AuditAction,
-  AuditEntity,
-  AuditEvent,
-  Cost,
-  DraftToday,
-  EstoqueMovimento,
-  GoalEntry,
-  Goals,
-  Product,
-  Task,
+import {
+  CUSTO_FAIXA_SENTINELA,
+  type AccessEntry,
+  type AdsAlteracao,
+  type ArchivedDay,
+  type AuditAction,
+  type AuditEntity,
+  type AuditEvent,
+  type Cost,
+  type CustoFaixa,
+  type DraftToday,
+  type EstoqueMovimento,
+  type GoalEntry,
+  type Goals,
+  type Product,
+  type Task,
 } from "@/lib/domain/types";
 import type { NotificationEvent } from "@/lib/domain/notifications";
 import { getFirebase } from "./client";
@@ -227,9 +229,13 @@ function round4(n: number): number {
 /**
  * Recalcula o `qtdLocal` (estoque no galpão) a partir do livro e, se informado,
  * grava também o `custoMedio` já calculado pela entrada (blend contra o estoque
- * atual — feito no cliente, que conhece o estoque do Full).
+ * atual — feito no cliente, que conhece o estoque do Full) e uma FAIXA de
+ * vigência dele (ver custoNaData em lib/domain/types.ts): a entrada nova só
+ * vale a partir de `dataMovimento` pra frente. Sem isso, dar entrada em
+ * estoque hoje mudava a margem de vendas já feitas há meses — reportado como
+ * bug: "+100 unidades" e o custo médio novo retroagia pra vendas passadas.
  */
-async function recomputeProduto(productId: string, custoMedio?: number): Promise<void> {
+async function recomputeProduto(productId: string, custoMedio?: number, dataMovimento?: string): Promise<void> {
   const snap = await getDocs(query(sCol(MOV_COL), where("productId", "==", productId)));
   const movs = snap.docs.map((d) => d.data() as EstoqueMovimento);
 
@@ -243,7 +249,27 @@ async function recomputeProduto(productId: string, custoMedio?: number): Promise
   }
 
   const patch: Record<string, unknown> = { qtdLocal: qty };
-  if (custoMedio != null && Number.isFinite(custoMedio)) patch.custoMedio = round4(custoMedio);
+  if (custoMedio != null && Number.isFinite(custoMedio)) {
+    const novo = round4(custoMedio);
+    patch.custoMedio = novo;
+
+    const prodSnap = await getDoc(sDoc("estoque", productId));
+    const prodData = prodSnap.data() as { custoMedio?: number; custo?: string; custoMedioFaixas?: CustoFaixa[] } | undefined;
+    const faixas: CustoFaixa[] = Array.isArray(prodData?.custoMedioFaixas) ? [...prodData!.custoMedioFaixas!] : [];
+    // Primeira vez que este produto passa por aqui: grava o custo ANTERIOR
+    // como faixa retroativa (sentinela bem no passado) antes de acrescentar a
+    // faixa nova — sem isso, todo pedido já sincronizado (sem faixa própria)
+    // cairia direto no custo novo, o mesmo bug que estamos corrigindo.
+    if (faixas.length === 0) {
+      const custoAnterior = Number(prodData?.custoMedio ?? prodData?.custo ?? 0) || 0;
+      faixas.push({ desde: CUSTO_FAIXA_SENTINELA, custo: custoAnterior });
+    }
+    const dia = (dataMovimento || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const idx = faixas.findIndex((f) => f.desde === dia);
+    if (idx >= 0) faixas[idx] = { desde: dia, custo: novo };
+    else faixas.push({ desde: dia, custo: novo });
+    patch.custoMedioFaixas = faixas;
+  }
   await updateDoc(sDoc("estoque", productId), patch);
 }
 
@@ -296,7 +322,7 @@ export async function addMovimento(
     sDoc(MOV_COL, mov.id),
     sanitizeUndefined({ ...mov, createdBy: email, createdAt: Date.now() }),
   );
-  await recomputeProduto(mov.productId, custoMedio);
+  await recomputeProduto(mov.productId, custoMedio, mov.data);
 }
 
 export async function deleteMovimento(id: string, productId: string): Promise<void> {

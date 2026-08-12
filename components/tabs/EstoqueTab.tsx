@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
+import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
 import { addMovimento, deleteMovimento, deleteProduct, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, type CoverageStatus } from "@/lib/domain/estoque";
@@ -916,6 +916,19 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
       faixas.sort((a, b) => a.desde.localeCompare(b.desde));
       saveObj.impostoFaixas = faixas;
     }
+
+    // Mesmo padrão acima, pro custo médio: se o produto já tem faixas (já
+    // passou por uma entrada), editar o custo à mão também vira uma faixa
+    // valendo de hoje — sem isso, corrigir o custo aqui reescreveria a
+    // margem de vendas já feitas, o mesmo problema que a entrada tinha.
+    const custoNovo = custoStr.trim() ? parseNum(custoStr) : 0;
+    const custoFaixasAtuais = p.custoMedioFaixas ?? [];
+    if (custoFaixasAtuais.length && custoStr.trim() && custoNovo !== custoNaData({ custoMedio: p.custoMedio, custo: p.custo, custoMedioFaixas: custoFaixasAtuais }, todayISO())) {
+      const faixas = custoFaixasAtuais.filter((f) => f.desde !== todayISO());
+      faixas.push({ desde: todayISO(), custo: custoNovo });
+      faixas.sort((a, b) => a.desde.localeCompare(b.desde));
+      saveObj.custoMedioFaixas = faixas;
+    }
     setSaving(true);
     try {
       await onSave(saveObj);
@@ -958,7 +971,17 @@ export function ProductModal({ product: initial, isNew, onClose, onSave }: { pro
       <div className="config-field">
         <label>Custo do estoque atual — R$/unidade (inclui o que já está no Full)</label>
         <input type="number" min="0" step="0.01" placeholder="Ex: 13.80" value={custoStr} onChange={(e) => setCustoStr(e.target.value)} />
-        <div className="hint">Informe o custo das unidades que você <strong>já tem hoje</strong> (galpão + Full). A cada <strong>＋ Entrada</strong>, esse custo é ajustado sozinho pela média — vai ficando certinho.</div>
+        <div className="hint">
+          Informe o custo das unidades que você <strong>já tem hoje</strong> (galpão + Full). A cada <strong>＋ Entrada</strong>,
+          esse custo é ajustado sozinho pela média, valendo só a partir dali — vendas já feitas continuam com a margem que tinham.
+          {!!p.custoMedioFaixas?.filter((f) => f.desde !== CUSTO_FAIXA_SENTINELA).length && (
+            <> Vigências: {[...p.custoMedioFaixas]
+              .filter((f) => f.desde !== CUSTO_FAIXA_SENTINELA)
+              .sort((a, b) => a.desde.localeCompare(b.desde))
+              .map((f) => `${fmtBRL(f.custo)} desde ${f.desde.split("-").reverse().join("/")}`)
+              .join(" · ")}.</>
+          )}
+        </div>
       </div>
 
       <div className="config-field">

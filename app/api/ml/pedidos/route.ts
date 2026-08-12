@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { impostoNaData, type ImpostoFaixa } from "@/lib/domain/types";
+import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
 
-type ProdutoData = { custo: number; imposto: number; impostoFaixas?: ImpostoFaixa[]; name: string };
+type ProdutoData = { custo: number; custoMedioFaixas?: CustoFaixa[]; imposto: number; impostoFaixas?: ImpostoFaixa[]; name: string };
 type OrderItem = { sku?: string; item_id?: string; quantity?: number; unit_price?: number; sale_fee?: number; title?: string };
 
 function normalizeSku(s: string) {
@@ -128,6 +128,7 @@ export async function GET(req: Request) {
         // pro Dashboard. Cair pro custo manual só quando ainda não há
         // custoMedio calculado (produto sem movimentação lançada ainda).
         custo: Number(d.custoMedio ?? d.custo ?? 0),
+        custoMedioFaixas: Array.isArray(d.custoMedioFaixas) ? (d.custoMedioFaixas as CustoFaixa[]) : undefined,
         imposto: Number(d.imposto ?? 0),
         impostoFaixas: Array.isArray(d.impostoFaixas) ? (d.impostoFaixas as ImpostoFaixa[]) : undefined,
         name: String(d.name ?? ""),
@@ -174,7 +175,7 @@ export async function GET(req: Request) {
 
         const prod = porMlb.get(normalizeItemId(itemId)) ?? porSku.get(normalizeSku(skuRaw));
         const nome = prod?.name || String(item.title ?? skuRaw);
-        const itCmv = prod ? prod.custo * qty : 0;
+        const itCmv = prod ? custoNaData(prod, diaPedido) * qty : 0;
         const itImposto = prod ? ret * (impostoNaData(prod, diaPedido) / 100) : 0;
         if (prod) {
           cmv += itCmv;

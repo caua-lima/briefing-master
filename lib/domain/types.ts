@@ -130,6 +130,42 @@ export function impostoNaData(
   return melhor ? Number(melhor.pct) || 0 : 0;
 }
 
+export type CustoFaixa = {
+  desde: string;             // yyyy-mm-dd — data em que esse custo médio passou a valer
+  custo: number;
+};
+
+/**
+ * Sentinela bem no passado — grava a "primeira" faixa retroativa quando um
+ * produto ainda não tinha nenhuma (ver recomputeProduto em lib/firebase/data.ts).
+ * Garante que qualquer pedido real sempre encontre alguma faixa aplicável.
+ */
+export const CUSTO_FAIXA_SENTINELA = "2000-01-01";
+
+/**
+ * Custo médio que valia na data da venda — cada entrada nova só vale DAQUI
+ * PRA FRENTE, não reescreve a margem de vendas já feitas (ver comentário em
+ * recomputeProduto). Sem faixas (produto ainda não passou por uma entrada
+ * depois desta feature existir), cai no valor atual — mesmo comportamento de
+ * antes, não 0: diferente do imposto, "sem histórico" aqui não significa
+ * "custo zero", significa "só temos o valor de hoje".
+ */
+export function custoNaData(
+  prod: { custoMedio?: number; custo?: string | number; custoMedioFaixas?: CustoFaixa[] },
+  dataISO: string,
+): number {
+  const atual = Number(prod.custoMedio ?? prod.custo ?? 0) || 0;
+  const faixas = prod.custoMedioFaixas;
+  if (!faixas?.length) return atual;
+  const dia = String(dataISO).slice(0, 10);
+  let melhor: CustoFaixa | null = null;
+  for (const f of faixas) {
+    if (!f?.desde || f.desde > dia) continue;
+    if (!melhor || f.desde > melhor.desde) melhor = f;
+  }
+  return melhor ? melhor.custo : atual;
+}
+
 export type Product = {
   id: string;
   name: string;
@@ -149,6 +185,13 @@ export type Product = {
   createdBy?: string;
   // Calculados pelo livro de movimentações (média móvel ponderada):
   custoMedio?: number;       // custo médio atual — usado no CMV do lucro
+  /**
+   * Vigência do custo médio, em ordem qualquer — mesma ideia do impostoFaixas.
+   * Cada entrada nova só vale a partir da própria data dela: vendas já
+   * registradas continuam com o custo médio de quando aconteceram, em vez de
+   * pular pro custo médio de hoje toda vez que o estoque é atualizado.
+   */
+  custoMedioFaixas?: CustoFaixa[];
   qtdLocal?: number;         // estoque no galpão (entradas − envios Full − ajustes)
   // @deprecated — preço e retorno vêm automaticamente das vendas do ML
   preco?: string;
