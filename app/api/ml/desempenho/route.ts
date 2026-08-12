@@ -7,9 +7,21 @@ import { calcularConcentracaoVendas } from "@/lib/domain/sales-heatmap";
 import { calcularEntregasNoPrazo } from "@/lib/domain/shipping-performance";
 import { avaliarRequisitosMercadoLider, type ReputationParaChecklist } from "@/lib/domain/mercadolider-requisitos";
 
-// Cache curto — a aba não deve bater no Firestore/ML a cada foco de janela.
+// Cache generoso (30min) — essa rota fazia varredura SEM LIMITE de ml_orders
+// (2x, UTC+BR) e ml_returns inteiro a cada abertura da aba, o que ajudou a
+// estourar a cota diária do Firestore (Spark: 50k leituras/dia). Com 4
+// botões de período (3/6/12/24 meses), cada um vira uma chave de cache
+// própria — 30min reduz drasticamente quantas vezes isso roda de novo.
 const cache = new Map<string, { at: number; body: Record<string, unknown> }>();
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 30 * 60 * 1000;
+
+// Teto do histórico usado só pra decidir "esse comprador já comprava antes
+// do período?" — sem teto, a rota lia TODO ml_orders (podem ser milhares de
+// documentos, 2x por causa do UTC/BR) toda vez que alguém abria a aba. Com
+// o teto, um comprador cuja compra anterior foi há mais de
+// months+HISTORICO_EXTRA_MESES atrás aparece como "novo" mesmo não sendo —
+// a tela avisa disso via `historicoDesde` (ver calcularCompradoresPeriodo).
+const HISTORICO_EXTRA_MESES = 24;
 
 function isNaoVenda(status: unknown): boolean {
   const s = String(status ?? "").toLowerCase();
@@ -48,20 +60,18 @@ export async function GET(req: Request) {
     const db = getAdminDb();
     const toStr = brDayISO();
     const periodoInicio = monthsAgoISO(months);
+    const historicoInicio = monthsAgoISO(months + HISTORICO_EXTRA_MESES);
 
-    // Compradores precisa do histórico INTEIRO (sem limite pra trás) pra saber
-    // se a primeira compra de alguém foi antes do período — um teto aqui fazia
-    // todo mundo parecer "novo" sempre que a conta era mais velha que o teto
-    // (ou quando o histórico sincronizado nem chegava tão longe). Custo: uma
-    // leitura ocasional (cache de 5min) de todos os pedidos já sincronizados,
-    // não uma leitura recorrente — não é o padrão que estourou a cota antes.
+    const start = `${historicoInicio}T00:00:00.000Z`;
     const end = `${toStr}T23:59:59.999Z`;
+    const startBR = `${historicoInicio}T00:00:00.000-03:00`;
     const endBR = `${toStr}T23:59:59.999-03:00`;
 
-    const [snapUTC, snapBR, retSnap, perfil] = await Promise.all([
-      db.collection("ml_orders").where("date_created", "<=", end).get(),
-      db.collection("ml_orders").where("date_created", "<=", endBR).get(),
-      db.collection("ml_returns").get(),
+    const [snapUTC, snapBR, retUTC, retBR, perfil] = await Promise.all([
+      db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
       fetchMlUserProfileFresh(),
     ]);
 
@@ -71,7 +81,7 @@ export async function GET(req: Request) {
     // Cancelamento/devolução não é venda de verdade — mesmo critério do
     // resto do app. Conservador: exclui até devolução ainda em disputa.
     const excluidos = new Set<string>();
-    for (const doc of retSnap.docs) excluidos.add(doc.id);
+    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) excluidos.add(doc.id);
 
     const validos = Array.from(ordersMap.entries())
       .filter(([id, d]) => !excluidos.has(id) && !isNaoVenda(d.status))
@@ -82,7 +92,8 @@ export async function GET(req: Request) {
         dateDelivered: d.date_delivered ? String(d.date_delivered) : undefined,
       }));
 
-    // Compradores usa o histórico INTEIRO (pra saber quem já comprava antes).
+    // Compradores usa o histórico ESTENDIDO (months + HISTORICO_EXTRA_MESES)
+    // pra saber quem já comprava antes do período, sem escanear a coleção inteira.
     const compradores = calcularCompradoresPeriodo(validos, periodoInicio, toStr);
 
     // Data mais antiga que a gente realmente tem sincronizada — se for depois
