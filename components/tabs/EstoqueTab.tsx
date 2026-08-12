@@ -148,6 +148,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [loadingML, setLoadingML] = useState(false);
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
+  const [agenciasProduct, setAgenciasProduct] = useState<Product | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   useEffect(() => {
     if (!expanded) return;
@@ -319,6 +320,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                     onToggle={() => setExpanded((cur) => (cur === p.id ? null : p.id))}
                     onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })}
                     onMov={(tipo) => setMovModal({ product: p, tipo })}
+                    onAgencias={() => setAgenciasProduct(p)}
                   />
                 ))}
               </tbody>
@@ -369,6 +371,14 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         />
       )}
 
+      {agenciasProduct && (
+        <AgenciasModal
+          product={agenciasProduct}
+          estoqueML={estoqueML}
+          onClose={() => setAgenciasProduct(null)}
+        />
+      )}
+
       {expanded && (() => {
         const p = data.products.find((x) => x.id === expanded);
         if (!p) return null;
@@ -401,7 +411,7 @@ const TIPO_LABEL: Record<MovimentoTipo, string> = {
 };
 
 function ProductRow({
-  product, estoqueML, expanded, onToggle, onEdit, onMov,
+  product, estoqueML, expanded, onToggle, onEdit, onMov, onAgencias,
 }: {
   product: Product;
   uid: string;
@@ -410,6 +420,7 @@ function ProductRow({
   onToggle: () => void;
   onEdit: () => void;
   onMov: (tipo: MovimentoTipo) => void;
+  onAgencias: () => void;
 }) {
   const imposto = parseNum(product.imposto ?? "0");
   const anuncios = anunciosDe(product, estoqueML);
@@ -478,12 +489,68 @@ function ProductRow({
         </td>
         <td data-label="Ações" data-cell="acoes">
           <div className="row-actions" style={{ justifyContent: "flex-end" }}>
+            {proprio > 0 && (
+              <button type="button" className="btn btn-ghost btn-xs" title="Ver o estoque de cada anúncio fora do Full (envio por conta sua/agência)" onClick={onAgencias}>Agências</button>
+            )}
             <button type="button" className="btn btn-warning btn-xs" title="Editar produto" onClick={onEdit}>Editar</button>
             <button type="button" className="btn btn-danger btn-xs" title="Remover produto" onClick={() => { if (!confirm(`Remover "${product.name}"?`)) return; deleteProduct("", product.id).catch(() => {}); }}>Excluir</button>
           </div>
         </td>
       </tr>
     </>
+  );
+}
+
+/**
+ * Detalhamento dos anúncios fora do Full (envio por conta sua/agência) — só
+ * leitura, o número já vem certo do próprio anúncio no ML (fullDe/anunciosDe
+ * já leem isso pro "no anúncio" da linha); aqui é só abrir a quebra por MLB
+ * pra quem trabalha com vários anúncios do mesmo produto via agência.
+ */
+function AgenciasModal({ product, estoqueML, onClose }: { product: Product; estoqueML: EstoqueML; onClose: () => void }) {
+  const anuncios = anunciosDe(product, estoqueML).filter(({ item }) => item && !ehFullLogistic(item.logistic));
+  const total = anuncios.reduce((s, { item }) => s + (item?.available ?? 0), 0);
+
+  return (
+    <Modal open onClose={onClose}>
+      <div className="modal-title">Agências — {product.name || "Sem nome"}</div>
+      <div className="modal-sub">Estoque de cada anúncio fora do Full · vem direto do Mercado Livre</div>
+
+      {anuncios.length === 0 ? (
+        <div style={{ color: "var(--muted)", fontSize: ".85rem", margin: "12px 0" }}>
+          Nenhum anúncio fora do Full pra este produto agora.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "12px 0" }}>
+          {anuncios.map(({ mlb, item }) => (
+            <div key={mlb} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface2)", borderRadius: 8 }}>
+              <div>
+                <div style={{ fontFamily: "ui-monospace, monospace", fontSize: ".8rem", fontWeight: 700 }}>{mlb}</div>
+                {!!item?.price && (
+                  <div style={{ fontSize: ".76rem", color: "var(--green)" }}>
+                    {fmtBRL(item.price)}{item.hasPromo && <span style={{ color: "#F4B942" }}> · promoção</span>}
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>{item?.available ?? 0} un</div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1px solid var(--border)", fontWeight: 700 }}>
+            <span>Total nas agências</span>
+            <span>{total} un</span>
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+        Atualize a quantidade direto no anúncio do Mercado Livre — este número acompanha sozinho, sem
+        controle manual pra manter.
+      </div>
+
+      <div className="modal-btns">
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Fechar</button>
+      </div>
+    </Modal>
   );
 }
 
