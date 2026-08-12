@@ -155,10 +155,12 @@ export default function ColetasAgendadas({ products, canEdit, movimentos }: { pr
       <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
         Pesquisado direto na documentação oficial: o Mercado Livre não expõe API de agendamento de coleta, status
         &quot;em trânsito&quot; nem código de autorização pro Full doméstico (só existe pro programa cross-border &quot;Fully by
-        Mercado Libre&quot;, que não é este). Por isso <b>agendar e cancelar continuam manuais</b> — é você quem sabe quando
-        combinou com a transportadora. A partir daí é tudo automático: o app confere a cada 5 minutos (e sempre que a
-        aba abre) se alguma remessa recebida bate com uma coleta em transporte e, quando bate, <b>confirma o
-        recebimento, dá a baixa no estoque e avisa o time sozinho</b> — sem precisar de clique.
+        Mercado Libre&quot;, que não é este). Agendar e cancelar a coleta são feitos direto no Mercado Livre (Seller
+        Center) — a coleta é do próprio ML, não de uma transportadora à parte — e isso <b>continua manual</b> por não
+        ter API. Registre aqui a mesma data que você marcou lá, só pra acompanhar. A partir daí é tudo automático: o
+        app confere a cada 5 minutos (e sempre que a aba abre) se alguma remessa recebida bate com uma coleta em
+        transporte e, quando bate, <b>confirma o recebimento, dá a baixa no estoque e avisa o time sozinho</b> — sem
+        precisar de clique.
       </div>
 
       {canEdit && (
@@ -180,7 +182,7 @@ export default function ColetasAgendadas({ products, canEdit, movimentos }: { pr
           </div>
           <div className="config-field">
             <label>Observação (opcional)</label>
-            <input type="text" placeholder="Ex: transportadora X" value={obs} onChange={(e) => setObs(e.target.value)} />
+            <input type="text" placeholder="Ex: agendada no Seller Center" value={obs} onChange={(e) => setObs(e.target.value)} />
           </div>
         </div>
       )}
