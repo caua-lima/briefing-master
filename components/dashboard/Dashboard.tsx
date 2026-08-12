@@ -34,8 +34,6 @@ import ProdutosEmRisco from "./ProdutosEmRisco";
 import { findProdutosEmRisco } from "@/lib/domain/risk";
 import { isTaskAtrasada, type Task } from "@/lib/domain/types";
 import { watchTasks } from "@/lib/firebase/data";
-import ReputacaoRecompraCard from "./ReputacaoRecompraCard";
-import type { SellerReputation } from "@/lib/domain/reputation";
 
 type Props = { data: UserData; onVerEstoque?: () => void; onVerMetas?: () => void; onNavigate?: (tab: string) => void };
 
@@ -937,7 +935,7 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
   const [tasks, setTasks] = useState<Task[]>([]);
   useEffect(() => watchTasks(setTasks), []);
   const tarefasVencidas = useMemo(() => tasks.filter(isTaskAtrasada), [tasks]);
-  const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string; seller_reputation?: SellerReputation } } | null>(null);
+  const [mlAccount, setMlAccount] = useState<{ user?: { nickname?: string; site_id?: string } } | null>(null);
   const [diag, setDiag] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -1471,9 +1469,6 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
 
           {/* Devoluções detalhadas */}
           <DevolucoesPanel total={mlMetrics?.devolucoes ?? 0} emAndamento={mlMetrics?.devolucoesEmAndamento} detalhe={mlMetrics?.devolucoesDetalhe ?? []} />
-
-          {/* Taxa de recompra + reputação/selo Mercado Líder */}
-          <ReputacaoRecompraCard reputation={mlAccount?.user?.seller_reputation} />
         </>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getPowerSellerLabel, getProximoNivelLabel, getReputationLevelMeta } from "./reputation";
+import { formatTaxaDecimal, getPowerSellerLabel, getProximoNivelLabel, getReputationLevelMeta } from "./reputation";
 
 describe("getReputationLevelMeta", () => {
   it("nível conhecido", () => {
@@ -31,5 +31,15 @@ describe("getProximoNivelLabel", () => {
   });
   it("platinum já é o topo → null", () => {
     expect(getProximoNivelLabel("platinum")).toBeNull();
+  });
+});
+
+describe("formatTaxaDecimal", () => {
+  it("converte decimal pra percentual", () => {
+    expect(formatTaxaDecimal(0.023)).toBe("2.3%");
+  });
+  it("undefined/null vira null, não '0%' inventado", () => {
+    expect(formatTaxaDecimal(undefined)).toBeNull();
+    expect(formatTaxaDecimal(null)).toBeNull();
   });
 });

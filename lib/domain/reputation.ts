@@ -8,6 +8,18 @@
  * NOME do próximo degrau, sem inventar % de progresso.
  */
 
+export type SellerReputationMetricEntry = {
+  period?: string;
+  rate?: number;
+  value?: number;
+};
+
+export type SellerReputationMetrics = {
+  claims?: SellerReputationMetricEntry;
+  delayed_handling_time?: SellerReputationMetricEntry;
+  cancellations?: SellerReputationMetricEntry;
+};
+
 export type SellerReputation = {
   level_id?: string | null;
   power_seller_status?: string | null;
@@ -16,7 +28,20 @@ export type SellerReputation = {
     canceled?: number;
     ratings?: { positive?: number; negative?: number; neutral?: number };
   } | null;
+  metrics?: SellerReputationMetrics | null;
 };
+
+export const METRIC_LABELS: Record<keyof SellerReputationMetrics, string> = {
+  claims: "Reclamações",
+  delayed_handling_time: "Atraso no envio",
+  cancellations: "Cancelamentos por você",
+};
+
+/** `rate` da API vem em formato decimal (0 a 1) — converte pra percentual exibível. */
+export function formatTaxaDecimal(v: number | null | undefined): string | null {
+  if (v == null || !Number.isFinite(v)) return null;
+  return `${(v * 100).toFixed(1)}%`;
+}
 
 const LEVEL_META: Record<string, { label: string; cor: string }> = {
   "5_green": { label: "Verde — melhor nível", cor: "var(--green)" },

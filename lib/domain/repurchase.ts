@@ -1,46 +1,61 @@
 /**
- * Taxa de recompra — % de compradores (buyer_id distinto) que fizeram 2 ou
- * mais pedidos válidos (não cancelados/devolvidos) no período analisado.
- * Puramente derivado de pedidos já sincronizados; não bate em API nenhuma.
+ * Compradores do período, no mesmo critério do próprio Mercado Livre
+ * (Métricas > Negócio > "Detalhe dos compradores"): dentro do período,
+ * "frequente" é quem já tinha comprado ANTES do período começar; "novo" é
+ * quem comprou de você pela primeira vez dentro do período. Taxa de
+ * recompra = frequentes ÷ total de compradores do período.
+ *
+ * Puramente derivado de pedidos já sincronizados (buyer_id); não bate em
+ * API nenhuma.
  */
 
-export type OrderParaRecompra = {
+export type OrderParaComprador = {
   buyer_id?: string | null;
+  /** Data no formato "YYYY-MM-DD..." — só os 10 primeiros caracteres importam. */
+  date_created?: string;
 };
 
-export type ResultadoRecompra = {
-  totalPedidosValidos: number;
-  pedidosSemBuyerId: number;
-  compradoresUnicos: number;
-  compradoresRecorrentes: number;
-  /** null = sem comprador nenhum no período, não dá pra calcular. */
+export type ResultadoCompradores = {
+  total: number;
+  frequentes: number;
+  novos: number;
+  /** null = nenhum comprador no período, não dá pra calcular. */
   taxaRecompra: number | null;
 };
 
-export function calcularTaxaRecompra(orders: OrderParaRecompra[]): ResultadoRecompra {
-  const porComprador = new Map<string, number>();
-  let pedidosSemBuyerId = 0;
-
-  for (const o of orders) {
-    const bid = o.buyer_id;
-    if (!bid) { pedidosSemBuyerId++; continue; }
-    porComprador.set(bid, (porComprador.get(bid) ?? 0) + 1);
+/**
+ * `historico` precisa cobrir de bem antes do período até o fim dele — é o
+ * único jeito de saber se a primeira compra de um comprador foi antes
+ * (frequente) ou dentro do período (novo). Ver app/api/ml/desempenho, que
+ * busca essa janela estendida antes de chamar esta função.
+ */
+export function calcularCompradoresPeriodo(
+  historico: OrderParaComprador[],
+  periodoInicio: string,
+  periodoFim: string,
+): ResultadoCompradores {
+  const primeiraCompra = new Map<string, string>();
+  for (const o of historico) {
+    if (!o.buyer_id || !o.date_created) continue;
+    const dia = o.date_created.slice(0, 10);
+    const atual = primeiraCompra.get(o.buyer_id);
+    if (!atual || dia < atual) primeiraCompra.set(o.buyer_id, dia);
   }
 
-  const compradoresUnicos = porComprador.size;
-  const compradoresRecorrentes = Array.from(porComprador.values()).filter((n) => n >= 2).length;
-  const taxaRecompra = compradoresUnicos > 0 ? (compradoresRecorrentes / compradoresUnicos) * 100 : null;
+  const compradoresNoPeriodo = new Set<string>();
+  for (const o of historico) {
+    if (!o.buyer_id || !o.date_created) continue;
+    const dia = o.date_created.slice(0, 10);
+    if (dia >= periodoInicio && dia <= periodoFim) compradoresNoPeriodo.add(o.buyer_id);
+  }
 
-  return {
-    totalPedidosValidos: orders.length,
-    pedidosSemBuyerId,
-    compradoresUnicos,
-    compradoresRecorrentes,
-    taxaRecompra,
-  };
-}
+  let frequentes = 0;
+  for (const b of compradoresNoPeriodo) {
+    if ((primeiraCompra.get(b) ?? "") < periodoInicio) frequentes++;
+  }
+  const total = compradoresNoPeriodo.size;
+  const novos = total - frequentes;
+  const taxaRecompra = total > 0 ? (frequentes / total) * 100 : null;
 
-/** Amostra pequena demais deixa a taxa instável — a tela deve avisar, não esconder o número. */
-export function recompraTemDadosSuficientes(compradoresUnicos: number, minimo = 10): boolean {
-  return compradoresUnicos >= minimo;
+  return { total, frequentes, novos, taxaRecompra };
 }
