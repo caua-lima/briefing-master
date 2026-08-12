@@ -3,23 +3,15 @@
 import { useEffect, useState } from "react";
 import type { EstoqueMovimento } from "@/lib/domain/types";
 import { watchMovimentos } from "@/lib/firebase/data";
-import { useAccess } from "@/components/tabs/AccessGuard";
-import type { UserData } from "@/components/useUserData";
-import ColetasAgendadas from "@/components/tabs/full/ColetasAgendadas";
 import RemessasFull from "@/components/tabs/full/RemessasFull";
 
 /**
- * Aba exclusiva do Full — ciclo de vida completo, do agendamento da coleta
- * até a baixa de estoque quando o Mercado Livre confirma o recebimento:
- *   1. Coletas agendadas (manual, ver ColetasAgendadas.tsx) — a API do ML
- *      não expõe "agendado"/"em trânsito".
- *   2. Remessas pro Full (RemessasFull.tsx, movido de dentro do Estoque) —
- *      baixa de estoque a partir do que o ML JÁ recebeu, dado real da API.
+ * Aba exclusiva do Full — baixa de estoque a partir do que o Mercado Livre
+ * JÁ recebeu, dado real da API. Chegou a ter um bloco de "coleta agendada"
+ * manual, removido: a API do ML não expõe agendamento/trânsito, então era
+ * um formulário 100% manual sem automação nenhuma — só dava trabalho.
  */
-export default function FullTab({ data }: { data: UserData }) {
-  const { canEditTab } = useAccess();
-  const canEdit = canEditTab("estoque");
-
+export default function FullTab() {
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   useEffect(() => watchMovimentos(setMovimentos), []);
 
@@ -31,11 +23,9 @@ export default function FullTab({ data }: { data: UserData }) {
         </div>
       </div>
       <div style={{ fontSize: ".8rem", color: "var(--muted)", marginTop: -6 }}>
-        Do agendamento da coleta até a baixa de estoque — recebimento e baixa detectados e aplicados automaticamente
-        assim que o Mercado Livre confirma.
+        Baixa de estoque a partir do que o Mercado Livre já recebeu — detectado e aplicado automaticamente.
       </div>
 
-      <ColetasAgendadas products={data.products} canEdit={canEdit} movimentos={movimentos} />
       <RemessasFull movimentos={movimentos} />
     </div>
   );

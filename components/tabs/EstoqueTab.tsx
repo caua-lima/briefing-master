@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { impostoNaData, type EstoqueMovimento, type FullColeta, type MovimentoTipo, type Product } from "@/lib/domain/types";
-import { addMovimento, deleteMovimento, deleteProduct, upsertProduct, watchFullColetas, watchMovimentos } from "@/lib/firebase/data";
+import { impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
+import { addMovimento, deleteMovimento, deleteProduct, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, type CoverageStatus } from "@/lib/domain/estoque";
-import { totalEmTransito } from "@/lib/domain/full-coletas";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -148,7 +147,6 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [forecast, setForecast] = useState<Forecast>({ vendas: {}, dias: DIAS_ALVO });
   const [loadingML, setLoadingML] = useState(false);
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
-  const [coletasFull, setColetasFull] = useState<FullColeta[]>([]);
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   useEffect(() => {
@@ -174,10 +172,6 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
   useEffect(() => { carregarEstoque(); }, [carregarEstoque]);
   useEffect(() => watchMovimentos(setMovimentos), []);
-  // Coletas agendadas pro Full (aba Full) — só pra mostrar "X em trânsito"
-  // aqui, não muda qtdLocal/custoMedio (a fonte real de estoque continua
-  // sendo estoque_movimentos, ver lib/domain/full-coletas.ts).
-  useEffect(() => watchFullColetas(setColetasFull), []);
 
   const movsPorProduto = useMemo(() => {
     const map = new Map<string, EstoqueMovimento[]>();
@@ -321,7 +315,6 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                     product={p}
                     uid={uid}
                     estoqueML={estoqueML}
-                    emTransito={totalEmTransito(coletasFull, p.id)}
                     expanded={expanded === p.id}
                     onToggle={() => setExpanded((cur) => (cur === p.id ? null : p.id))}
                     onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })}
@@ -408,13 +401,11 @@ const TIPO_LABEL: Record<MovimentoTipo, string> = {
 };
 
 function ProductRow({
-  product, estoqueML, emTransito, expanded, onToggle, onEdit, onMov,
+  product, estoqueML, expanded, onToggle, onEdit, onMov,
 }: {
   product: Product;
   uid: string;
   estoqueML: EstoqueML;
-  /** Unidades já agendadas/em transporte pro Full (aba Full) — só informativo, não muda o total nem o custo médio. */
-  emTransito: number;
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -458,14 +449,6 @@ function ProductRow({
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#F4B942" }}>reabastecer</span>}
           {proprio > 0 && <span title="Disponível no(s) anúncio(s) próprio(s) (envio por conta do vendedor/agência) — soma no Total ao lado, junto com o que está em casa" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
-          {emTransito > 0 && (
-            <span
-              title="Coleta agendada/em transporte pro Full (aba Full) — ainda não chegou, não conta no total nem no custo médio até virar baixa de verdade"
-              style={{ display: "block", fontSize: ".62rem", color: "var(--accent,#5b9bd5)", fontWeight: 400 }}
-            >
-              +{emTransito} em trânsito
-            </span>
-          )}
         </td>
         <td data-label="Total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
         <td data-label="Custo médio" style={{ textAlign: "right", whiteSpace: "nowrap", color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>

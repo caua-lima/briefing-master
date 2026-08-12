@@ -241,13 +241,26 @@ export async function GET(req: Request) {
               porTipo: new Map<string, number>(), refs: new Set<string>(), saldoData: "", saldo: 0,
             };
             for (const t of outrasRefs) agg.refs.add(t);
-            agg.recebido += entrou;
+            /**
+             * TRANSFER_DELIVERY é unidade que JÁ chegou (via INBOUND_RECEPTION)
+             * sendo redistribuída entre centros do Full — mesma unidade física,
+             * evento novo. Somar isso em cima do INBOUND_RECEPTION duplicava a
+             * remessa (visto em produção: app mostrando 1000/500/350 contra
+             * 200/120/80 "processadas" no próprio Mercado Livre — cada produto
+             * inflado num múltiplo diferente, batendo com quantas vezes cada um
+             * foi redistribuído). Conta pra saldo/diagnóstico (porTipo), não
+             * pro total que vira baixa de estoque.
+             */
+            const contaComoRecebido = tipo !== "TRANSFER_DELIVERY";
+            if (contaComoRecebido) {
+              agg.recebido += entrou;
+              if (inventory) agg.porInventory.set(inventory, (agg.porInventory.get(inventory) ?? 0) + entrou);
+            }
             agg.problema += ruins;
             // Só `entrou` aqui: a soma dos tipos precisa bater com "recebido"
             // (que também só soma entrou). Incluir "ruins" fazia o total da
             // quebra por tipo, mostrado do lado do recebido, não bater com ele.
             agg.porTipo.set(tipo, (agg.porTipo.get(tipo) ?? 0) + entrou);
-            if (inventory) agg.porInventory.set(inventory, (agg.porInventory.get(inventory) ?? 0) + entrou);
             if (data < agg.data) agg.data = data;
             // Ordenamos por date_created: o `id` do ML passa de 9e15 e o
             // JSON.parse já o arredonda, então comparar id não é confiável.

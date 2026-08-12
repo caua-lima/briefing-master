@@ -13,9 +13,7 @@ export type NotificationTogglesKey =
   | "return_completed"
   | "sales_summary"
   | "sync_warning"
-  | "task_assigned"
-  | "full_coleta_agendada"
-  | "full_coleta_recebida";
+  | "task_assigned";
 
 export type NotificationPreferences = {
   toggles: Record<NotificationTogglesKey, boolean>;
@@ -43,8 +41,6 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
     sales_summary: true,
     sync_warning: true,
     task_assigned: true,
-    full_coleta_agendada: true,
-    full_coleta_recebida: true,
   },
   quietHoursStart: "22:30",
   quietHoursEnd: "07:30",
@@ -78,8 +74,6 @@ const TYPE_TO_TOGGLE: Record<NotificationEventType, NotificationTogglesKey | nul
   return_completed: "return_completed",
   sync_warning: "sync_warning",
   task_assigned: "task_assigned",
-  full_coleta_agendada: "full_coleta_agendada",
-  full_coleta_recebida: "full_coleta_recebida",
   system: null, // sistema não é opcional — sempre entra na Central; não é um push de venda
 };
 

@@ -507,7 +507,7 @@ function AppShell() {
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
-                {activeTab === "full" && <FullTab data={data} />}
+                {activeTab === "full" && <FullTab />}
                 {activeTab === "desempenho" && <DesempenhoTab />}
                 {activeTab === "dre" && <DreTab />}
                 {activeTab === "tarefas" && <TarefasTab openTaskId={openTaskId} />}

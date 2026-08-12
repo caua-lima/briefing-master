@@ -20,8 +20,6 @@ const TOGGLE_LABEL: Record<NotificationTogglesKey, string> = {
   sales_summary: "Resumo de vendas agrupadas",
   sync_warning: "Alertas de sincronização",
   task_assigned: "Tarefa atribuída a mim",
-  full_coleta_agendada: "Coleta agendada (Full)",
-  full_coleta_recebida: "Coleta recebida (Full)",
 };
 
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];

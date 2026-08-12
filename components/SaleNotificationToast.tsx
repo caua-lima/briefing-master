@@ -14,8 +14,6 @@ function toneDeTipo(type: string): Tone {
     // pra prioridade alta/crítica) — isso é decidido no evento persistido,
     // visível na Central. Aqui, no toast, fica sempre "info" por simplicidade.
     case "task_assigned": return "info";
-    case "full_coleta_agendada": return "info";
-    case "full_coleta_recebida": return "success";
     default: return "info";
   }
 }
@@ -35,9 +33,6 @@ function Icone({ type }: { type: string }) {
       return <svg {...common}><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>;
     case "task_assigned":
       return <svg {...common}><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>;
-    case "full_coleta_agendada":
-    case "full_coleta_recebida":
-      return <svg {...common}><rect x="3" y="8" width="13" height="10" rx="1.3" /><path d="M16 11h3.2a1 1 0 0 1 .9.55L21 14v4h-2" /><circle cx="7.5" cy="18.5" r="1.4" /><circle cx="16.5" cy="18.5" r="1.4" /></svg>;
     case "sale_paid":
     default:
       return <svg {...common}><path d="M6 8h12l-1 12H7L6 8z" /><path d="M9 8V6.5a3 3 0 0 1 6 0V8" /><path d="M9.5 12.5l1.8 1.8L15 11" /></svg>;
@@ -99,11 +94,6 @@ export function SaleNotificationToast({
         <div className="sale-toast-actions">
           <button type="button" className="btn btn-primary btn-xs" onClick={() => onNavigate(event.deepLink)}>Ver pedido</button>
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => onNavigate("/")}>Ver dashboard</button>
-        </div>
-      )}
-      {(event.type === "full_coleta_agendada" || event.type === "full_coleta_recebida") && (
-        <div className="sale-toast-actions">
-          <button type="button" className="btn btn-primary btn-xs" onClick={() => onNavigate(event.deepLink)}>Ver Full</button>
         </div>
       )}
     </div>
