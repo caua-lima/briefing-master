@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FULL_COLETA_STATUS_LABEL, type FullColeta, type Product } from "@/lib/domain/types";
-import type { Remessa } from "@/lib/domain/remessas";
-import { addFullColeta, atualizarStatusFullColeta, deleteFullColeta, watchFullColetas } from "@/lib/firebase/data";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FULL_COLETA_STATUS_LABEL, type EstoqueMovimento, type FullColeta, type Product } from "@/lib/domain/types";
+import { movIdRemessa, type Remessa } from "@/lib/domain/remessas";
+import { addFullColeta, addMovimento, atualizarStatusFullColeta, deleteFullColeta, watchFullColetas } from "@/lib/firebase/data";
 import { ehTerminal, podeCancelar, proximaTransicao, sugerirVinculoRecebimento } from "@/lib/domain/full-coletas";
 import { authedFetch } from "@/lib/api/authed-fetch";
+
+// Poll de remessas em segundo plano — casado com o cache de 5min do lado do
+// servidor (app/api/ml/gestao-full/route.ts) pra não gastar chamada extra à
+// API do ML: a maioria dos polls só bate no cache.
+const POLL_REMESSAS_MS = 5 * 60 * 1000;
 
 /**
  * Avisa o time (push) que uma coleta foi agendada ou recebida — melhor
@@ -34,13 +39,17 @@ function fmtData(iso: string): string {
 }
 
 /**
- * Coletas agendadas pro Full — registro MANUAL. A API pública do Mercado
- * Livre não expõe "agendado"/"em trânsito" (só o recebimento já processado,
- * que RemessasFull já busca) — por isso o ciclo de vida é controlado por
- * quem usa o app, com uma sugestão (não automática) de qual remessa real
- * corresponde a cada coleta em transporte.
+ * Coletas agendadas pro Full — registro MANUAL na criação/cancelamento (a
+ * API pública do Mercado Livre não expõe "agendado"/"em trânsito"/"código de
+ * autorização" pra Full doméstico — só pro programa cross-border "Fully by
+ * Mercado Libre" via POST /marketplace/fbm/inbounds, que não se aplica aqui;
+ * confirmado pesquisando a documentação oficial, não é suposição). A partir
+ * daí, tudo que a API REAL entrega (recebimento confirmado, via
+ * /api/ml/gestao-full) é 100% automático: detecta a remessa que bate,
+ * confirma o recebimento, dá a baixa no estoque e notifica o time sozinho —
+ * sem precisar de clique.
  */
-export default function ColetasAgendadas({ products, canEdit }: { products: Product[]; canEdit: boolean }) {
+export default function ColetasAgendadas({ products, canEdit, movimentos }: { products: Product[]; canEdit: boolean; movimentos: EstoqueMovimento[] }) {
   const [coletas, setColetas] = useState<FullColeta[]>([]);
   useEffect(() => watchFullColetas(setColetas), []);
 
@@ -55,18 +64,65 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
 
   const produtosOrdenados = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
 
-  async function buscarRemessas() {
+  const buscarRemessas = useCallback(async () => {
     setBuscandoRemessas(true);
     try {
       const r = await authedFetch("/api/ml/gestao-full", { cache: "no-store" });
       if (r.ok) { const j = await r.json(); setRemessas(j.remessas ?? []); }
     } catch { /* melhor esforço — sem isso, só não aparece sugestão de vínculo */ }
     setBuscandoRemessas(false);
-  }
+  }, []);
   // Falso positivo comprovado (mesmo padrão de RemessasFull/AdsTab): fetch no
   // mount — buscarRemessas() faz setState de forma assíncrona.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { buscarRemessas(); }, []);
+  useEffect(() => { buscarRemessas(); }, [buscarRemessas]);
+  // Poll em segundo plano — detecta remessa recebida sem precisar reabrir a
+  // aba. Server já cacheia 5min, então isto não gasta chamada extra na
+  // maioria das vezes.
+  useEffect(() => {
+    const id = setInterval(buscarRemessas, POLL_REMESSAS_MS);
+    return () => clearInterval(id);
+  }, [buscarRemessas]);
+
+  const jaVinculadas = useMemo(() => new Set(coletas.filter((c) => c.remessaVinculada).map((c) => c.remessaVinculada!)), [coletas]);
+  // Marca coleta já em processamento pra não disparar duas vezes enquanto o
+  // listener do Firestore ainda não voltou com o status novo (a escrita de
+  // addMovimento é idempotente por id — movIdRemessa — mas evita round-trips
+  // e push duplicado à toa).
+  const autoProcessando = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!canEdit) return; // sem permissão de editar Estoque, nem tenta escrever
+    for (const c of coletas) {
+      if (c.status !== "em_transporte") continue;
+      if (autoProcessando.current.has(c.id)) continue;
+      const sugestao = sugerirVinculoRecebimento(c, remessas, jaVinculadas);
+      if (!sugestao) continue;
+      // Já tem baixa gravada pra esta remessa+produto (ex.: alguém já deu
+      // baixa manual em RemessasFull antes do auto-match rodar) — só marca
+      // recebido e vincula, não duplica o movimento.
+      const jaTemBaixa = movimentos.some((m) => m.id === movIdRemessa(sugestao.remessa, c.productId));
+      autoProcessando.current.add(c.id);
+      (async () => {
+        try {
+          await atualizarStatusFullColeta(c.id, "recebido", sugestao.remessa);
+          if (!jaTemBaixa) {
+            await addMovimento({
+              id: movIdRemessa(sugestao.remessa, c.productId),
+              productId: c.productId,
+              tipo: "saida_full",
+              quantidade: sugestao.qtdRecebida,
+              data: sugestao.data,
+              obs: `Confirmado automaticamente: remessa Full #${sugestao.remessa} bateu com a coleta agendada pra ${fmtData(c.dataAgendada)} (${c.quantidade} un).`,
+            });
+          }
+          notificarColeta(c.id, c.productName, c.quantidade, "recebida");
+        } catch {
+          autoProcessando.current.delete(c.id); // libera pra tentar de novo no próximo poll
+        }
+      })();
+    }
+  }, [coletas, remessas, jaVinculadas, movimentos, canEdit]);
 
   async function registrar() {
     const produto = products.find((p) => p.id === productId);
@@ -86,8 +142,6 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
     }
   }
 
-  const jaVinculadas = useMemo(() => new Set(coletas.filter((c) => c.remessaVinculada).map((c) => c.remessaVinculada!)), [coletas]);
-
   const ativas = coletas.filter((c) => !ehTerminal(c.status)).sort((a, b) => a.dataAgendada.localeCompare(b.dataAgendada));
   const finalizadas = coletas.filter((c) => ehTerminal(c.status)).sort((a, b) => b.dataAgendada.localeCompare(a.dataAgendada));
   const [mostrarFinalizadas, setMostrarFinalizadas] = useState(false);
@@ -96,13 +150,15 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 6 }}>
         <span className="panel-title">Coletas agendadas</span>
-        <span className="panel-sub">registro manual — o Mercado Livre não informa isso via API</span>
+        <span className="panel-sub">criação/cancelamento manual · recebimento e baixa 100% automáticos</span>
       </div>
       <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
-        A API pública do Mercado Livre não expõe coleta agendada nem status &quot;em trânsito&quot; — só o recebimento já
-        processado (que a seção &quot;Remessas pro Full&quot; abaixo já busca). Registre aqui quando agendar a coleta com a
-        transportadora pra acompanhar o ciclo até chegar — quando bater com uma remessa real recebida, o app sugere o
-        vínculo, mas não aplica sozinho.
+        Pesquisado direto na documentação oficial: o Mercado Livre não expõe API de agendamento de coleta, status
+        &quot;em trânsito&quot; nem código de autorização pro Full doméstico (só existe pro programa cross-border &quot;Fully by
+        Mercado Libre&quot;, que não é este). Por isso <b>agendar e cancelar continuam manuais</b> — é você quem sabe quando
+        combinou com a transportadora. A partir daí é tudo automático: o app confere a cada 5 minutos (e sempre que a
+        aba abre) se alguma remessa recebida bate com uma coleta em transporte e, quando bate, <b>confirma o
+        recebimento, dá a baixa no estoque e avisa o time sozinho</b> — sem precisar de clique.
       </div>
 
       {canEdit && (
@@ -181,35 +237,23 @@ export default function ColetasAgendadas({ products, canEdit }: { products: Prod
                 </div>
 
                 {sugestao && (
-                  <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(54,179,126,.08)", border: "1px solid rgba(54,179,126,.3)", borderRadius: 8, fontSize: ".78rem", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                    <span>
-                      Bate com a remessa <b>#{sugestao.remessa}</b> recebida em {fmtData(sugestao.data)} ({sugestao.qtdRecebida} un) — confirmar que é esta?
-                    </span>
-                    {canEdit && (
-                      <button
-                        type="button" className="btn btn-success btn-xs"
-                        onClick={() => {
-                          atualizarStatusFullColeta(c.id, "recebido", sugestao.remessa).catch(() => {});
-                          notificarColeta(c.id, c.productName, c.quantidade, "recebida");
-                        }}
-                      >
-                        Confirmar recebimento
-                      </button>
-                    )}
+                  <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(54,179,126,.08)", border: "1px solid rgba(54,179,126,.3)", borderRadius: 8, fontSize: ".78rem" }}>
+                    Bate com a remessa <b>#{sugestao.remessa}</b> recebida em {fmtData(sugestao.data)} ({sugestao.qtdRecebida} un)
+                    {canEdit ? " — confirmando e dando baixa automaticamente…" : "."}
                   </div>
                 )}
                 {c.status === "em_transporte" && !sugestao && canEdit && (
                   <div style={{ marginTop: 8, fontSize: ".72rem", color: "var(--muted)" }}>
-                    Nenhuma remessa recebida bate com esta coleta ainda.
+                    Nenhuma remessa recebida bate com esta coleta ainda — o app confere de novo sozinho a cada 5 min.
                     {" "}
                     <button type="button" onClick={buscarRemessas} disabled={buscandoRemessas} style={{ background: "none", border: "none", color: "var(--accent,#5b9bd5)", cursor: "pointer", textDecoration: "underline", fontSize: ".72rem", padding: 0 }}>
-                      {buscandoRemessas ? "buscando…" : "buscar de novo"}
+                      {buscandoRemessas ? "buscando…" : "conferir agora"}
                     </button>
                     {" · ou "}
                     <button
                       type="button"
                       onClick={() => {
-                        if (!confirm("Marcar como recebido manualmente, sem vincular a uma remessa específica?")) return;
+                        if (!confirm("Marcar como recebido manualmente, sem vincular a uma remessa específica? Use só se tiver certeza — o app não vai conseguir confirmar contra o dado real do ML depois.")) return;
                         atualizarStatusFullColeta(c.id, "recebido").catch(() => {});
                         notificarColeta(c.id, c.productName, c.quantidade, "recebida");
                       }}

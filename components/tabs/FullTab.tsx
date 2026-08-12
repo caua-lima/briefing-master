@@ -31,10 +31,11 @@ export default function FullTab({ data }: { data: UserData }) {
         </div>
       </div>
       <div style={{ fontSize: ".8rem", color: "var(--muted)", marginTop: -6 }}>
-        Do agendamento da coleta até a baixa de estoque quando o Mercado Livre confirma o recebimento.
+        Do agendamento da coleta até a baixa de estoque — recebimento e baixa detectados e aplicados automaticamente
+        assim que o Mercado Livre confirma.
       </div>
 
-      <ColetasAgendadas products={data.products} canEdit={canEdit} />
+      <ColetasAgendadas products={data.products} canEdit={canEdit} movimentos={movimentos} />
       <RemessasFull movimentos={movimentos} />
     </div>
   );
