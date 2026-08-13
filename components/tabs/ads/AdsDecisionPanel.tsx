@@ -154,7 +154,7 @@ function GrupoRevisar({ itens, onAbrir }: { itens: LinhaAds[]; onAbrir: (itemId:
 
 function GrupoSemRetorno({ itens, changelog, onAbrir }: { itens: LinhaAds[]; changelog: AdsAlteracao[]; onAbrir: (itemId: string) => void }) {
   return (
-    <Cartao titulo="Investimento sem retorno" cor="#F4B942" vazio={itens.length === 0}>
+    <Cartao titulo="Investimento sem retorno" cor="var(--warning)" vazio={itens.length === 0}>
       {itens.map((l) => {
         const ultima = ultimaAlteracao(changelog, l.i.campaignId);
         return (
@@ -162,7 +162,7 @@ function GrupoSemRetorno({ itens, changelog, onAbrir }: { itens: LinhaAds[]; cha
             <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 4 }}>
               Gasto {fmtBRL(l.i.cost)} · {num(l.i.clicks)} clique(s) · CPC {fmtBRL(l.cpc)} · zero vendas atribuídas
             </div>
-            <div style={{ fontSize: ".72rem", color: "#F4B942", marginTop: 4 }}>
+            <div style={{ fontSize: ".72rem", color: "var(--warning)", marginTop: 4 }}>
               {ultima ? `Último ajuste registrado: ${formatarResumoAlteracao(ultima)}` : "Nenhum ajuste manual registrado nesta campanha ainda."}
             </div>
           </LinhaBase>

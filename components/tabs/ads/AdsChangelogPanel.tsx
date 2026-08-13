@@ -243,7 +243,7 @@ export default function AdsChangelogPanel({
                       {e.campaignName}
                     </span>
                     {e.tipo && (
-                      <span style={{ fontSize: ".64rem", fontWeight: 700, color: "#E9A92D", background: "rgba(233,169,45,.12)", borderRadius: 6, padding: "1px 7px" }}>
+                      <span style={{ fontSize: ".64rem", fontWeight: 700, color: "var(--brand)", background: "var(--brand-soft)", borderRadius: 6, padding: "1px 7px" }}>
                         {ADS_ALTERACAO_TIPO_LABEL[e.tipo]}
                       </span>
                     )}

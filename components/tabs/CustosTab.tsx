@@ -220,7 +220,7 @@ function CustoRow({ uid, cost, canEdit, impacto }: { uid: string; cost: Cost; ca
           </select>
         </div>
         <div className="field">
-          <label>Categoria {!categoria && <span style={{ color: "#F4B942", fontWeight: 700 }}>· sem categoria</span>}</label>
+          <label>Categoria {!categoria && <span style={{ color: "var(--warning)", fontWeight: 700 }}>· sem categoria</span>}</label>
           <select className="inp" value={categoria} onChange={(e) => setCategoria(e.target.value as CostCategoria | "")} disabled={ro}>
             <option value="">— sem categoria —</option>
             {(Object.keys(COST_CATEGORIA_LABEL) as CostCategoria[]).map((c) => (

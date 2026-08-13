@@ -269,7 +269,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         <div className="kpi k-neg"><div className="k-lbl">Em ruptura</div><div className="k-val" style={{ color: resumoCobertura.ruptura > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.ruptura}</div><div className="k-sub">estoque total zerado</div></div>
         <div className="kpi k-neg"><div className="k-lbl">Cobertura crítica</div><div className="k-val" style={{ color: resumoCobertura.critico > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.critico}</div><div className="k-sub">&lt; 7 dias de giro</div></div>
         <div className="kpi k-warn"><div className="k-lbl">Cobertura baixa</div><div className="k-val" style={{ color: resumoCobertura.repor > 0 ? "var(--yellow)" : "var(--muted)" }}>{resumoCobertura.repor}</div><div className="k-sub">7–15 dias, repor em breve</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Capital parado</div><div className="k-val" style={{ color: resumoCobertura.encalhado > 0 ? "#F4B942" : "var(--muted)" }}>{resumoCobertura.encalhado}</div><div className="k-sub">sem venda no período</div></div>
+        <div className="kpi k-warn"><div className="k-lbl">Capital parado</div><div className="k-val" style={{ color: resumoCobertura.encalhado > 0 ? "var(--warning)" : "var(--muted)" }}>{resumoCobertura.encalhado}</div><div className="k-sub">sem venda no período</div></div>
         <div className="kpi k-neg"><div className="k-lbl">Valor em risco</div><div className="k-val" style={{ color: resumoCobertura.valorEmRisco > 0 ? "var(--red)" : "var(--muted)" }}>{fmtBRL(resumoCobertura.valorEmRisco)}</div><div className="k-sub">crítico + encalhado × custo médio</div></div>
       </div>
 
@@ -458,7 +458,7 @@ function ProductRow({
         <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casa > 0 ? "var(--yellow)" : "var(--muted)" }}>{casa} un</td>
         <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
-          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "#F4B942" }}>reabastecer</span>}
+          {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "var(--warning)" }}>reabastecer</span>}
           {proprio > 0 && <span title="Disponível no(s) anúncio(s) próprio(s) (envio por conta do vendedor/agência) — soma no Total ao lado, junto com o que está em casa" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
         </td>
         <td data-label="Total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
@@ -730,13 +730,13 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
 function coberturaFmt(dias: number): { txt: string; cor: string } {
   if (!Number.isFinite(dias)) return { txt: "—", cor: "var(--muted)" };
   const d = Math.round(dias);
-  const cor = d <= 7 ? "var(--red)" : d <= 15 ? "var(--yellow)" : "var(--green)";
+  const cor = d <= 7 ? "var(--red)" : d <= 15 ? "var(--warning)" : "var(--green)";
   return { txt: `${d}d`, cor };
 }
 
 const STATUS_COBERTURA_COR: Record<CoverageStatus, string> = {
-  critico: "var(--red)", repor: "var(--yellow)", saudavel: "var(--green)",
-  encalhado: "#F4B942", "sem-giro": "var(--muted)",
+  critico: "var(--red)", repor: "var(--warning)", saudavel: "var(--green)",
+  encalhado: "var(--warning)", "sem-giro": "var(--muted)",
 };
 
 // Planejamento da lista de reposição — só um "marcar como já resolvido",
@@ -824,7 +824,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                     <td style={{ textAlign: "left", fontWeight: 600 }}>
                       {p.name || "Sem nome"}
                       {mlbsDe(p).length === 0 ? (
-                        <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "#F4B942" }}>
+                        <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--warning)" }}>
                           sem anúncio vinculado — use “Vincular por SKU”
                         </span>
                       ) : f.total === 0 && f.mediaDiaria === 0 ? (
@@ -1162,7 +1162,7 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
                 </span>
               )}
               {resumo.aproximados > 0 && (
-                <span style={{ background: "rgba(244,185,66,.12)", border: "1px solid rgba(244,185,66,.4)", borderRadius: 6, padding: "4px 9px", color: "#F4B942" }}>
+                <span style={{ background: "var(--warning-soft)", border: "1px solid rgba(255,138,31,.4)", borderRadius: 6, padding: "4px 9px", color: "var(--warning)" }}>
                   {resumo.aproximados} aproximado(s) — confira antes
                 </span>
               )}
@@ -1206,7 +1206,7 @@ function VincularSkuModal({ uid, produtos, onClose }: { uid: string; produtos: P
                         <span style={{ minWidth: 0 }}>
                           <span style={{ fontFamily: "monospace", fontSize: ".76rem", color: "var(--text)" }}>{n.mlb}</span>
                           {!n.exato && (
-                            <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 5px", borderRadius: 4 }}>
+                            <span style={{ marginLeft: 6, fontSize: ".64rem", fontWeight: 700, color: "var(--warning)", background: "var(--warning-soft)", padding: "1px 5px", borderRadius: 4 }}>
                               APROXIMADO
                             </span>
                           )}
@@ -1363,7 +1363,7 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
         Vai aplicar <b>{pct}%</b> em <b>{alvos.length} produto{alvos.length === 1 ? "" : "s"}</b>
         {escopoBusca ? <> — a lista mostra só os da busca “{escopoBusca}”.</> : <>.</>}
         {jaTem.length > 0 && (
-          <div style={{ marginTop: 6, color: "#F4B942" }}>
+          <div style={{ marginTop: 6, color: "var(--warning)" }}>
             {jaTem.length === 1
               ? "1 deles já tem imposto e será sobrescrito."
               : `${jaTem.length} deles já têm imposto e serão sobrescritos.`}

@@ -6,7 +6,7 @@ import { calculateAdsReconciliation, getAdsDataQualityLabel, type AdsDataQuality
 
 const STATUS_COR: Record<AdsDataQualityStatus, { cor: string; bg: string }> = {
   confirmada: { cor: "var(--green)", bg: "rgba(54,179,126,.12)" },
-  parcial: { cor: "#F4B942", bg: "rgba(244,185,66,.12)" },
+  parcial: { cor: "var(--warning)", bg: "var(--warning-soft)" },
   atencao: { cor: "var(--red)", bg: "rgba(214,90,74,.12)" },
   "sem-dados": { cor: "var(--muted)", bg: "rgba(185,181,166,.14)" },
 };

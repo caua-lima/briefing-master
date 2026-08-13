@@ -284,7 +284,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />
       </div>
-      <div style={{ fontSize: ".72rem", color: desatualizado ? "#F4B942" : "var(--muted)", marginTop: -6 }}>
+      <div style={{ fontSize: ".72rem", color: desatualizado ? "var(--warning)" : "var(--muted)", marginTop: -6 }}>
         {statusAtualizacaoTxt}{desatualizado ? " · dados desatualizados, considere atualizar" : ""}
       </div>
 
@@ -420,7 +420,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
                     campanha dele não teve investimento neste período.
                   </div>
                   {items.length > 0 && items.every((i) => i.dailyBudget === 0 && i.roasTarget === 0) && (
-                    <div style={{ marginTop: 8, color: "#F4B942" }}>
+                    <div style={{ marginTop: 8, color: "var(--warning)" }}>
                       <b>Orç/dia e ROAS alvo vieram vazios em todos os anúncios</b>
                       {campanhasEncontradas === 0 ? " — nenhuma campanha com investimento neste período foi encontrada" : ` (${campanhasEncontradas} campanha(s) com investimento encontrada(s), mas sem cruzar com os anúncios)`}.
                       Abra &quot;Diagnóstico de configuração&quot; abaixo — se nenhuma URL responder 200, é o endpoint que mudou, não o nome do campo.
@@ -445,7 +445,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
                         </div>
                       )}
                       {!!cfgAmostra?.campanhaOrfa && (
-                        <div style={{ marginTop: 8, fontSize: ".7rem", color: "#F4B942" }}>
+                        <div style={{ marginTop: 8, fontSize: ".7rem", color: "var(--warning)" }}>
                           Campanha que faltava na lista, recuperada pelo id:
                           <pre style={{ marginTop: 4, whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: ".7rem", maxHeight: 240, overflow: "auto" }}>
                             {JSON.stringify(cfgAmostra.campanhaOrfa, null, 2)}
@@ -465,7 +465,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
                         Todas as campanhas da conta ({campanhasTotal}{anunciosContagemFalhou ? "" : `, ${anunciosTotal} anúncio(s) cadastrado(s)`}) — conferir se nada sumiu da tabela
                       </summary>
                       {anunciosContagemFalhou ? (
-                        <div style={{ marginTop: 6, fontSize: ".7rem", color: "#F4B942" }}>
+                        <div style={{ marginTop: 6, fontSize: ".7rem", color: "var(--warning)" }}>
                           Não conseguimos contar os anúncios cadastrados por campanha. O gasto por campanha continua confiável,
                           só a contagem total de anúncios que falhou.
                         </div>
@@ -500,7 +500,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
                         </table>
                       </div>
                       {(gastoOrfao > 0 || gastoSemVinculo > 0) && (
-                        <div style={{ marginTop: 6, fontSize: ".7rem", color: "#F4B942" }}>
+                        <div style={{ marginTop: 6, fontSize: ".7rem", color: "var(--warning)" }}>
                           <b>{fmtBRL(gastoOrfao + gastoSemVinculo)} de investimento não caiu em nenhuma campanha desta lista</b> —
                           por isso a soma da coluna &quot;Gasto no período&quot; fica menor que o Investimento do topo ({fmtBRL(t.cost)}).
                           {gastoOrfao > 0 && <> {fmtBRL(gastoOrfao)} são de anúncios com campanha que o ML não devolveu

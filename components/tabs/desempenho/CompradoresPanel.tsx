@@ -62,7 +62,7 @@ export default function CompradoresPanel({
           {historicoIncompleto && (
             <div style={{
               marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: ".76rem", lineHeight: 1.5,
-              background: "rgba(244,185,66,.1)", border: "1px solid rgba(244,185,66,.35)", color: "#F4B942",
+              background: "var(--warning-soft)", border: "1px solid rgba(255,138,31,.35)", color: "var(--warning)",
             }}>
               O pedido mais antigo que temos sincronizado é de {historicoDesde ? fmtDataBR(historicoDesde) : "—"},
               já dentro (ou perto) do início do período. Sem pedido de antes pra comparar, ninguém consegue ser

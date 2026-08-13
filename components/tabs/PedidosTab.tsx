@@ -168,7 +168,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
           nota: `margem de ${p.margem.toFixed(1)}% sobre a venda`,
         })}
         {!p.vinculado && (
-          <div style={{ marginTop: 8, fontSize: ".74rem", color: "#F4B942", lineHeight: 1.5 }}>
+          <div style={{ marginTop: 8, fontSize: ".74rem", color: "var(--warning)", lineHeight: 1.5 }}>
             Produto sem cadastro no Estoque: o custo entra como zero, então esse
             lucro está <b>maior do que o real</b>.
           </div>
@@ -202,7 +202,7 @@ function DetalhePedido({ pedido: p }: { pedido: Pedido }) {
                   </span>
                 </div>
                 {!it.vinculado && (
-                  <div style={{ fontSize: ".68rem", color: "#F4B942" }}>sem cadastro no Estoque — custo entra como zero, margem real é menor</div>
+                  <div style={{ fontSize: ".68rem", color: "var(--warning)" }}>sem cadastro no Estoque — custo entra como zero, margem real é menor</div>
                 )}
                 <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>
                   venda {fmtBRL(it.valor)} · taxa {fmtBRL(it.taxaML)} · frete {fmtBRL(it.envio)} ·
@@ -680,7 +680,7 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
                   <tr key={r.mlb || r.produto} style={{ boxShadow: `inset 3px 0 0 ${r.lucro >= 0 ? "var(--green)" : "var(--red)"}` }}>
                     <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       <span style={{ fontWeight: 600 }} title={r.produto}>{r.produto}</span>
-                      {r.semCadastro && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                      {r.semCadastro && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--warning)", background: "var(--warning-soft)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
                       {r.mlb && <span style={{ display: "block", fontSize: ".66rem", color: "var(--muted)" }}>{r.mlb}</span>}
                     </td>
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{r.nVendas}</td>
@@ -775,7 +775,7 @@ export default function PedidosTab({ metaMargem = 10, openOrderId }: { metaMarge
                       </td>
                       <td style={{ textAlign: "left", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         <span style={{ fontWeight: 600 }} title={p.produto}>{p.produto || "—"}</span>
-                        {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "#F4B942", background: "rgba(244,185,66,.12)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
+                        {!p.vinculado && <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--warning)", background: "var(--warning-soft)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>SEM CADASTRO</span>}
                         {(p.itens?.length ?? 0) > 1 && (
                           <span style={{ marginLeft: 6, fontSize: ".6rem", fontWeight: 700, color: "var(--accent)", background: "rgba(233,169,45,.14)", padding: "1px 6px", borderRadius: 5, verticalAlign: "middle" }}>
                             {p.itens?.length} PRODUTOS

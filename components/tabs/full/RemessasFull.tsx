@@ -218,7 +218,7 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
                             ? <span style={{ color: "var(--green)" }}>✓ já baixado: {movExistente.quantidade} un</span>
                             : p.productId
                               ? <>ML recebeu {p.qtd} un{dif !== 0 && (
-                                  <span style={{ color: "#F4B942", fontWeight: 600 }}>
+                                  <span style={{ color: "var(--warning)", fontWeight: 600 }}>
                                     {" · "}{dif > 0 ? `+${dif}` : dif} a mais que o recebido
                                   </span>
                                 )}</>
@@ -232,7 +232,7 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
                         style={{
                           width: 84, fontSize: 16, textAlign: "right", padding: "7px 9px",
                           background: p.productId ? "var(--surface)" : "transparent",
-                          border: `1px solid ${dif !== 0 && !movExistente && p.productId ? "rgba(244,185,66,.5)" : "var(--border)"}`,
+                          border: `1px solid ${dif !== 0 && !movExistente && p.productId ? "rgba(255,138,31,.5)" : "var(--border)"}`,
                           borderRadius: 8, color: "var(--text)", outline: "none",
                         }}
                         value={valor}
@@ -245,8 +245,8 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
 
                 {!!semCadastro.length && (
                   <div style={{
-                    fontSize: ".75rem", color: "#F4B942", marginTop: 10, padding: "7px 10px",
-                    background: "rgba(244,185,66,.1)", borderRadius: 8, lineHeight: 1.5,
+                    fontSize: ".75rem", color: "var(--warning)", marginTop: 10, padding: "7px 10px",
+                    background: "var(--warning-soft)", borderRadius: 8, lineHeight: 1.5,
                   }}>
                     {semCadastro.length === 1 ? "Um produto desta remessa não está" : `${semCadastro.length} produtos desta remessa não estão`}
                     {" "}no Estoque. A baixa vai cobrir só o resto.

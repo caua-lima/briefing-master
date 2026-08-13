@@ -85,7 +85,7 @@ export default function AdDetailDrawer({
           <Linha label="Break-even ROAS" valor={l.breakEven != null ? `${num(l.breakEven, 2)}x` : "sem lucro antes de Ads pra calcular"} />
           <Linha label={pub ? "ACOS" : "TACOS"} valor={l.v > 0 ? `${num(l.a, 1)}%` : "—"} cor={corAcos(l.a, l.v > 0)} />
           {!l.i.diretoDisponivel && pub && (
-            <div style={{ marginTop: 6, fontSize: ".72rem", color: "#F4B942" }}>
+            <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--warning)" }}>
               Estimado/incompleto: sem venda vinculada no período pra calcular a margem do lucro direto.
             </div>
           )}

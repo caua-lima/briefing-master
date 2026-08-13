@@ -24,9 +24,9 @@ export function AdsStatusQuickFilters({
 }) {
   const STATUS_META_LOCAL: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {
     ativo: { label: "Ativa", cor: "var(--green)", bg: "rgba(54,179,126,.12)" },
-    pausado: { label: "Pausada", cor: "#F4B942", bg: "rgba(244,185,66,.12)" },
+    pausado: { label: "Pausada", cor: "var(--warning)", bg: "var(--warning-soft)" },
     sem_campanha: { label: "Sem campanha", cor: "var(--muted)", bg: "rgba(185,181,166,.14)" },
-    config_indisponivel: { label: "Campanha ?", cor: "#F4B942", bg: "rgba(244,185,66,.12)" },
+    config_indisponivel: { label: "Campanha ?", cor: "var(--warning)", bg: "var(--warning-soft)" },
   };
   if (items.length === 0) return null;
   return (

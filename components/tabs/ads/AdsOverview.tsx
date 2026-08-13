@@ -47,7 +47,7 @@ function Kpi({
         <div style={{ marginTop: 4 }}><DeltaTag c={comparacao} positivoEhBom={positivoEhBom} /></div>
       )}
       {confiabilidade && confiabilidade !== "confirmado" && (
-        <div style={{ marginTop: 3, fontSize: ".64rem", color: "#F4B942", fontWeight: 600 }}>
+        <div style={{ marginTop: 3, fontSize: ".64rem", color: "var(--warning)", fontWeight: 600 }}>
           {confiabilidade === "estimado" ? "estimado" : "dado incompleto"}
         </div>
       )}
