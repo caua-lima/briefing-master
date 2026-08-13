@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+/* ── Hierarquia de marca ────────────────────────────────────────────────
+   ZXP Solutions (matriz) > VAZXPRESS (a loja/operação) > ZXP Market (este
+   dashboard). O Market é ferramenta interna da matriz pra operar dados da
+   VAZXPRESS — por isso herda a identidade da ZXP Solutions (onyx+dourado+
+   marfim), não a da loja (navy+laranja). O laranja da VAZXPRESS aparece aqui
+   só como sinal FUNCIONAL de "isso é sobre a operação da loja" (ruptura de
+   estoque, ACOS estourando, item que precisa de atenção) — nunca como cor de
+   marca/CTA. Essa é a distinção semântica: dourado = a marca agindo,
+   laranja = atenção operacional vinda dos dados da VAZXPRESS. */
+:root{
+  /* Tokens de marca — fonte única de verdade, nomeados como no guia de marca. */
+  --color-onyx:#10100E;
+  --color-gold:#F4B942;
+  --color-ivory:#F6F3E8;
+  --color-alert-operational:#FF8A1F; /* laranja VAZXPRESS — só alerta operacional, nunca decoração/CTA */
+}
+
 /* ── Paleta Onyx Gold ──────────────────────────────────────────────────
    Identidade autoral: preto carvão + dourado assinatura + marfim quente.
    O dourado #F4B942 é a cor da MARCA — deliberadamente mais fechado que o
@@ -9,20 +26,27 @@
    Regra de uso: quase tudo neutro; dourado só no Z, no CTA, no item ativo
    da sidebar, no foco e no KPI principal. Card amarelo, nunca. */
 :root{
-  --bg:#10100E;              /* fundo principal — onyx */
+  --bg:var(--color-onyx);    /* fundo principal — onyx. Nunca #000 puro. */
   --sidebar:#181814;         /* carvão */
   --surface:#22221C;         /* cards — grafite quente */
   --surface2:#2D2C22;        /* hover / card ativo — oliva escuro */
   --border:#3B392A;          /* bordas — bronze escuro */
-  --text:#F6F3E8;            /* texto principal — marfim */
+  --text:var(--color-ivory); /* texto principal — marfim. Nunca #fff puro. */
   --muted:#B9B5A6;           /* texto secundário — cinza quente */
-  /* --brand = cor do Z / da marca. --accent = CTA. --focus = foco e links. */
-  --brand:#F4B942;
-  --accent:#E9A92D;--accent-hover:#C98218;--accent-glow:rgba(233,169,45,0.22);
+  /* --brand = cor do Z / da marca / CTA. --accent = alias de --brand, mantido
+     por compatibilidade com dezenas de componentes que já usam esse nome —
+     antes apontava pra um dourado mais escuro (#E9A92D), uma segunda
+     tonalidade de "ação" competindo com a marca; agora os dois são a MESMA
+     cor. --accent-hover continua mais escuro, só pro estado de :hover. */
+  --brand:var(--color-gold);
+  --accent:var(--color-gold);--accent-hover:#C98218;--accent-glow:rgba(244,185,66,0.22);
   --focus:#FFD76A;--focus-bg:rgba(255,215,106,0.14);
   --green:#36B37E;--green-bg:rgba(54,179,126,0.12);
   --red:#D65A4A;--red-bg:rgba(214,90,74,0.12);
-  --yellow:#F4B942;--purple:#9B6BCE;
+  /* --yellow segue dourado (usado em destaques decorativos: cards de meta,
+     barras de progresso). Onde o significado é "atenção operacional" de
+     verdade, os componentes usam --warning (laranja), não este. */
+  --yellow:var(--color-gold);--purple:#9B6BCE;
   --info:#5B8DEF;            /* azul aço — informação / série de pedidos */
   --meli:#FFE600;            /* amarelo ML: SÓ pra marcar origem/integração */
   --radius:12px;--shadow:0 4px 24px rgba(0,0,0,0.55);
@@ -50,7 +74,11 @@
   --brand-soft:rgba(244,185,66,0.12);
 
   --success:#3CCB83;--success-soft:rgba(60,203,131,0.12);
-  --warning:#F2A93B;--warning-soft:rgba(242,169,59,0.12);
+  /* --warning = laranja operacional da VAZXPRESS (#FF8A1F), não um amber
+     genérico — é o token que a Central de Atenção, ruptura de estoque e
+     ACOS/TACOS estourando usam. Calibrado pra não se confundir com --danger
+     (vermelho-coral, --red) nem com o dourado da marca. */
+  --warning:var(--color-alert-operational);--warning-soft:rgba(255,138,31,0.12);
   --danger:#EF6658;--danger-soft:rgba(239,102,88,0.12);
   --info-2:#6E9DF8;--info-2-soft:rgba(110,157,248,0.12);
 
@@ -98,7 +126,7 @@ header p{color:var(--muted);font-size:.9rem;margin-top:4px}
 /* Tabs */
 .tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:24px;flex-wrap:wrap}
 .tab-btn{padding:8px 18px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-size:.88rem;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap}
-.tab-btn.active{background:var(--accent);color:#10100E}
+.tab-btn.active{background:var(--accent);color:var(--bg)}
 .tab-btn:not(.active):hover{background:var(--surface2);color:var(--text)}
 
 /* Modals */
@@ -126,17 +154,17 @@ header p{color:var(--muted);font-size:.9rem;margin-top:4px}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:8px;border:none;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .18s}
-.btn-primary{background:var(--accent);color:#10100E}
-.btn-primary:hover{background:var(--accent-hover);color:#10100E;transform:translateY(-1px)}
-.btn-success{background:var(--green);color:#10100E}
+.btn-primary{background:var(--accent);color:var(--bg)}
+.btn-primary:hover{background:var(--accent-hover);color:var(--bg);transform:translateY(-1px)}
+.btn-success{background:var(--green);color:var(--bg)}
 .btn-success:hover{background:#2A9367;transform:translateY(-1px)}
 .btn-danger{background:transparent;border:1px solid var(--red);color:var(--red)}
 .btn-danger:hover{background:var(--red-bg)}
 .btn-ghost{background:var(--surface2);border:1px solid var(--border);color:var(--text)}
 .btn-ghost:hover{background:var(--border)}
-.btn-warning{background:var(--yellow);color:#000;font-weight:700}
-.btn-warning:hover{background:#C98218}
-.btn-purple{background:var(--purple);color:#fff}
+.btn-warning{background:var(--warning);color:var(--bg);font-weight:700}
+.btn-warning:hover{background:#DB7714}
+.btn-purple{background:var(--purple);color:var(--text)}
 .btn-purple:hover{background:#7E52A8}
 .btn-sm{padding:6px 14px;font-size:.82rem}
 .btn-xs{padding:4px 10px;font-size:.75rem}
@@ -234,7 +262,7 @@ tbody td{padding:11px 13px;white-space:nowrap}
 .pbar-wrap{position:relative;height:14px;border-radius:99px;overflow:hidden;background:var(--surface2);border:1px solid var(--border)}
 .pbar-ghost{position:absolute;left:0;top:0;height:100%;border-radius:99px;background:rgba(255,255,255,.13)}
 .pbar-fill{position:absolute;left:0;top:0;height:100%;border-radius:99px;transition:width .5s ease}
-.pbar-label{position:absolute;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.7);white-space:nowrap}
+.pbar-label{position:absolute;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--text);text-shadow:0 1px 3px rgba(0,0,0,.7);white-space:nowrap}
 .fill-blue{background:linear-gradient(90deg,#E9A92D,#FFD76A)}
 .fill-yellow{background:linear-gradient(90deg,var(--yellow),#F4B942)}
 .fill-purple{background:linear-gradient(90deg,var(--purple),#F4B942)}
@@ -253,7 +281,7 @@ tbody td{padding:11px 13px;white-space:nowrap}
 .pill{padding:3px 10px;border-radius:20px;font-size:.78rem;font-weight:600;background:var(--surface2);border:1px solid var(--border)}
 .pill-green{background:var(--green-bg);border-color:var(--green);color:var(--green)}
 .pill-red{background:var(--red-bg);border-color:var(--red);color:var(--red)}
-.pill-yellow{background:rgba(244,185,66,.12);border-color:var(--yellow);color:var(--yellow)}
+.pill-yellow{background:var(--warning-soft);border-color:var(--warning);color:var(--warning)}
 .history-day-actions{display:flex;gap:6px;align-items:center}
 .chevron{display:inline-block;transition:transform .2s;color:var(--muted);font-size:.8rem}
 .history-day.open .chevron{transform:rotate(180deg)}
@@ -356,7 +384,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .kpi.k-pos::before{background:linear-gradient(180deg,var(--green),#36B37E)}
 .kpi.k-neg::before{background:linear-gradient(180deg,var(--red),#E68B7E)}
 .kpi.k-acc::before{background:linear-gradient(180deg,var(--accent),#F4B942)}
-.kpi.k-warn::before{background:linear-gradient(180deg,var(--yellow),#F4B942)}
+.kpi.k-warn::before{background:linear-gradient(180deg,var(--warning),#FF8A1F)}
 .kpi .k-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px;font-weight:500}
 /* Sora 30px/700 nos números — é o elemento que o vendedor lê primeiro, e o
    contraste de escala contra o rótulo (11px) é o que dá o ar "premium"
@@ -402,7 +430,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .tbl-modern th:first-child,.tbl-modern td:first-child{box-shadow:1px 0 0 var(--border)}
 .tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:800}
 .tag-g{background:var(--green-bg);color:var(--green)}
-.tag-y{background:rgba(244,185,66,.14);color:var(--yellow)}
+.tag-y{background:var(--warning-soft);color:var(--warning)}
 .tag-r{background:var(--red-bg);color:var(--red)}
 
 /* daily goal bar */
@@ -539,7 +567,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .drp-day.muted{cursor:default;pointer-events:none}
 .drp-day.today{box-shadow:inset 0 0 0 1px var(--border)}
 .drp-day.in{background:var(--focus-bg);color:var(--text);border-radius:0}
-.drp-day.edge{background:var(--brand);color:#10100E;border-radius:7px;font-weight:700;box-shadow:none}
+.drp-day.edge{background:var(--brand);color:var(--bg);border-radius:7px;font-weight:700;box-shadow:none}
 .drp-nav{position:absolute;top:-2px;background:var(--surface2);border:1px solid var(--border);color:var(--text);width:26px;height:26px;border-radius:7px;cursor:pointer;font-size:1rem;line-height:1;display:flex;align-items:center;justify-content:center;transition:background .15s}
 .drp-nav:hover{background:var(--border)}
 .drp-nav-prev{left:0}
@@ -595,8 +623,8 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .note b,.note strong{color:var(--text);font-weight:700}
 .note-accent{background:rgba(233,169,45,.06);border-color:rgba(233,169,45,.22)}
 .note-purple{background:rgba(244,185,66,.07);border-color:rgba(244,185,66,.24)}
-.note-warn{background:rgba(244,185,66,.09);border-color:rgba(244,185,66,.34);color:#F4B942}
-.note-warn b,.note-warn strong{color:#F4B942}
+.note-warn{background:var(--warning-soft);border-color:rgba(255,138,31,.4);color:var(--warning)}
+.note-warn b,.note-warn strong{color:var(--warning)}
 .note-danger{background:rgba(214,90,74,.08);border-color:rgba(214,90,74,.32);color:#E68B7E}
 
 /* ---- Estado vazio ---- */
@@ -616,7 +644,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .chip-muted{background:var(--surface2);border-color:var(--border);color:var(--muted)}
 .chip-accent{background:rgba(233,169,45,.14);border-color:var(--accent);color:var(--accent)}
 .chip-green{background:var(--green-bg);border-color:var(--green);color:var(--green)}
-.chip-yellow{background:rgba(244,185,66,.14);border-color:var(--yellow);color:var(--yellow)}
+.chip-yellow{background:var(--warning-soft);border-color:var(--warning);color:var(--warning)}
 .chip-purple{background:rgba(244,185,66,.16);border-color:var(--purple);color:var(--purple)}
 .chip-red{background:var(--red-bg);border-color:var(--red);color:var(--red)}
 
@@ -896,7 +924,7 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .ac-sub{font-size:.78rem;color:var(--text-secondary);margin-top:2px}
 .ac-filters{display:flex;gap:4px;background:var(--surface-raised);border:1px solid var(--border);border-radius:10px;padding:3px}
 .ac-filter-btn{padding:5px 12px;border-radius:7px;border:none;background:transparent;color:var(--text-secondary);font-size:.78rem;font-weight:600;cursor:pointer;transition:background var(--transition-fast,150ms ease),color var(--transition-fast,150ms ease)}
-.ac-filter-btn.active{background:var(--brand);color:#10100E}
+.ac-filter-btn.active{background:var(--brand);color:var(--bg)}
 .ac-filter-btn:not(.active):hover{background:var(--surface-hover);color:var(--text-primary)}
 .ac-filter-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 
@@ -945,7 +973,7 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .dash-greeting-title{font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--text-primary,var(--text))}
 .dash-greeting-date{font-size:.8rem;color:var(--text-secondary,var(--muted));margin-top:1px}
 .dash-greeting-date::first-letter{text-transform:uppercase}
-.dash-parcial-badge{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;color:var(--warning,var(--yellow));background:var(--warning-soft,rgba(242,169,59,.12));border:1px solid rgba(242,169,59,.3);padding:5px 12px;border-radius:8px;white-space:nowrap}
+.dash-parcial-badge{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;color:var(--warning);background:var(--warning-soft);border:1px solid rgba(255,138,31,.3);padding:5px 12px;border-radius:8px;white-space:nowrap}
 
 .dash-spinner{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:currentColor;animation:dashSpin .7s linear infinite;vertical-align:-1px}
 @keyframes dashSpin{to{transform:rotate(360deg)}}
@@ -1015,7 +1043,7 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
    .drawer-panel do detalhe de pedido)
    ========================================================================= */
 .notif-bell{position:relative}
-.notif-bell-dot{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:var(--danger);color:#fff;font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1;border:1.5px solid var(--surface)}
+.notif-bell-dot{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:var(--danger);color:var(--text);font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1;border:1.5px solid var(--surface)}
 .notif-tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--border)}
 .notif-tab{padding:8px 12px;border-radius:8px 8px 0 0;border:none;background:transparent;color:var(--text-secondary,var(--muted));font-size:.82rem;font-weight:600;cursor:pointer}
 .notif-tab.active{color:var(--text-primary,var(--text));background:var(--surface-hover,var(--surface2))}
