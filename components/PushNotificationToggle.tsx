@@ -162,7 +162,7 @@ export function PushNotificationToggle() {
         <button
           type="button"
           className="btn btn-ghost btn-xs"
-          onClick={() => setMenuAberto((v) => !v)}
+          onClick={() => setMenuAberto(true)}
           disabled={!!enviando}
           title="Testar notificação e configurações"
           aria-label="Mais ações de notificação"
@@ -170,75 +170,66 @@ export function PushNotificationToggle() {
         >
           {enviando ? "…" : "⋯"}
         </button>
+      </div>
 
-        {menuAberto && (
-          <div
-            role="menu"
-            style={{
-              position: "absolute", top: "100%", right: 0, marginTop: 6, width: 240,
-              background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8,
-              boxShadow: "var(--shadow)", zIndex: 30, overflow: "hidden",
-            }}
-          >
+      {/* Modal em vez de dropdown ancorado no botão: no celular, a barra de
+          ações do topo tem overflow-x:auto (pra poder rolar quando não cabe
+          tudo) — e por regra do CSS, definir overflow só num eixo faz o
+          navegador cortar o outro eixo também (overflow-y vira "auto"
+          escondido). O menu abria, mas ficava CORTADO pelo container,
+          invisível mesmo estando no DOM. Modal usa position:fixed, que
+          escapa desse corte. */}
+      {menuAberto && (
+        <Modal open onClose={() => setMenuAberto(false)}>
+          <div className="modal-title">Notificações</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
             <button
               type="button"
-              role="menuitem"
               onClick={() => testarCenario("sale_paid")}
               disabled={!!enviando}
-              style={{
-                display: "block", width: "100%", textAlign: "left", padding: "10px 12px",
-                background: "var(--warning-soft)", border: "none", borderBottom: "1px solid var(--border)",
-                color: "var(--warning)", fontSize: ".84rem", fontWeight: 700,
-                cursor: enviando ? "not-allowed" : "pointer", opacity: enviando ? 0.6 : 1,
-              }}
+              className="btn btn-warning"
+              style={{ justifyContent: "flex-start" }}
             >
               {enviando === "sale_paid" ? "Enviando…" : "🔔 Testar agora"}
             </button>
             {status !== "on" && (
-              <div style={{ padding: "8px 12px 0", fontSize: ".7rem", color: "var(--warning)", lineHeight: 1.4 }}>
+              <div style={{ fontSize: ".76rem", color: "var(--warning)", lineHeight: 1.4 }}>
                 Este aparelho ainda não está com notificações ativas — o teste roda mesmo assim
                 e mostra o motivo exato se não chegar.
               </div>
             )}
-            <div style={{ padding: "8px 12px 4px", fontSize: ".68rem", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)" }}>
+
+            <div style={{ fontSize: ".7rem", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)", marginTop: 8 }}>
               Outros cenários
             </div>
             {CENARIOS.map((c) => (
               <button
                 key={c.id}
                 type="button"
-                role="menuitem"
                 onClick={() => testarCenario(c.id)}
                 disabled={!!enviando}
-                style={{
-                  display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
-                  background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem",
-                  cursor: enviando ? "not-allowed" : "pointer", opacity: enviando ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                className="btn btn-ghost"
+                style={{ justifyContent: "flex-start" }}
               >
                 {enviando === c.id ? "Enviando…" : c.label}
               </button>
             ))}
-            <div style={{ borderTop: "1px solid var(--border)" }} />
+
+            <hr className="config-sep" style={{ margin: "4px 0" }} />
             <button
               type="button"
-              role="menuitem"
               onClick={() => { setMenuAberto(false); setSettingsOpen(true); }}
-              style={{
-                display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
-                background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem", fontWeight: 600, cursor: "pointer",
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+              className="btn btn-ghost"
+              style={{ justifyContent: "flex-start" }}
             >
               ⚙ Configurações
             </button>
           </div>
-        )}
-
-      </div>
+          <div className="modal-btns">
+            <button type="button" className="btn btn-ghost" onClick={() => setMenuAberto(false)}>Fechar</button>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal em vez de caixinha flutuante perto do botão: no celular, com a
           barra de topo lotada, uma caixinha ancorada no botão facilmente saía
