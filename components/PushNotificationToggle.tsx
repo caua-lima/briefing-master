@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { disablePushNotifications, enablePushNotifications, getPushStatus } from "@/lib/firebase/push";
 import NotificationSettings from "@/components/NotificationSettings";
+import Modal from "@/components/Modal";
 
 const CENARIOS: { id: string; label: string }[] = [
   { id: "sale_paid", label: "Venda padrão" },
@@ -98,7 +99,10 @@ export function PushNotificationToggle() {
       setResultado({ ok: false, scenario, error: err instanceof Error ? err.message : "Falha ao enviar" });
     } finally {
       setEnviando(null);
-      setTimeout(() => setResultado(null), 12000);
+      // Sem auto-fechar: agora é um Modal de verdade (não a caixinha
+      // flutuante de antes, que sumia sozinha em 12s e podia levar o usuário
+      // a achar que "não apareceu nada" quando na real só piscou rápido
+      // demais). Fecha só quando o usuário tocar em "Fechar".
     }
   }
 
@@ -176,34 +180,48 @@ export function PushNotificationToggle() {
               boxShadow: "var(--shadow)", zIndex: 30, overflow: "hidden",
             }}
           >
-            {status === "on" ? (
-              <>
-                <div style={{ padding: "8px 12px 4px", fontSize: ".68rem", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)" }}>
-                  Testar cenário
-                </div>
-                {CENARIOS.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => testarCenario(c.id)}
-                    style={{
-                      display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
-                      background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem", cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-                <div style={{ borderTop: "1px solid var(--border)" }} />
-              </>
-            ) : (
-              <div style={{ padding: "8px 12px", fontSize: ".76rem", color: "var(--muted)" }}>
-                Ative as notificações neste aparelho pra testar um cenário.
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => testarCenario("sale_paid")}
+              disabled={!!enviando}
+              style={{
+                display: "block", width: "100%", textAlign: "left", padding: "10px 12px",
+                background: "var(--warning-soft)", border: "none", borderBottom: "1px solid var(--border)",
+                color: "var(--warning)", fontSize: ".84rem", fontWeight: 700,
+                cursor: enviando ? "not-allowed" : "pointer", opacity: enviando ? 0.6 : 1,
+              }}
+            >
+              {enviando === "sale_paid" ? "Enviando…" : "🔔 Testar agora"}
+            </button>
+            {status !== "on" && (
+              <div style={{ padding: "8px 12px 0", fontSize: ".7rem", color: "var(--warning)", lineHeight: 1.4 }}>
+                Este aparelho ainda não está com notificações ativas — o teste roda mesmo assim
+                e mostra o motivo exato se não chegar.
               </div>
             )}
+            <div style={{ padding: "8px 12px 4px", fontSize: ".68rem", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)" }}>
+              Outros cenários
+            </div>
+            {CENARIOS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="menuitem"
+                onClick={() => testarCenario(c.id)}
+                disabled={!!enviando}
+                style={{
+                  display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                  background: "transparent", border: "none", color: "var(--text)", fontSize: ".82rem",
+                  cursor: enviando ? "not-allowed" : "pointer", opacity: enviando ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+              >
+                {enviando === c.id ? "Enviando…" : c.label}
+              </button>
+            ))}
+            <div style={{ borderTop: "1px solid var(--border)" }} />
             <button
               type="button"
               role="menuitem"
@@ -220,32 +238,55 @@ export function PushNotificationToggle() {
           </div>
         )}
 
-        {resultado && (
-          <div
-            style={{
-              position: "absolute", top: "100%", right: 0, marginTop: 6, fontSize: ".72rem",
-              width: 260, textAlign: "left", background: "var(--surface)", border: "1px solid var(--border)",
-              borderRadius: 8, padding: "10px 12px", zIndex: 20, lineHeight: 1.5,
-            }}
-          >
-            {resultado.ok ? (
-              <>
-                <div style={{ fontWeight: 700, color: "var(--green)" }}>Evento criado</div>
-                <div style={{ color: "var(--muted)" }}>{resultado.title}</div>
-                <div style={{ marginTop: 4 }}>
-                  {resultado.enviados && resultado.enviados > 0
-                    ? <span style={{ color: "var(--green)" }}>Push enviado a {resultado.enviados} dispositivo(s)</span>
-                    : <span style={{ color: "var(--yellow)" }}>{resultado.bloqueioMotivo || "Nenhum dispositivo recebeu"}</span>}
-                </div>
-                {resultado.horario && <div style={{ color: "var(--muted)", marginTop: 2 }}>{new Date(resultado.horario).toLocaleTimeString("pt-BR")}</div>}
-                <div style={{ color: "var(--muted)", marginTop: 4, fontStyle: "italic" }}>Se o app estiver em foreground, o toast deve ter aparecido no canto da tela.</div>
-              </>
-            ) : (
-              <div style={{ color: "var(--red)" }}>Falha ao enviar: {resultado.error}</div>
-            )}
-          </div>
-        )}
       </div>
+
+      {/* Modal em vez de caixinha flutuante perto do botão: no celular, com a
+          barra de topo lotada, uma caixinha ancorada no botão facilmente saía
+          da tela ou ficava atrás de outro elemento — resultado do teste
+          parecia "não aparece nada" mesmo quando o servidor respondeu certo. */}
+      {resultado && (
+        <Modal open onClose={() => setResultado(null)}>
+          <div className="modal-title">{resultado.ok ? "Teste de notificação" : "Falha no teste"}</div>
+          {resultado.ok ? (
+            <div style={{ fontSize: ".88rem", lineHeight: 1.6 }}>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontWeight: 700 }}>{resultado.title}</div>
+                <div style={{ color: "var(--muted)" }}>{resultado.body}</div>
+              </div>
+              <div style={{
+                padding: "10px 12px", borderRadius: 8, marginBottom: 10,
+                background: resultado.enviados && resultado.enviados > 0 ? "var(--success-soft,rgba(60,203,131,.12))" : "var(--warning-soft)",
+                border: `1px solid ${resultado.enviados && resultado.enviados > 0 ? "rgba(60,203,131,.35)" : "rgba(255,138,31,.35)"}`,
+                color: resultado.enviados && resultado.enviados > 0 ? "var(--success,var(--green))" : "var(--warning)",
+                fontWeight: 600,
+              }}>
+                {resultado.enviados && resultado.enviados > 0
+                  ? `Push enviado a ${resultado.enviados} dispositivo(s) registrado(s) neste e-mail.`
+                  : (resultado.bloqueioMotivo || "Nenhum dispositivo seu está registrado pra receber.")}
+              </div>
+              {resultado.enviados && resultado.enviados > 0 ? (
+                <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>
+                  O servidor confirmou o envio. Se mesmo assim não apareceu nada no celular em alguns
+                  segundos, o problema está entre o Firebase e o sistema operacional — normalmente resolve
+                  reinstalando o app (remova da tela inicial e adicione de novo) ou conferindo se a permissão
+                  de notificação do site/app ainda está em &quot;Permitir&quot; nas configurações do aparelho.
+                </div>
+              ) : (
+                <div style={{ color: "var(--muted)", fontSize: ".82rem" }}>
+                  Toque no ícone 📱 pra ativar notificações neste aparelho — isso registra um token novo.
+                  Depois repita o teste.
+                </div>
+              )}
+              {resultado.horario && <div style={{ color: "var(--muted)", fontSize: ".76rem", marginTop: 8 }}>{new Date(resultado.horario).toLocaleTimeString("pt-BR")}</div>}
+            </div>
+          ) : (
+            <div style={{ fontSize: ".88rem", color: "var(--red)", lineHeight: 1.6 }}>Falha ao enviar: {resultado.error}</div>
+          )}
+          <div className="modal-btns">
+            <button type="button" className="btn btn-ghost" onClick={() => setResultado(null)}>Fechar</button>
+          </div>
+        </Modal>
+      )}
 
       <NotificationSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
