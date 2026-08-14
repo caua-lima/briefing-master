@@ -19,7 +19,6 @@ import {
   CUSTO_FAIXA_SENTINELA,
   type AccessEntry,
   type AdsAlteracao,
-  type ArchivedDay,
   type AuditAction,
   type AuditEntity,
   type AuditEvent,
@@ -99,28 +98,6 @@ export function watchDraft(
   return onSnapshot(sDoc("rascunho", "hoje"), (snap) => {
     cb(snap.exists() ? (snap.data() as DraftToday) : null);
   });
-}
-
-// ── Archived days ─────────────────────────────────────────────
-export async function archiveDay(_uid: string, day: ArchivedDay) {
-  const email = getCurrentUserEmail();
-  await setDoc(sDoc("dias", day.date), { ...day, createdBy: email });
-}
-
-export async function deleteDay(_uid: string, date: string) {
-  await deleteDoc(sDoc("dias", date));
-}
-
-export function watchDays(
-  _uid: string,
-  cb: (days: ArchivedDay[]) => void,
-): () => void {
-  return onSnapshot(
-    query(sCol("dias"), orderBy("date", "desc")),
-    (snap) => {
-      cb(snap.docs.map((d) => d.data() as ArchivedDay));
-    },
-  );
 }
 
 // ── Goals (legacy single-doc) ─────────────────────────────────
@@ -387,7 +364,16 @@ export async function saveFinanceiroSaidas(saidas: SaidaFin[]): Promise<void> {
 const TASK_COL = "tarefas";
 
 export function watchTasks(cb: (tasks: Task[]) => void): () => void {
-  return onSnapshot(query(sCol(TASK_COL), orderBy("createdAt", "desc")), (snap) => {
+  // limit(500) — sem teto, essa era a última coleção do time (compartilhada,
+  // vista por todo mundo) sem limit() num listener global. Achado ao investigar
+  // a cota do Firestore esgotando TODO DIA: watchTasks roda em DOIS lugares ao
+  // mesmo tempo sempre que o app está aberto — Dashboard.tsx (pro card de
+  // tarefas atrasadas) e TarefasTab.tsx (o Kanban) — cada aba/dispositivo aberto
+  // de cada pessoa do time reabre esse listener inteiro a cada mudança em
+  // QUALQUER tarefa, de QUALQUER pessoa. Sem teto, o custo só cresce conforme o
+  // quadro acumula tarefas concluídas ao longo dos meses.
+  const q = query(sCol(TASK_COL), orderBy("createdAt", "desc"), limit(500));
+  return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => d.data() as Task));
   });
 }
