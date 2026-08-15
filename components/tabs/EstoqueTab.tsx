@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
 import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
@@ -337,6 +337,10 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           </button>
         </div>
       )}
+
+      {/* Vinculacao automatica: so casamento EXATO de SKU, que nao tem
+          ambiguidade. Aproximado continua exigindo seu aval no modal. */}
+      {canEdit && <AutoVincularSku uid={uid} produtos={data.products} />}
 
       {/* Busca */}
       <input
@@ -1488,5 +1492,72 @@ function ImpostoMassaModal({ uid, produtos, escopoBusca, onClose }: {
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={salvando}>Cancelar</button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Vinculação automática produto → anúncio por SKU.
+ *
+ * A rota /api/ml/vincular-sku já separava casamento EXATO de APROXIMADO — o
+ * exato já vinha pré-marcado no modal, e a única coisa que faltava era
+ * alguém abrir a tela e confirmar. Isso significava que produto novo ficava
+ * sem anúncio por dias sem ninguém perceber, e venda de produto sem vínculo
+ * entra no lucro com CMV zero (infla a margem).
+ *
+ * Agora o exato é aplicado sozinho. O APROXIMADO continua exigindo aval no
+ * modal, de propósito: ele casa SKU depois de remover acento, prefixo e
+ * separador, então pode aproximar produtos que na verdade são distintos —
+ * vincular errado bagunça o lucro dos dois lados.
+ *
+ * Roda uma vez por montagem da aba e só quando há produto sem anúncio: a rota
+ * lê TODOS os anúncios da conta, e não vale pagar isso a cada render.
+ */
+function AutoVincularSku({ uid, produtos }: { uid: string; produtos: Product[] }) {
+  const [resultado, setResultado] = useState<{ produtos: number; anuncios: number } | null>(null);
+  const jaRodou = useRef(false);
+
+  const temPendente = produtos.some((p) => p.ativo && mlbsDe(p).filter(Boolean).length === 0);
+
+  useEffect(() => {
+    if (!temPendente || jaRodou.current) return;
+    jaRodou.current = true;
+
+    (async () => {
+      try {
+        const r = await authedFetch("/api/ml/vincular-sku", { cache: "no-store" });
+        if (!r.ok) return;
+        const j = (await r.json()) as { plano?: PlanoSku[] };
+        let nProdutos = 0;
+        let nAnuncios = 0;
+
+        for (const item of j.plano ?? []) {
+          // SÓ os exatos. O aproximado é decisão de quem confere.
+          const exatos = item.novos.filter((n) => n.exato);
+          if (!exatos.length) continue;
+          const prod = produtos.find((p) => p.id === item.productId);
+          if (!prod) continue;
+          const atuais = mlbsDe(prod).map(normMlb).filter(Boolean);
+          const merged = Array.from(new Set([...atuais, ...exatos.map((n) => n.mlb)]));
+          // Nada novo de fato: não escreve à toa (cada escrita conta na cota).
+          if (merged.length === atuais.length) continue;
+          await upsertProduct(uid, { ...prod, mlbs: merged, mlb: merged[0] ?? "" });
+          nProdutos += 1;
+          nAnuncios += exatos.length;
+        }
+
+        if (nProdutos > 0) setResultado({ produtos: nProdutos, anuncios: nAnuncios });
+      } catch {
+        // Silencioso: é um extra em cima do botão manual, que continua ali.
+      }
+    })();
+  }, [temPendente, produtos, uid]);
+
+  if (!resultado) return null;
+  return (
+    <div className="note note-accent">
+      <b>{resultado.anuncios} anúncio(s) vinculado(s) automaticamente</b> em {resultado.produtos} produto(s),
+      por SKU idêntico. Casamento aproximado (acento/prefixo diferente) continua exigindo sua conferência —
+      use <b>Vincular por SKU</b> pra revisar.
+    </div>
   );
 }
