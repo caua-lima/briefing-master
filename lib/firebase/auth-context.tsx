@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { createContext, useContext, useEffect, useState } from "react";
 import { getFirebase, googleProvider, getGoogleProviderWithAccountSelection } from "./client";
+import { limparCache } from "./cache";
 
 type AuthState = {
   user: User | null;
@@ -52,6 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     const { auth } = getFirebase();
     await firebaseSignOut(auth);
+    // O cache de leitura vive em memória do módulo, fora do React — sem
+    // limpar, dado da conta anterior continuaria visível pra quem logasse
+    // em seguida no mesmo navegador (ver lib/firebase/cache.ts).
+    limparCache();
   }
 
   return (

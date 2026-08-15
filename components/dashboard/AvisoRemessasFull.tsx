@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { authedFetch } from "@/lib/api/authed-fetch";
-import { watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
+import { watchMovimentosRecentes, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { remessasPendentes, type Remessa } from "@/lib/domain/remessas";
 import type { EstoqueMovimento } from "@/lib/domain/types";
 
@@ -31,7 +31,9 @@ export default function AvisoRemessasFull({ onVerEstoque }: { onVerEstoque?: () 
     return () => { vivo = false; };
   }, []);
 
-  useEffect(() => watchMovimentos(setMovimentos), []);
+  // Recentes, nao a lista completa: o aviso so olha remessa dos ultimos
+  // ~25 dias, e isto roda na abertura do app (ver watchMovimentosRecentes).
+  useEffect(() => watchMovimentosRecentes(setMovimentos), []);
   useEffect(() => watchRemessasIgnoradas(setIgnoradas), []);
 
   const pendentes = remessasPendentes(remessas, movimentos, ignoradas);

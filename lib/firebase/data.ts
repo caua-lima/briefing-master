@@ -33,6 +33,7 @@ import {
 } from "@/lib/domain/types";
 import type { NotificationEvent } from "@/lib/domain/notifications";
 import { getFirebase } from "./client";
+import { assinarComCache, invalidar } from "./cache";
 
 function sanitizeUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(
@@ -115,6 +116,7 @@ export function watchGoals(
 }
 
 // ── Goal Entries (history) ────────────────────────────────────
+const CHAVE_METAS = "metasHistorico";
 export function watchGoalEntries(
   _uid: string,
   cb: (entries: GoalEntry[]) => void,
@@ -123,10 +125,10 @@ export function watchGoalEntries(
   // sem teto nenhum um listener global fica mais caro pra sempre conforme o
   // histórico cresce (achado da cota do Firestore estourada: metasHistorico,
   // dias e estoque_movimentos eram os únicos listeners sem limit() no app).
-  const q = query(sCol("metasHistorico"), orderBy("createdAt", "desc"), limit(60));
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => d.data() as GoalEntry));
-  });
+  return assinarComCache(CHAVE_METAS, async () => {
+    const snap = await getDocs(query(sCol("metasHistorico"), orderBy("createdAt", "desc"), limit(60)));
+    return snap.docs.map((d) => d.data() as GoalEntry);
+  }, cb);
 }
 
 export async function saveGoalEntry(_uid: string, entry: GoalEntry) {
@@ -139,6 +141,7 @@ export async function saveGoalEntry(_uid: string, entry: GoalEntry) {
     createdAt: entry.createdAt ?? Date.now(),
   });
   await setDoc(sDoc("metasHistorico", id), payload);
+  invalidar(CHAVE_METAS);
 }
 
 export async function updateGoalEntry(
@@ -147,51 +150,62 @@ export async function updateGoalEntry(
   patch: Partial<GoalEntry>,
 ) {
   await updateDoc(sDoc("metasHistorico", id), sanitizeUndefined(patch));
+  invalidar(CHAVE_METAS);
 }
 
 export async function deleteGoalEntry(_uid: string, id: string) {
   await deleteDoc(sDoc("metasHistorico", id));
+  invalidar(CHAVE_METAS);
 }
 
 // ── Costs ─────────────────────────────────────────────────────
+const CHAVE_CUSTOS = "custos";
+
+/** Também vive o app inteiro (useUserData) e quase nunca muda. */
 export function watchCosts(
   _uid: string,
   cb: (costs: Cost[]) => void,
 ): () => void {
-  return onSnapshot(sCol("custos"), (snap) => {
-    cb(snap.docs.map((d) => d.data() as Cost));
-  });
+  return assinarComCache(CHAVE_CUSTOS, async () => {
+    const snap = await getDocs(sCol("custos"));
+    return snap.docs.map((d) => d.data() as Cost);
+  }, cb);
 }
 
 export async function upsertCost(_uid: string, cost: Cost) {
   const email = getCurrentUserEmail();
   await setDoc(sDoc("custos", cost.id), { ...cost, createdBy: email });
+  invalidar(CHAVE_CUSTOS);
 }
 
 export async function deleteCost(_uid: string, id: string) {
   await deleteDoc(sDoc("custos", id));
+  invalidar(CHAVE_CUSTOS);
 }
 
 // ── Products / Stock ──────────────────────────────────────────
+const CHAVE_PRODUTOS = "estoque";
+
+/** Montado em useUserData, ou seja: vivo o app inteiro, em toda aba. */
 export function watchProducts(
   _uid: string,
   cb: (ps: Product[]) => void,
 ): () => void {
-  return onSnapshot(
-    query(sCol("estoque"), orderBy("name", "asc")),
-    (snap) => {
-      cb(snap.docs.map((d) => d.data() as Product).sort((a, b) => a.name.localeCompare(b.name)));
-    },
-  );
+  return assinarComCache(CHAVE_PRODUTOS, async () => {
+    const snap = await getDocs(query(sCol("estoque"), orderBy("name", "asc")));
+    return snap.docs.map((d) => d.data() as Product).sort((a, b) => a.name.localeCompare(b.name));
+  }, cb);
 }
 
 export async function upsertProduct(_uid: string, product: Product) {
   const email = getCurrentUserEmail();
   await setDoc(sDoc("estoque", product.id), { ...product, createdBy: email });
+  invalidar(CHAVE_PRODUTOS);
 }
 
 export async function deleteProduct(_uid: string, id: string) {
   await deleteDoc(sDoc("estoque", id));
+  invalidar(CHAVE_PRODUTOS);
 }
 
 // ── Movimentações de estoque (galpão) ──────────────────────────
@@ -250,19 +264,46 @@ async function recomputeProduto(productId: string, custoMedio?: number, dataMovi
   await updateDoc(sDoc("estoque", productId), patch);
 }
 
+/**
+ * ERA o maior consumidor de leitura do app, com folga: até 1500 documentos,
+ * montado em AvisoRemessasFull (que renderiza no DASHBOARD, a aba inicial),
+ * em EstoqueTab e em FullTab. Como onSnapshot, cada abertura do app custava
+ * os 1500 de uma vez, e qualquer movimentação nova relia tudo de novo em toda
+ * aba aberta.
+ *
+ * Agora é busca única compartilhada (ver lib/firebase/cache.ts): os três
+ * componentes dividem a MESMA leitura, e remontar não custa nada enquanto o
+ * cache está quente. addMovimento/deleteMovimento invalidam, então o próprio
+ * usuário nunca vê dado velho depois de mexer.
+ */
+const CHAVE_MOV = "estoque_movimentos";
+
 export function watchMovimentos(
   cb: (movs: EstoqueMovimento[]) => void,
 ): () => void {
-  // limit(1500) generoso de propósito: o cálculo REAL de qtdLocal
-  // (recomputeProduto, logo abaixo) usa um getDocs() separado e SEM limite —
-  // esse listener só alimenta a exibição de histórico e a checagem de "esta
-  // remessa do Full já teve baixa" (RemessasFull), que só olha remessas dos
-  // últimos ~25 dias. 1500 movimentos cobre anos de operação com folga; nunca
-  // limitar isto era o maior consumidor de leitura do app (uma coleção que só
-  // cresce, relida por inteiro toda vez que a aba Estoque abre).
-  return onSnapshot(query(sCol(MOV_COL), orderBy("data", "desc"), limit(1500)), (snap) => {
-    cb(snap.docs.map((d) => d.data() as EstoqueMovimento));
-  });
+  return assinarComCache(CHAVE_MOV, async () => {
+    const snap = await getDocs(query(sCol(MOV_COL), orderBy("data", "desc"), limit(1500)));
+    return snap.docs.map((d) => d.data() as EstoqueMovimento);
+  }, cb);
+}
+
+/**
+ * Versão enxuta pro aviso do Dashboard.
+ *
+ * AvisoRemessasFull só precisa saber se as remessas dos últimos ~25 dias já
+ * têm baixa (`remessaTemBaixa`), mas usava o watchMovimentos completo — 1500
+ * documentos lidos na ABERTURA DO APP, já que ele renderiza no Dashboard, só
+ * pra checar um punhado de remessas recentes. 200 cobre com folga a janela
+ * que o aviso enxerga, e é chave de cache separada pra não brigar com a lista
+ * completa que Estoque/Full precisam.
+ */
+export function watchMovimentosRecentes(
+  cb: (movs: EstoqueMovimento[]) => void,
+): () => void {
+  return assinarComCache("estoque_movimentos:recentes", async () => {
+    const snap = await getDocs(query(sCol(MOV_COL), orderBy("data", "desc"), limit(200)));
+    return snap.docs.map((d) => d.data() as EstoqueMovimento);
+  }, cb);
 }
 
 // ── Remessas do Full já resolvidas ─────────────────────────────
@@ -278,10 +319,12 @@ export async function ignorarRemessaFull(remessa: string, motivo = "baixa já la
     remessa, ignorada: true, motivo,
     createdBy: getCurrentUserEmail(), createdAt: Date.now(),
   });
+  invalidar(CHAVE_REMESSAS);
 }
 
 export async function reabrirRemessaFull(remessa: string): Promise<void> {
   await deleteDoc(sDoc(REMESSA_COL, remessa));
+  invalidar(CHAVE_REMESSAS);
 }
 
 /**
@@ -311,12 +354,18 @@ export async function salvarCustoRemessaFull(remessa: string, custo: number | nu
     }),
     { merge: true },
   );
+  invalidar(CHAVE_REMESSAS);
 }
 
+const CHAVE_REMESSAS = "full_remessas";
+
 export function watchRemessasIgnoradas(cb: (ids: Set<string>) => void): () => void {
-  return onSnapshot(sCol(REMESSA_COL), (snap) => {
-    cb(new Set(snap.docs.map((d) => d.id)));
-  });
+  return assinarComCache(CHAVE_REMESSAS, async () => {
+    const snap = await getDocs(sCol(REMESSA_COL));
+    // Só as marcadas como ignoradas: o mesmo doc também guarda custoManual,
+    // e um doc que só tem custo NÃO pode sumir da lista de pendentes.
+    return new Set(snap.docs.filter((d) => d.data()?.ignorada === true).map((d) => d.id));
+  }, cb);
 }
 
 export async function addMovimento(
@@ -329,11 +378,17 @@ export async function addMovimento(
     sanitizeUndefined({ ...mov, createdBy: email, createdAt: Date.now() }),
   );
   await recomputeProduto(mov.productId, custoMedio, mov.data);
+  invalidar(CHAVE_MOV);
+  invalidar("estoque_movimentos:recentes");
+  invalidar(CHAVE_PRODUTOS); // recomputeProduto mexe em qtdLocal/custoMedio
 }
 
 export async function deleteMovimento(id: string, productId: string): Promise<void> {
   await deleteDoc(sDoc(MOV_COL, id));
   await recomputeProduto(productId);
+  invalidar(CHAVE_MOV);
+  invalidar("estoque_movimentos:recentes");
+  invalidar(CHAVE_PRODUTOS);
 }
 
 // ── Financeiro: cofrinho semi-automático ──────────────────────
@@ -391,6 +446,7 @@ export async function saveFinanceiroSaidas(saidas: SaidaFin[]): Promise<void> {
 // Coleção compartilhada, sem dono: owner e colaborador leem e escrevem igual
 // (ver firestore.rules) — é o que permite um atribuir tarefa pro outro.
 const TASK_COL = "tarefas";
+const CHAVE_TAREFAS = "tarefas";
 
 export function watchTasks(cb: (tasks: Task[]) => void): () => void {
   // limit(500) — sem teto, essa era a última coleção do time (compartilhada,
@@ -401,9 +457,14 @@ export function watchTasks(cb: (tasks: Task[]) => void): () => void {
   // de cada pessoa do time reabre esse listener inteiro a cada mudança em
   // QUALQUER tarefa, de QUALQUER pessoa. Sem teto, o custo só cresce conforme o
   // quadro acumula tarefas concluídas ao longo dos meses.
-  const q = query(sCol(TASK_COL), orderBy("createdAt", "desc"), limit(500));
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => d.data() as Task));
+  return assinarComCache(CHAVE_TAREFAS, async () => {
+    const snap = await getDocs(query(sCol(TASK_COL), orderBy("createdAt", "desc"), limit(500)));
+    return snap.docs.map((d) => d.data() as Task);
+  }, cb, {
+    // TTL curto: o Kanban é compartilhado e duas pessoas mexem nele ao mesmo
+    // tempo. 60s é o meio-termo entre ver o card do outro andar e não reler
+    // 500 documentos a cada mudança em cada aba aberta.
+    ttl: 60 * 1000,
   });
 }
 
@@ -414,10 +475,12 @@ export async function upsertTask(task: Task) {
     createdBy: task.createdBy ?? email,
     updatedAt: Date.now(),
   }));
+  invalidar(CHAVE_TAREFAS);
 }
 
 export async function deleteTask(id: string) {
   await deleteDoc(sDoc(TASK_COL, id));
+  invalidar(CHAVE_TAREFAS);
 }
 
 // ── Central de Atenção: alertas dispensados ────────────────────
@@ -455,10 +518,10 @@ export async function undismissAlert(email: string, chave: string): Promise<void
 export function watchAccessList(
   cb: (entries: AccessEntry[]) => void,
 ): () => void {
-  const q = query(aCol(), orderBy("email", "asc"));
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => d.data() as AccessEntry));
-  });
+  return assinarComCache("controleAcesso", async () => {
+    const snap = await getDocs(query(aCol(), orderBy("email", "asc")));
+    return snap.docs.map((d) => d.data() as AccessEntry);
+  }, cb);
 }
 
 export async function addAccessEntry(entry: AccessEntry) {
@@ -467,6 +530,7 @@ export async function addAccessEntry(entry: AccessEntry) {
     email: entry.email.toLowerCase(),
     addedAt: Date.now(),
   }));
+  invalidar("controleAcesso");
 }
 
 export async function bootstrapAccessOwner(entry: AccessEntry) {
@@ -486,10 +550,12 @@ export async function updateAccessEntry(
   patch: Partial<AccessEntry>,
 ) {
   await updateDoc(aDoc(email), sanitizeUndefined(patch));
+  invalidar("controleAcesso");
 }
 
 export async function removeAccessEntry(email: string) {
   await deleteDoc(aDoc(email));
+  invalidar("controleAcesso");
 }
 
 export async function checkAccess(email: string): Promise<AccessEntry | null> {
@@ -606,23 +672,31 @@ export async function saveNotificationPreferences(uid: string, prefs: Record<str
 // aqui — filtrar por produto depois é só uma query direta em productId.
 const ADS_LOG_COL = "ads_alteracoes";
 
+/** O cache do changelog é chaveado por `max`, então invalidamos as variações
+ *  usadas hoje — mais simples e seguro do que rastrear qual delas está viva. */
+function invalidarAdsLog() {
+  for (const max of [50, 100, 300]) invalidar(`ads_alteracoes:${max}`);
+}
+
 export function watchAdsAlteracoes(cb: (entries: AdsAlteracao[]) => void, max = 300): () => void {
   // limit() desde o primeiro commit desta coleção — lição da cota do
   // Firestore estourada (achado: listener sem teto é o jeito mais fácil de
   // zerar as 50k leituras/dia do plano gratuito). 300 cobre bastante
   // histórico sem custo crescente pra sempre.
-  const q = query(sCol(ADS_LOG_COL), orderBy("createdAt", "desc"), limit(max));
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => d.data() as AdsAlteracao));
-  });
+  return assinarComCache(`ads_alteracoes:${max}`, async () => {
+    const snap = await getDocs(query(sCol(ADS_LOG_COL), orderBy("createdAt", "desc"), limit(max)));
+    return snap.docs.map((d) => d.data() as AdsAlteracao);
+  }, cb);
 }
 
 export async function addAdsAlteracao(entry: Omit<AdsAlteracao, "id" | "createdBy" | "createdAt">): Promise<void> {
   const email = getCurrentUserEmail();
   const id = `adslog_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await setDoc(sDoc(ADS_LOG_COL, id), sanitizeUndefined({ ...entry, id, createdBy: email, createdAt: Date.now() }));
+  invalidarAdsLog();
 }
 
 export async function deleteAdsAlteracao(id: string): Promise<void> {
   await deleteDoc(sDoc(ADS_LOG_COL, id));
+  invalidarAdsLog();
 }
