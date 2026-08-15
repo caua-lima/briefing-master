@@ -407,13 +407,44 @@ export async function GET(req: Request) {
       }
     });
 
-    const remessasComCusto = remessas.map((r) => ({
-      ...r,
-      // null (não 0) quando o ML não devolveu — a tela precisa distinguir
-      // "coleta de graça" de "não sabemos quanto custou".
-      custo: custoPorRemessa.get(r.remessa) ?? null,
-    }));
-    const custoTotalRemessas = Array.from(custoPorRemessa.values()).reduce((s, v) => s + v, 0);
+    /**
+     * Custo informado a mao, por remessa (colecao full_remessas).
+     *
+     * A doc oficial de Fulfillment do ML e explicita: "atraves das APIs voce
+     * pode apenas consultar o estoque de fulfillment e as operacoes
+     * realizadas". O custo da coleta NAO tem endpoint publico — ele aparece
+     * so na tela de detalhe do envio no Seller Center ("Tarifas > Custo da
+     * coleta Full"), normalmente marcado como ESTIMADO (volume x distancia).
+     * Por isso a tentativa por API acima quase sempre volta vazia, e o valor
+     * digitado e o que de fato alimenta a DRE.
+     */
+    const custoManualPorRemessa = new Map<string, number>();
+    try {
+      const remessaSnap = await db.collection("full_remessas").get();
+      for (const doc of remessaSnap.docs) {
+        const v = Number(doc.data()?.custoManual);
+        if (Number.isFinite(v) && v > 0) custoManualPorRemessa.set(doc.id, v);
+      }
+    } catch { /* sem custo manual: segue so com o que a API devolveu */ }
+
+    const remessasComCusto = remessas.map((r) => {
+      // API tem prioridade quando existe (é o valor cravado pelo ML); o
+      // digitado entra como complemento, não como concorrente.
+      const daApi = custoPorRemessa.get(r.remessa) ?? null;
+      const manual = custoManualPorRemessa.get(r.remessa) ?? null;
+      return {
+        ...r,
+        // null (não 0) quando ninguém informou — a tela precisa distinguir
+        // "coleta de graça" de "não sabemos quanto custou".
+        custo: daApi ?? manual,
+        custoEstimado: daApi == null && manual != null,
+      };
+    });
+    const custoTotalRemessas = remessasComCusto.reduce((s, r) => s + (r.custo ?? 0), 0);
+
+    // Recalculado apos o merge: o que interessa pra tela e quantas remessas
+    // continuam sem NENHUM custo (nem da API, nem digitado).
+    custoRemessaIndisponivel = remessasComCusto.filter((r) => r.custo == null && !r.ehTransferencia).length;
 
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);

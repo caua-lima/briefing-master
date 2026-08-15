@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { EstoqueMovimento } from "@/lib/domain/types";
 import { movIdRemessa, remessaTemBaixa, type Remessa } from "@/lib/domain/remessas";
-import { addMovimento, ignorarRemessaFull, reabrirRemessaFull, watchRemessasIgnoradas } from "@/lib/firebase/data";
+import { addMovimento, ignorarRemessaFull, reabrirRemessaFull, salvarCustoRemessaFull, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { fmtBRL } from "@/lib/domain/calc";
 
@@ -23,6 +23,10 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
   const [erro, setErro] = useState("");
   const [ignoradas, setIgnoradas] = useState<Set<string>>(new Set());
   const [mostrarResolvidas, setMostrarResolvidas] = useState(false);
+  // Custo da coleta digitado a mao, por remessa. A API publica do ML nao expoe
+  // esse valor (ver salvarCustoRemessaFull) — sem isto ele nunca chega na DRE.
+  const [custos, setCustos] = useState<Record<string, string>>({});
+  const [salvandoCusto, setSalvandoCusto] = useState("");
 
   useEffect(() => watchRemessasIgnoradas(setIgnoradas), []);
 
@@ -238,19 +242,24 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
                     {/* Taxa da coleta: custo real que o ML cobra pra levar do seu
                         galpão ao centro do Full. null = a API não devolveu —
                         mostrado como "sem custo informado", nunca como R$ 0,00. */}
-                    <span
-                      title={r.custo != null
-                        ? "Taxa que o Mercado Livre cobrou por esta coleta — entra no Resultado líquido da DRE."
-                        : "O Mercado Livre não devolveu o custo desta coleta pela API. Não mostro R$ 0,00 pra não subestimar o custo."}
-                      style={{
-                        fontSize: ".75rem", fontWeight: 700, borderRadius: 6, padding: "2px 8px", cursor: "help",
-                        color: r.custo != null ? "var(--red)" : "var(--muted)",
-                        background: r.custo != null ? "var(--red-bg)" : "var(--surface)",
-                        border: "1px solid var(--border)",
+                    <CustoColeta
+                      remessa={r}
+                      valor={custos[r.remessa] ?? (r.custo != null ? String(r.custo) : "")}
+                      salvando={salvandoCusto === r.remessa}
+                      onChange={(v) => setCustos((s) => ({ ...s, [r.remessa]: v }))}
+                      onSalvar={async () => {
+                        const bruto = (custos[r.remessa] ?? "").trim().replace(",", ".");
+                        const n = bruto === "" ? null : Number(bruto);
+                        if (bruto !== "" && (!Number.isFinite(n) || (n as number) < 0)) { alert("Informe um valor válido."); return; }
+                        setSalvandoCusto(r.remessa);
+                        try {
+                          await salvarCustoRemessaFull(r.remessa, n);
+                          await buscar();
+                        } catch (e) {
+                          alert("Não consegui salvar o custo: " + (e instanceof Error ? e.message : String(e)));
+                        } finally { setSalvandoCusto(""); }
                       }}
-                    >
-                      {r.custo != null ? `coleta ${fmtBRL(r.custo)}` : "coleta sem custo informado"}
-                    </span>
+                    />
                   </div>
                   {feita ? (
                     <span style={{
@@ -392,5 +401,77 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Custo da coleta de UMA remessa, editável.
+ *
+ * Por que é digitado e não puxado: a doc de Fulfillment do Mercado Livre é
+ * explícita — "através das APIs você pode apenas consultar o estoque de
+ * fulfillment e as operações realizadas". O custo da coleta não tem endpoint
+ * público; ele aparece só no detalhe do envio no Seller Center, em
+ * "Tarifas › Custo da coleta Full", quase sempre com o selo ESTIMADO
+ * (calculado por volume × distância até o centro). O app tenta a API primeiro
+ * e, quando ela não devolve nada (o caso normal hoje), este campo é o que faz
+ * o custo real chegar na DRE em vez de ficar como R$ 0,00.
+ */
+function CustoColeta({
+  remessa, valor, salvando, onChange, onSalvar,
+}: {
+  remessa: Remessa;
+  valor: string;
+  salvando: boolean;
+  onChange: (v: string) => void;
+  onSalvar: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const temCusto = remessa.custo != null;
+
+  if (!editando) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditando(true)}
+        title={temCusto
+          ? `Taxa desta coleta — entra no Resultado líquido da DRE.${remessa.custoEstimado ? " Valor informado por você (o ML mostra como ESTIMADO)." : " Valor devolvido pela API do ML."} Clique pra alterar.`
+          : "O Mercado Livre não expõe esse custo pela API. Pegue em Envios › detalhe do envio › Tarifas › Custo da coleta Full e informe aqui pra ele entrar na DRE."}
+        style={{
+          fontSize: ".75rem", fontWeight: 700, borderRadius: 6, padding: "2px 8px", cursor: "pointer",
+          color: temCusto ? "var(--red)" : "var(--warning)",
+          background: temCusto ? "var(--red-bg)" : "var(--warning-soft)",
+          border: `1px solid ${temCusto ? "var(--border)" : "rgba(255,138,31,.4)"}`,
+        }}
+      >
+        {temCusto
+          ? `coleta ${fmtBRL(remessa.custo as number)}${remessa.custoEstimado ? " (estimado)" : ""}`
+          : "informar custo da coleta"}
+      </button>
+    );
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: ".72rem", color: "var(--muted)" }}>R$</span>
+      <input
+        type="number" min="0" step="0.01" inputMode="decimal" autoFocus
+        aria-label={`Custo da coleta da remessa ${remessa.remessa}`}
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { onSalvar(); setEditando(false); } if (e.key === "Escape") setEditando(false); }}
+        style={{
+          width: 92, fontSize: 16, padding: "4px 8px", textAlign: "right",
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderRadius: 6, color: "var(--text)", outline: "none",
+        }}
+      />
+      <button
+        type="button" className="btn btn-success btn-xs" disabled={salvando}
+        onClick={() => { onSalvar(); setEditando(false); }}
+      >
+        {salvando ? "…" : "Salvar"}
+      </button>
+      <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditando(false)}>Cancelar</button>
+    </span>
   );
 }

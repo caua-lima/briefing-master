@@ -284,6 +284,35 @@ export async function reabrirRemessaFull(remessa: string): Promise<void> {
   await deleteDoc(sDoc(REMESSA_COL, remessa));
 }
 
+/**
+ * Custo da coleta informado a mao, por remessa.
+ *
+ * Existe porque a API publica do Mercado Livre NAO expoe esse valor: a
+ * propria doc de Fulfillment diz que "atraves das APIs voce pode apenas
+ * consultar o estoque de fulfillment e as operacoes realizadas". O valor
+ * aparece so na tela de detalhe do envio no Seller Center, em "Tarifas >
+ * Custo da coleta Full", quase sempre marcado como ESTIMADO (calculado por
+ * volume x distancia ate o centro).
+ *
+ * Guardar aqui e o que permite esse custo real entrar no Resultado liquido
+ * da DRE. `merge: true` de proposito: a mesma colecao guarda a marcacao de
+ * "remessa ja resolvida" (ignorarRemessaFull) e um nao pode apagar o outro.
+ */
+export async function salvarCustoRemessaFull(remessa: string, custo: number | null): Promise<void> {
+  await setDoc(
+    sDoc(REMESSA_COL, remessa),
+    sanitizeUndefined({
+      remessa,
+      // null limpa o valor: quem digitou errado precisa conseguir voltar pro
+      // estado "sem custo informado", que e diferente de "custou zero".
+      custoManual: custo == null || !Number.isFinite(custo) ? null : custo,
+      custoInformadoPor: getCurrentUserEmail(),
+      custoInformadoEm: Date.now(),
+    }),
+    { merge: true },
+  );
+}
+
 export function watchRemessasIgnoradas(cb: (ids: Set<string>) => void): () => void {
   return onSnapshot(sCol(REMESSA_COL), (snap) => {
     cb(new Set(snap.docs.map((d) => d.id)));

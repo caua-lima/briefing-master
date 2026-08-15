@@ -425,12 +425,19 @@ export default function DreTab() {
             valor={coletaFull.total}
             tipo="deducao"
             base={base}
+            indisponivel={coletaFull.remessas > 0 && coletaFull.total === 0}
             nota={
               coletaFull.remessas === 0
                 ? "nenhuma remessa pro Full neste período"
-                : coletaFull.parcial
-                  ? `${coletaFull.remessas} remessa(s) — o ML não devolveu o custo de todas, então este valor é o mínimo`
-                  : `${coletaFull.remessas} remessa(s) enviada(s) no período`
+                : coletaFull.total === 0
+                  // Zero com remessas no periodo nao e "coleta de graca": e
+                  // custo nao informado. Mostrar R$ 0,00 aqui inflaria o
+                  // resultado liquido, entao a linha vira "—" com o caminho
+                  // exato de onde tirar o numero.
+                  ? `${coletaFull.remessas} remessa(s) sem custo informado — o Mercado Livre não expõe esse valor pela API. Pegue em Envios › detalhe do envio › Tarifas › Custo da coleta Full e informe na aba Full.`
+                  : coletaFull.parcial
+                    ? `${coletaFull.remessas} remessa(s) — parte ainda sem custo informado, então este valor é o mínimo (informe o resto na aba Full)`
+                    : `${coletaFull.remessas} remessa(s) enviada(s) no período`
             }
           />
         ) : null}

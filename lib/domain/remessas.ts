@@ -27,6 +27,8 @@ export type Remessa = {
    * Nunca tratar null como zero: subestimaria o custo e inflaria o lucro.
    */
   custo?: number | null;
+  /** true = veio de valor digitado a mao (o ML mostra como ESTIMADO), não da API. */
+  custoEstimado?: boolean;
 };
 
 /**
