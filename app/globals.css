@@ -371,14 +371,14 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 .hero-title{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--text)}
 .hero-badge{font-size:.74rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px}
 .hero-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
-.hero-stat{background:rgba(16,16,14,.5);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.hero-stat{container-type:inline-size;background:rgba(16,16,14,.5);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
 .hero-stat .lbl{font-size:.72rem;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
-.hero-stat .val{font-size:1.95rem;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.hero-stat .val{font-size:clamp(1rem,12cqi,1.95rem);font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hero-foot{font-size:.72rem;color:var(--muted);margin-top:12px}
 
 /* KPI grid */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
-.kpi{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px 16px 22px;overflow:hidden;transition:transform .15s,border-color .15s,box-shadow .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.kpi{container-type:inline-size;position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px 16px 22px;overflow:hidden;transition:transform .15s,border-color .15s,box-shadow .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .kpi:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--muted)}
 .kpi.k-pos::before{background:linear-gradient(180deg,var(--green),#36B37E)}
@@ -389,7 +389,7 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 /* Sora 30px/700 nos números — é o elemento que o vendedor lê primeiro, e o
    contraste de escala contra o rótulo (11px) é o que dá o ar "premium"
    pedido. Antes estavam em 22px, quase do tamanho do texto comum. */
-.kpi .k-val{font-size:1.9rem;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi .k-val{font-size:clamp(1rem,12cqi,1.9rem);font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi .k-sub{font-size:.72rem;color:var(--muted);margin-top:5px}
 
 /* two-column dashboard grid */
@@ -466,10 +466,8 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .hero{padding:16px 16px}
   .hero-grid{grid-template-columns:repeat(2,1fr);gap:10px}
   .hero-stat{padding:11px 12px}
-  .hero-stat .val{font-size:1.15rem}
   .kpi-grid{grid-template-columns:repeat(2,1fr);gap:10px}
   .kpi{padding:13px 14px 13px 18px}
-  .kpi .k-val{font-size:1.12rem}
   .dash-2col{grid-template-columns:1fr;gap:12px}
   .dash-top{gap:10px}
   .seg{width:100%;justify-content:center}
@@ -492,8 +490,6 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 @media(max-width:440px){
   .hero-grid{grid-template-columns:1fr}
   .kpi-grid{grid-template-columns:1fr}
-  .hero-stat .val{font-size:1.25rem}
-  .kpi .k-val{font-size:1.3rem}
   .acct-chip{font-size:.74rem;padding:7px 10px}
   .seg-btn{padding:7px 10px;font-size:.76rem}
 }
@@ -591,7 +587,6 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
   .dash-top-left{flex-wrap:wrap;min-width:0}
   .dash-top-left h2{min-width:0;overflow:hidden;text-overflow:ellipsis}
   /* números grandes não quebram o card */
-  .kpi .k-val,.hero-stat .val{overflow-wrap:anywhere}
 }
 
 @media(max-width:560px){
@@ -749,7 +744,6 @@ canvas.chart-canvas{width:100%!important;height:100%!important}
 /* ---- Refino visual (profissional, sem mudar a identidade) ---- */
 .panel{transition:border-color .18s}
 .panel:hover{border-color:#4C4A36}
-.kpi .k-val{overflow-wrap:anywhere}
 /* números tabulares em toda a interface: colunas de valores alinham na vírgula */
 .tbl-modern tbody td,.tbl-modern tfoot td,.kpi .k-val,.hero-stat .val{font-variant-numeric:tabular-nums}
 /* seletores nativos com a mesma cara dos inputs */
