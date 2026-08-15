@@ -1,0 +1,128 @@
+import { NextResponse } from "next/server";
+import { isCronRequest, requireAccess } from "@/lib/api-auth";
+import { sendSalePushToAll } from "@/lib/push-send";
+import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered } from "@/lib/notification-events";
+import { montarResumoDiario } from "@/lib/domain/resumo-diario";
+import { calculateBreakEvenRoas } from "@/lib/domain/ads";
+import type { SalePushPayload } from "@/lib/domain/notifications";
+
+export const maxDuration = 60;
+
+/**
+ * Resumo do dia, enviado por push no fim do expediente.
+ *
+ * Não recalcula nada: consome /api/ml/metrics e /api/ml/ads, que são as
+ * MESMAS fontes do Dashboard e da aba Ads. Se o resumo divergisse do que a
+ * tela mostra, ele viraria mais uma coisa pra conferir em vez de poupar
+ * tempo — então tem que ser literalmente o mesmo número.
+ *
+ * Idempotente por dia: `dedupeKey` é `resumo_diario:{data}`. Se o cron rodar
+ * duas vezes (retry da Vercel, disparo manual pra testar), o segundo não cria
+ * evento nem manda push duplicado.
+ */
+
+function brDayISO(): string {
+  const d = new Date(Date.now() - 3 * 3600 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+async function handler(req: Request) {
+  try {
+    const origem = new URL(req.url).origin;
+    const hoje = brDayISO();
+    // Repassa a credencial de quem chamou: as rotas internas exigem acesso, e
+    // o cron da Vercel manda o Bearer do CRON_SECRET.
+    const auth = req.headers.get("authorization");
+    const headers: Record<string, string> = auth ? { Authorization: auth } : {};
+
+    const [rMetrics, rAds] = await Promise.all([
+      fetch(`${origem}/api/ml/metrics?from=${hoje}&to=${hoje}`, { headers, cache: "no-store" }),
+      fetch(`${origem}/api/ml/ads?from=${hoje}&to=${hoje}`, { headers, cache: "no-store" }).catch(() => null),
+    ]);
+
+    if (!rMetrics.ok) {
+      return NextResponse.json({ error: "metrics_indisponivel", status: rMetrics.status }, { status: 502 });
+    }
+    const m = (await rMetrics.json()) as {
+      hoje?: { faturamentoLiquido?: number; pedidos?: number; lucroLiquido?: number; faturamentoBruto?: number };
+      adsFalhou?: boolean;
+      anuncios?: { item_id: string; lucro: number }[];
+    };
+
+    const h = m.hoje ?? {};
+    const faturamento = Number(h.faturamentoLiquido ?? 0);
+    const pedidos = Number(h.pedidos ?? 0);
+    /**
+     * Sem o gasto de Ads confirmado, o lucro do dia é OTIMISTA — falta
+     * descontar a publicidade. Melhor mandar "ainda não calculável" do que um
+     * número que a pessoa vai usar pra decidir. Mesma regra que o Dashboard
+     * já aplica com `adsFalhou`.
+     */
+    const lucro = m.adsFalhou ? null : Number(h.lucroLiquido ?? 0);
+    const bruto = Number(h.faturamentoBruto ?? 0);
+    const margem = lucro != null && bruto > 0 ? (lucro / bruto) * 100 : null;
+
+    // Anúncios abaixo do break-even hoje — o mesmo cálculo da aba Ads.
+    let anunciosNoPrejuizo = 0;
+    if (rAds?.ok) {
+      const a = (await rAds.json()) as {
+        items?: { cost: number; totalSales: number; lucroAntesAds: number }[];
+      };
+      for (const it of a.items ?? []) {
+        if (it.cost <= 0) continue;
+        const be = calculateBreakEvenRoas(it.totalSales, it.lucroAntesAds);
+        const roas = it.totalSales / it.cost;
+        if (be != null && roas < be) anunciosNoPrejuizo += 1;
+      }
+    }
+
+    const conteudo = montarResumoDiario({
+      faturamento, pedidos, lucro, margem,
+      // Meta diária depende de configuração por mês e não está nesta rota;
+      // omitir é melhor do que exibir uma meta errada.
+      metaDiaria: null,
+      produtosEmRisco: 0,
+      anunciosNoPrejuizo,
+    });
+
+    const dedupeKey = `resumo_diario:${hoje}`;
+    const { created, eventId } = await createNotificationEventIdempotent({
+      type: "system", severity: "info", entityType: "system", entityId: hoje, dedupeKey,
+      title: conteudo.title, body: conteudo.body,
+      financialState: lucro == null ? "unavailable" : "estimated",
+      deepLink: "/",
+    });
+
+    if (!created) {
+      return NextResponse.json({ ok: true, jaEnviado: true, dia: hoje });
+    }
+
+    const payload: SalePushPayload = {
+      eventId, type: "system", title: conteudo.title, body: conteudo.body,
+      tag: `resumo-${hoje}`, deepLink: "/", timestamp: new Date().toISOString(),
+    };
+    await markPushAttempted(eventId);
+    // Respeita as preferências de cada pessoa, igual ao resto: quem desligou
+    // resumo não recebe, e horário silencioso vale (não é evento crítico).
+    const { enviados } = await sendSalePushToAll(payload, "system", true);
+    if (enviados > 0) await markPushDelivered(eventId);
+
+    return NextResponse.json({ ok: true, dia: hoje, enviados, title: conteudo.title, body: conteudo.body });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: "resumo_diario_failed", details: msg }, { status: 500 });
+  }
+}
+
+/** GET = chamada do Vercel Cron. */
+export async function GET(req: Request) {
+  if (!isCronRequest(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return handler(req);
+}
+
+/** POST = disparo manual pra testar sem esperar o horário. */
+export async function POST(req: Request) {
+  const gate = await requireAccess(req, { allowCron: true });
+  if (gate instanceof NextResponse) return gate;
+  return handler(req);
+}
