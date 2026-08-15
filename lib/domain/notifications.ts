@@ -143,6 +143,8 @@ export function classifySale(input: SaleFinanceInput): { type: NotificationEvent
 
 export type SaleContentInput = SaleFinanceInput & {
   type: NotificationEventType;
+  /** Item do pedido sem produto cadastrado — o CMV entra como zero. */
+  semCadastro?: boolean;
   /** Nome do primeiro/principal produto do pedido. */
   productName: string;
   /** Quantos itens DISTINTOS tem o pedido — 1 = só o produto principal; 2+ vira "N itens no pedido". */
@@ -176,6 +178,19 @@ export function buildSaleContent(input: SaleContentInput): SaleContent {
     case "sale_paid":
     default:
       if (input.estimatedProfit == null) {
+        /**
+         * "Em atualização" soava temporário e não dizia o que fazer. Quando a
+         * causa é produto sem cadastro, o número não vai chegar sozinho: o
+         * custo entra como ZERO e o lucro do dia fica inflado até alguém
+         * cadastrar o SKU. Vale dizer isso na hora, que é quando dá pra
+         * corrigir barato.
+         */
+        if (input.semCadastro) {
+          return {
+            title: "Venda de produto sem cadastro",
+            body: `${produto} · ${valor} — sem custo cadastrado, o lucro está inflado`,
+          };
+        }
         return { title: "Nova venda confirmada", body: `${produto} · cálculo financeiro em atualização` };
       }
       return { title: "Nova venda confirmada", body: `${produto} · ${valor}` };

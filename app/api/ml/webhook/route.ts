@@ -217,7 +217,7 @@ export async function POST(req: Request) {
       // lib/domain/ads-order-tag.ts.
       const atribuicao = detectarVendaPorPublicidade(order);
       const { type } = classifySale(finance);
-      const content = buildSaleContent({ ...finance, type, itemCount: finance.itemCount });
+      const content = buildSaleContent({ ...finance, type, itemCount: finance.itemCount, semCadastro: finance.semCadastro });
       const severity = tipoParaSeveridade(type);
       const financialState: "estimated" | "unavailable" = finance.estimatedProfit == null ? "unavailable" : "estimated";
 

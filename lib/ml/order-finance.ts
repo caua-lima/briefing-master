@@ -17,6 +17,15 @@ export type OrderFinanceEstimate = SaleFinanceInput & {
   productName: string;
   itemCount: number;
   quantityTotal: number;
+  /**
+   * Algum item do pedido não bate com nenhum produto cadastrado. Já existia
+   * como variável interna (`algumSemProduto`) e só virava `estimatedProfit:
+   * null` — o aviso saía como "cálculo financeiro em atualização", que soa
+   * temporário e não diz o que fazer. É o caso mais caro que passa
+   * despercebido: o CMV entra como ZERO e o lucro do dia fica inflado até
+   * alguém cadastrar o SKU.
+   */
+  semCadastro: boolean;
 };
 
 const normSku = (s: string) => s.trim().toLowerCase();
@@ -75,7 +84,7 @@ export function estimateOrderFinance(
   if (algumSemProduto || items.length === 0) {
     return {
       grossAmount, estimatedProfit: null, estimatedMargin: null, metaMargem,
-      productName, itemCount, quantityTotal,
+      productName, itemCount, quantityTotal, semCadastro: algumSemProduto,
     };
   }
 
@@ -85,6 +94,6 @@ export function estimateOrderFinance(
 
   return {
     grossAmount, estimatedProfit, estimatedMargin, metaMargem,
-    productName, itemCount, quantityTotal,
+    productName, itemCount, quantityTotal, semCadastro: false,
   };
 }
