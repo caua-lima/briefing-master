@@ -15,6 +15,7 @@ import AdsModeDescription from "@/components/tabs/ads/AdsModeDescription";
 import AdsOverview, { type OverviewTotais } from "@/components/tabs/ads/AdsOverview";
 import AdsFunnel from "@/components/tabs/ads/AdsFunnel";
 import AdsCampaignList from "@/components/tabs/ads/AdsCampaignList";
+import AdsParticipacao from "@/components/tabs/ads/AdsParticipacao";
 import AdsDecisionPanel from "@/components/tabs/ads/AdsDecisionPanel";
 import AdsDataQuality from "@/components/tabs/ads/AdsDataQuality";
 import AdsFilters, { AdsStatusQuickFilters, type FiltrosAdsState } from "@/components/tabs/ads/AdsFilters";
@@ -251,14 +252,14 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
   function exportarCsv() {
     const header = [
       "Anúncio", "MLB", "Investido", pub ? "Vendas diretas" : "Vendas totais", "Unidades",
-      pub ? "ACOS %" : "TACOS %", "ROAS", "Break-even ROAS", "ROAS ideal (margem alvo)", "Lucro", "Margem %",
+      pub ? "ACOS %" : "TACOS %", "ROAS", "Break-even ROAS", "ROAS ideal (margem alvo)", "% da receita via Ads", "Lucro", "Margem %",
       "Decisão", "Qualidade dos dados", "Última alteração manual", "Período", "Modo",
     ];
-    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, breakEven, roasIdeal, lucroAtual, margemAtual, reco }) => {
+    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, breakEven, roasIdeal, pctAds, lucroAtual, margemAtual, reco }) => {
       const ultima = changelog.filter((e) => e.campaignId === i.campaignId).sort((x, y) => y.createdAt - x.createdAt)[0];
       return [
         i.title || i.itemId, i.itemId, num(i.cost, 2), num(v, 2), num(un),
-        i.cost > 0 ? num(a, 1) : "", i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "", roasIdeal != null ? num(roasIdeal, 2) : "",
+        i.cost > 0 ? num(a, 1) : "", i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "", roasIdeal != null ? num(roasIdeal, 2) : "", i.totalSales > 0 ? num(pctAds, 1) : "",
         lucroAtual != null ? num(lucroAtual, 2) : "não disponível", margemAtual != null ? num(margemAtual, 1) : "",
         reco.label, reconciliacao.status, ultima ? formatarResumoAlteracao(ultima) : "",
         `${range.from} a ${range.to}`, pub ? "Publicidade direta" : "Geral",
@@ -356,6 +357,15 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
 
               {!loading && items.length > 0 && (
                 <>
+                  {/* Participacao do Ads na receita — leitura de negocio, vem
+                      antes do funil (que ja e leitura de campanha). */}
+                  <AdsParticipacao
+                    receitaDireta={t.direct}
+                    receitaAtribuida={t.adSales}
+                    receitaTotal={t.total}
+                    investimento={t.cost}
+                  />
+
                   <AdsFunnel
                     impressoes={t.prints} cliques={t.clicks} investimento={t.cost}
                     vendas={pub ? t.directUn : t.totalUn} receita={pub ? t.direct : t.total}

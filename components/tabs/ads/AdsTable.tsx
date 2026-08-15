@@ -21,6 +21,16 @@ function StatusTag({ l }: { l: LinhaAds }) {
   );
 }
 
+/**
+ * Mesma escala de lerParticipacao (lib/domain/ads-participacao.ts): quanto
+ * maior a fatia que depende de verba, maior o risco se ela parar.
+ */
+function corParticipacao(pct: number): string {
+  if (pct >= 70) return "var(--red)";
+  if (pct >= 40) return "var(--warning)";
+  return "var(--green)";
+}
+
 function corDaDecisao(l: LinhaAds): string {
   if (l.reco.acao === "escalar") return "var(--green)";
   if (l.reco.acao === "pausar" || l.reco.acao === "reduzir") return "var(--red)";
@@ -113,6 +123,12 @@ export default function AdsTable({
               >
                 ROAS ideal
               </th>
+              <th
+                style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}
+                title="Quanto da receita DESTE anúncio o Mercado Ads credita à campanha (clique direto + venda assistida). Alto = a venda deste item depende da verba."
+              >
+                % via Ads
+              </th>
               <th style={{ textAlign: "left", position: "sticky", top: 0, background: "var(--surface)", cursor: "pointer" }} onClick={() => alternarOrdem("decisao", 1)} title="Ordenar por impacto — pior impacto primeiro">
                 Decisão{ordem.col === "decisao" ? (ordem.dir === 1 ? " ↓" : " ↑") : ""}
               </th>
@@ -161,6 +177,21 @@ export default function AdsTable({
                   }}
                 >
                   {l.roasIdeal != null ? `${num(l.roasIdeal, 2)}x` : "—"}
+                </td>
+                {/* pctAds ja era calculado em AdsTab desde sempre, mas nunca
+                    chegou a ser exibido — e a pergunta "quanto deste item
+                    depende do Ads?", que e exatamente o corte de decisao. */}
+                <td
+                  data-label="% via Ads"
+                  title={l.i.totalSales > 0
+                    ? `${fmtBRL(l.i.adSales)} de ${fmtBRL(l.i.totalSales)} vendidos neste anúncio foram creditados à campanha.`
+                    : "Sem venda registrada neste anúncio no período."}
+                  style={{
+                    textAlign: "right", whiteSpace: "nowrap", padding: padCel, fontWeight: 700,
+                    color: l.i.totalSales <= 0 ? "var(--muted)" : corParticipacao(l.pctAds),
+                  }}
+                >
+                  {l.i.totalSales > 0 ? `${num(l.pctAds, 0)}%` : "—"}
                 </td>
                 <td
                   data-label="Decisão"
