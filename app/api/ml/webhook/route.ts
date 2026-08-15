@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verificarProdutoAnunciado } from "@/lib/ml/ads-attribution";
+import { detectarVendaPorPublicidade } from "@/lib/domain/ads-order-tag";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { mapOrderItems } from "@/lib/ml/sync";
@@ -75,6 +76,8 @@ function buildPayload(eventId: string, type: NotificationEventType, title: strin
   financialState?: "estimated" | "confirmed" | "unavailable"; tag: string;
   /** Produto com campanha de Ads ativa — ver lib/ml/ads-attribution.ts. */
   viaAds?: boolean; adsInvestido?: number;
+  /** O ML afirmou que ESTA venda veio de anuncio pago (nao so "produto anunciado"). */
+  vendaPorPublicidade?: boolean;
 }): SalePushPayload {
   return {
     eventId, type, title, body, tag: opts.tag,
@@ -85,6 +88,7 @@ function buildPayload(eventId: string, type: NotificationEventType, title: strin
     estimatedMargin: opts.estimatedMargin != null ? opts.estimatedMargin.toFixed(1) : undefined,
     financialState: opts.financialState,
     viaAds: opts.viaAds ? "1" : undefined,
+    vendaPorPublicidade: opts.vendaPorPublicidade ? "1" : undefined,
     adsInvestido: opts.adsInvestido != null ? opts.adsInvestido.toFixed(2) : undefined,
     timestamp: new Date().toISOString(),
   };
@@ -206,6 +210,12 @@ export async function POST(req: Request) {
         String(order.date_created ?? new Date().toISOString()),
         metaMargem,
       );
+      // O ML marca a venda que veio de anuncio pago (é o "Venda por
+      // publicidade" que aparece no detalhe da venda no Seller Center).
+      // Nao e documentado, entao a deteccao varre o payload por marcadores
+      // conhecidos em vez de fixar um caminho adivinhado — ver
+      // lib/domain/ads-order-tag.ts.
+      const atribuicao = detectarVendaPorPublicidade(order);
       const { type } = classifySale(finance);
       const content = buildSaleContent({ ...finance, type, itemCount: finance.itemCount });
       const severity = tipoParaSeveridade(type);
@@ -230,12 +240,27 @@ export async function POST(req: Request) {
         deepLink: buildOrderDeepLink(orderId),
       });
 
+      // Diagnostico: registra ONDE a marca foi encontrada na primeira venda
+      // paga por anuncio. Serve pra confirmar o campo contra dado real e,
+      // se valer a pena, estreitar a deteccao depois.
+      if (atribuicao.viaAds) {
+        console.info("[ads] venda por publicidade detectada", {
+          orderId, caminho: atribuicao.caminho, marcador: atribuicao.marcador,
+        });
+      }
+
       if (created) {
         const payload = buildPayload(eventId, type, content.title, content.body, {
           orderId, productName: finance.productName, grossAmount: finance.grossAmount,
           estimatedProfit: finance.estimatedProfit ?? undefined, estimatedMargin: finance.estimatedMargin ?? undefined,
           financialState, tag: `sale-${orderId}`,
-          viaAds: selo.anunciado, adsInvestido: selo.anunciado ? selo.investido : undefined,
+          // Atribuicao do PROPRIO pedido tem prioridade: o ML marca "Venda por
+          // publicidade" no detalhe da venda, e isso e afirmacao dele sobre
+          // ESTA venda. O selo por gasto do produto (verificarProdutoAnunciado)
+          // vira so o fallback, pra quando o payload nao trouxer a marca.
+          viaAds: atribuicao.viaAds || selo.anunciado,
+          vendaPorPublicidade: atribuicao.viaAds,
+          adsInvestido: selo.anunciado ? selo.investido : undefined,
         });
 
         // Prejuízo/margem negativa NUNCA agrupa — precisa continuar

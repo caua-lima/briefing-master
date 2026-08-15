@@ -128,6 +128,8 @@ export type ForegroundPushEvent = {
   financialState?: string;
   /** "1" = produto com campanha de Ads ativa (nao e atribuicao por pedido). */
   viaAds?: string;
+  /** "1" = o proprio ML marcou esta venda como vinda de anuncio pago. */
+  vendaPorPublicidade?: string;
   adsInvestido?: string;
   timestamp: string;
 };
@@ -175,7 +177,8 @@ export async function initForegroundPush(): Promise<void> {
       productName: d.productName || undefined, grossAmount: d.grossAmount || undefined,
       estimatedProfit: d.estimatedProfit || undefined, estimatedMargin: d.estimatedMargin || undefined,
       financialState: d.financialState || undefined,
-      viaAds: d.viaAds || undefined, adsInvestido: d.adsInvestido || undefined,
+      viaAds: d.viaAds || undefined, vendaPorPublicidade: d.vendaPorPublicidade || undefined,
+      adsInvestido: d.adsInvestido || undefined,
       timestamp: d.timestamp ?? new Date().toISOString(),
     };
     foregroundListeners.forEach((cb) => cb(evt));
