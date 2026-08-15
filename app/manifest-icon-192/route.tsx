@@ -1,23 +1,15 @@
 import { ImageResponse } from "next/og";
+import { comoDataUri, svgAppIcon } from "@/lib/marca";
 
 export const dynamic = "force-static";
 
-// Ícone 192×192 pro manifest do PWA: fundo onyx #10100E, "Z" dourado
-// #F4B942, sem gradiente — mesmo desenho de components/ZxpMark.tsx.
+// Ícone 192×192 do PWA, com a marca oficial (ver lib/marca.ts).
 export function GET() {
   return new ImageResponse(
     (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          background: "#10100E",
-        }}
-      >
-        <svg width="192" height="192" viewBox="0 0 100 100">
-          <polygon points="18,18 82,18 82,34 52,66 82,66 82,82 18,82 18,66 48,34 18,34" fill="#F4B942" />
-        </svg>
+      <div style={{ width: "100%", height: "100%", display: "flex" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={comoDataUri(svgAppIcon())} alt="" width={192} height={192} />
       </div>
     ),
     { width: 192, height: 192 },
