@@ -180,6 +180,29 @@ export async function GET(req: Request) {
     const TIPOS = ["INBOUND_RECEPTION", "QUARANTINE_RESTOCK", "ADJUSTMENT", "TRANSFER_DELIVERY"];
     // O tipo vem em MAIÚSCULA — a doc diz minúsculo e o ML recusa.
     const LIMITE = 100;
+
+    /**
+     * Deduplicação por OPERAÇÃO — a correção da triplicação reportada em
+     * produção (app mostrando 240 un numa remessa que o Seller Center fecha
+     * em 80; 2 produtos × 120 contra 2 × 40).
+     *
+     * Causa: a doc do ML documenta `type` em minúsculo (`inbound_reception`);
+     * mandamos MAIÚSCULO (comentário acima: "a doc diz minúsculo e o ML
+     * recusa"). Quando o valor não casa, o ML não rejeita a query — ele
+     * IGNORA o filtro e devolve todas as operações do período. Como o laço
+     * roda uma vez por tipo, a MESMA operação voltava em cada passada e era
+     * somada de novo. Com TRANSFER_DELIVERY já fora da soma (fix anterior),
+     * sobravam 3 passadas somando as mesmas 80 unidades = 240.
+     *
+     * A chave é composta em vez de só o `id` porque o id do ML passa de 9e15
+     * e o JSON.parse arredonda (mesmo motivo pelo qual a ordenação abaixo usa
+     * date_created e não id) — juntar inventory_id + data + tipo elimina
+     * qualquer risco de duas operações distintas colidirem no mesmo id
+     * arredondado. Vale pra repetição por tipo, por chunk de inventory_id e
+     * por sobreposição de paginação: qualquer operação só conta uma vez.
+     */
+    const opsVistas = new Set<string>();
+    let duplicadasIgnoradas = 0;
     // O ML exige inventory_id, então mandamos todos os do Full de uma vez.
     for (const tipoBusca of TIPOS)
     for (let i = 0; i < invArr.length; i += 20) {
@@ -210,6 +233,11 @@ export async function GET(req: Request) {
           for (const r of linhas) {
             const tipo = String(r.type ?? r.operation_type ?? "");
             tiposVistos.add(tipo);
+            // Ver `opsVistas` acima: mesma operação voltando em outra passada
+            // de tipo/chunk/página não pode somar de novo.
+            const chaveOp = `${String(r.id ?? "")}|${String(r.inventory_id ?? "")}|${String(r.date_created ?? "")}|${tipo}`;
+            if (opsVistas.has(chaveOp)) { duplicadasIgnoradas++; continue; }
+            opsVistas.add(chaveOp);
             // 60 recebidas contra 80 na tela do ML: faltam 20 e não dá pra
             // saber onde sem ver as linhas. São poucas — mostramos todas.
             if (!amostra) amostra = JSON.stringify(r).slice(0, 900);
@@ -332,7 +360,7 @@ export async function GET(req: Request) {
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
+    const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, duplicadasIgnoradas, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
     // Só guarda resposta boa: cachear erro esconderia o problema por 5 minutos.
     if (opStatus === 200) cache.set(chaveCache, { at: Date.now(), body });
     return NextResponse.json(body);
