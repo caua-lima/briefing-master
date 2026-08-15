@@ -33,21 +33,10 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const d = payload.data || {};
   const title = d.title || "Nova venda!";
-  // Selo de Ads tambem na notificacao NATIVA (app fechado) — sem isto o aviso
-  // do celular perderia o contexto que o toast de foreground mostra.
-  const valorAds = d.adsInvestido ? " · R$ " + d.adsInvestido + " em Ads (7 dias)" : "";
-  // Dois niveis: "Venda por publicidade" e o PROPRIO ML afirmando que este
-  // pedido veio do anuncio pago; "Produto anunciado" e so inferencia nossa
-  // a partir de o produto ter verba ativa.
-  const selo = d.vendaPorPublicidade === "1"
-    ? "\\n📣 Venda por publicidade" + valorAds
-    : d.viaAds === "1"
-      ? "\\n📣 Produto anunciado" + valorAds
-      : "";
   // A "tag" faz o sistema SUBSTITUIR um aviso já existente do mesmo pedido
   // em vez de empilhar outro — rede de segurança extra contra push duplicado.
   const options = {
-    body: (d.body || "") + selo,
+    body: d.body || "",
     icon: d.icon || "/manifest-icon-192",
     badge: d.badge || "/manifest-icon-192",
     tag: d.tag || undefined,

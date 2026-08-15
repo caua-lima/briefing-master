@@ -76,22 +76,6 @@ export type SalePushPayload = {
   estimatedProfit?: string;
   estimatedMargin?: string;
   financialState?: "estimated" | "confirmed" | "unavailable";
-  /**
-   * "1" quando o produto vendido está com campanha de Ads ativa no período.
-   * NÃO é atribuição por pedido — o Mercado Livre não expõe isso (ver
-   * lib/ml/ads-attribution.ts). O texto na tela diz "produto anunciado",
-   * nunca "esta venda veio do anúncio".
-   */
-  viaAds?: string;
-  /**
-   * "1" quando o PRÓPRIO Mercado Livre marcou esta venda como vinda de
-   * anúncio pago — é o "Venda por publicidade" do detalhe da venda. Mais
-   * forte que `viaAds`: aqui é afirmação do ML sobre ESTE pedido, não
-   * inferência a partir de o produto estar anunciado.
-   */
-  vendaPorPublicidade?: string;
-  /** Investimento em Ads do PRODUTO nos últimos 7 dias, já formatado. */
-  adsInvestido?: string;
   timestamp: string;
 };
 
