@@ -45,8 +45,14 @@ describe("calcularConcentracaoVendas", () => {
     expect(r.horaMaisForte).toBe(22);
   });
 
-  it("timestamp com offset explicito continua sendo lido por fatia, sem reparse", () => {
+  it("offset -03:00 (ja Brasilia) permanece igual apos a conversao", () => {
     const r = calcularConcentracaoVendas([{ date_created: "2026-08-11T14:32:10.000-03:00" }]);
     expect(r.horaMaisForte).toBe(14);
+  });
+
+  it("offset -04:00 do ML cai na faixa certa (era o bug de 1 hora atras)", () => {
+    // 12:01 em -04:00 e 13:01 em Brasilia: tem que cair na faixa das 13h.
+    const r = calcularConcentracaoVendas([{ date_created: "2026-08-11T12:01:00.000-04:00" }]);
+    expect(r.horaMaisForte).toBe(13);
   });
 });

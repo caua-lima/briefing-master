@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
+import { paraBR } from "@/lib/domain/tempo";
 
 type ProdutoData = { custo: number; custoMedioFaixas?: CustoFaixa[]; imposto: number; impostoFaixas?: ImpostoFaixa[]; name: string };
 type OrderItem = { sku?: string; item_id?: string; quantity?: number; unit_price?: number; sale_fee?: number; title?: string };
@@ -145,7 +146,9 @@ export async function GET(req: Request) {
     const pedidos = orders.map((o) => {
       // Alíquota da data da venda — mudar o imposto hoje não reescreve o
       // lucro de meses já fechados.
-      const diaPedido = String(o.date_created ?? "").slice(0, 10);
+      // Também convertido: perto da meia-noite, fatiar podia jogar a venda
+      // pro dia anterior e aplicar a alíquota/custo médio de outra vigência.
+      const diaPedido = paraBR(String(o.date_created ?? ""))?.dia ?? "";
       const items = (o.items as OrderItem[]) ?? [];
       const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
       const orderShipping = Number(o.shipping_cost ?? 0);
@@ -218,8 +221,11 @@ export async function GET(req: Request) {
 
       return {
         order_id: String(o.order_id ?? ""),
-        data: String(o.date_created ?? "").slice(0, 10),
-        hora: String(o.date_created ?? "").slice(11, 16),
+        // Convertido, nao fatiado: o ML devolve o timestamp com o offset dele
+        // (na pratica -04:00), e fatiar mostrava a venda das 13:01 como 12:01.
+        // Ver lib/domain/tempo.ts.
+        data: paraBR(String(o.date_created ?? ""))?.dia ?? "",
+        hora: paraBR(String(o.date_created ?? ""))?.hora ?? "",
         status: String(o.status ?? ""),
         // Sem repetir nome quando o mesmo produto vem em mais de uma linha.
         produto: Array.from(new Set(nomes)).join(", "),

@@ -4,13 +4,14 @@
  * (Métricas > Negócio), só que calculada em cima dos pedidos já
  * sincronizados, sem bater em API nenhuma.
  *
- * dia/hora extraídos por FATIA DE TEXTO da própria date_created (já vem com
- * o horário local do vendedor, igual ao resto do app faz em
- * app/api/ml/pedidos/route.ts: data/hora = slice da string, sem reparse de
- * timezone) — só o dia (YYYY-MM-DD) precisa virar Date pra achar o dia da
- * semana, e isso é feito com componentes locais (new Date(y, m-1, d)), o
+ * Dia e hora saem SEMPRE convertidos pro fuso de Brasília (lib/domain/tempo.ts),
+ * nunca fatiados da string: o Mercado Livre devolve `date_created` no offset
+ * dele, e fatiar deslocava a venda em uma hora. O dia (YYYY-MM-DD) vira Date
+ * com componentes locais (new Date(y, m-1, d)) só pra achar o dia da semana —
  * mesmo truque já usado em MelhoresDias (components/dashboard/Dashboard.tsx).
  */
+
+import { paraBR } from "./tempo";
 
 export type OrderParaHeatmap = {
   date_created?: string;
@@ -25,42 +26,24 @@ export type ResultadoHeatmap = {
 };
 
 /**
- * Converte pro horário de Brasília ANTES de ler dia/hora.
+ * Dia e hora SEMPRE convertidos pro fuso de Brasília (ver lib/domain/tempo.ts).
  *
- * O ML devolve `date_created` com o offset local ("...T14:32:10.000-03:00"),
- * e nesse caso fatiar a string já dá o horário certo. Mas o fallback de
- * leitura do Firestore (loadOrders) também aceita janela em UTC, e pedido
- * gravado como "...T17:32:10.000Z" fatiado dá 17h — três horas adiantado.
- * Isso deslocaria o "horário com mais vendas" e, perto da meia-noite, jogaria
- * a venda pro dia da semana errado.
- *
- * Só timestamps marcados como UTC (sufixo Z) são convertidos; os que já vêm
- * com offset explícito continuam sendo lidos por fatia, sem reparse — mesmo
- * critério usado em app/api/ml/pedidos/route.ts.
+ * A primeira versão disto só tratava timestamp marcado como UTC (sufixo Z) e
+ * fatiava o resto da string. Só que o Mercado Livre devolve `date_created` com
+ * o offset dele — na prática `-04:00` — e fatiar dava uma hora a menos: a
+ * venda das 13:01 caía na faixa das 12h. Perto da meia-noite isso também
+ * jogava a venda pro DIA DA SEMANA errado, que é o pior erro possível num
+ * mapa de concentração por dia/horário.
  */
-function paraHorarioBR(iso: string): { dia: string; hora: number } | null {
-  if (!iso || iso.length < 13) return null;
-  if (/Z$/i.test(iso)) {
-    const t = Date.parse(iso);
-    if (!Number.isFinite(t)) return null;
-    const br = new Date(t - 3 * 3600 * 1000);
-    const dia = `${br.getUTCFullYear()}-${String(br.getUTCMonth() + 1).padStart(2, "0")}-${String(br.getUTCDate()).padStart(2, "0")}`;
-    return { dia, hora: br.getUTCHours() };
-  }
-  const hora = Number(iso.slice(11, 13));
-  if (!Number.isFinite(hora) || hora < 0 || hora > 23) return null;
-  return { dia: iso.slice(0, 10), hora };
-}
-
 export function calcularConcentracaoVendas(orders: OrderParaHeatmap[]): ResultadoHeatmap {
   const grid: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
   let totalVendas = 0;
 
   for (const o of orders) {
-    const conv = paraHorarioBR(o.date_created ?? "");
+    const conv = paraBR(o.date_created);
     if (!conv) continue;
     const [y, m, d] = conv.dia.split("-").map(Number);
-    const hora = conv.hora;
+    const hora = conv.horaNum;
     if (!y || !m || !d) continue;
     const diaSemana = new Date(y, m - 1, d).getDay();
     grid[diaSemana][hora]++;
