@@ -44,7 +44,11 @@ type AccessCache = AccessResult & {
   checkedAt: number;
 };
 
-const ACCESS_CACHE_PREFIX = "briefing:access:";
+// sessionStorage com TTL curto: renomear o prefixo só descarta o cache, que se
+// refaz na primeira checagem. Por isso este não precisa de migração — ao
+// contrário das chaves de localStorage, que guardam dado do usuário
+// (ver lib/storage.ts).
+const ACCESS_CACHE_PREFIX = "zxpmarket:access:";
 const ACCESS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function getAccessCacheKey(email: string) {

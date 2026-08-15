@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL, getMarginStatus } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
+import { gravarChaveApp, lerChaveApp } from "@/lib/storage";
 
 type ItemPedido = {
   produto: string;
@@ -64,12 +65,12 @@ type FiltroSalvo = {
   logisticaFiltro?: string;
 };
 
-const FILTROS_SALVOS_KEY = "briefing:pedidos:filtros-salvos";
+const FILTROS_SALVOS_KEY = "pedidos:filtros-salvos";
 
 function lerFiltrosSalvos(): FiltroSalvo[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(FILTROS_SALVOS_KEY);
+    const raw = lerChaveApp(FILTROS_SALVOS_KEY);
     return raw ? (JSON.parse(raw) as FiltroSalvo[]) : [];
   } catch {
     return [];
@@ -77,7 +78,7 @@ function lerFiltrosSalvos(): FiltroSalvo[] {
 }
 
 function gravarFiltrosSalvos(lista: FiltroSalvo[]) {
-  try { window.localStorage.setItem(FILTROS_SALVOS_KEY, JSON.stringify(lista)); } catch { /* storage indisponível */ }
+  gravarChaveApp(FILTROS_SALVOS_KEY, JSON.stringify(lista));
 }
 
 /** Badge de cancelado/devolvido — mesmo padrão visual usado em "SEM CADASTRO". */

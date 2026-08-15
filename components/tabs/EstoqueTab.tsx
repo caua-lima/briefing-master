@@ -9,6 +9,7 @@ import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { useAccess } from "@/components/tabs/AccessGuard";
+import { gravarChaveApp, lerChaveApp } from "@/lib/storage";
 
 type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string };
 type EstoqueML = Record<string, MlItem>;
@@ -847,16 +848,16 @@ const STATUS_COBERTURA_COR: Record<CoverageStatus, string> = {
 
 // Planejamento da lista de reposição — só um "marcar como já resolvido",
 // fica no navegador (localStorage), não precisa de Firestore/rule nova.
-const PLANEJADOS_KEY = "briefing:estoque:planejados";
+const PLANEJADOS_KEY = "estoque:planejados";
 function lerPlanejados(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = window.localStorage.getItem(PLANEJADOS_KEY);
+    const raw = lerChaveApp(PLANEJADOS_KEY);
     return new Set(raw ? (JSON.parse(raw) as string[]) : []);
   } catch { return new Set(); }
 }
 function gravarPlanejados(ids: Set<string>) {
-  try { window.localStorage.setItem(PLANEJADOS_KEY, JSON.stringify(Array.from(ids))); } catch { /* storage indisponível */ }
+  gravarChaveApp(PLANEJADOS_KEY, JSON.stringify(Array.from(ids)));
 }
 
 const STATUS_PESO: Record<CoverageStatus, number> = { critico: 0, repor: 1, "sem-giro": 2, encalhado: 3, saudavel: 4 };
