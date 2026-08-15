@@ -6,6 +6,16 @@ import { currentMonthRangeBR, previousMonthRangeBR, syncOrdersRange, syncReturns
 export const maxDuration = 60;
 
 /**
+ * ⚠ AGENDAMENTO: o plano Hobby da Vercel só aceita cron DIÁRIO. Qualquer
+ * expressão que rode mais de uma vez por dia (ex.: "0 9,15,23 * * *") faz o
+ * DEPLOY INTEIRO falhar com "Hobby accounts are limited to daily cron jobs" —
+ * e o `npm run build` local passa normalmente, porque essa validação só
+ * acontece no deploy. Já aconteceu uma vez aqui: o app parou de subir e não
+ * havia erro de build pra explicar. Se precisar de sincronização mais
+ * frequente, NÃO mexa no schedule — o webhook já mantém os pedidos em tempo
+ * real e o Dashboard ressincroniza sozinho a cada 15 min enquanto aberto;
+ * este cron é rede de segurança, não o caminho principal.
+ *
  * Endpoint de sincronização automática, chamado pelo Vercel Cron.
  * O Vercel injeta `Authorization: Bearer <CRON_SECRET>` quando a env
  * CRON_SECRET está configurada — validamos isso via isCronRequest.

@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/ml/cron",
-      "schedule": "0 9,15,23 * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/ml/resumo-diario",
