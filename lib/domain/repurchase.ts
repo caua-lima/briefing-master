@@ -59,3 +59,27 @@ export function calcularCompradoresPeriodo(
 
   return { total, frequentes, novos, taxaRecompra };
 }
+
+/**
+ * Maior janela (em meses) que ainda deixa histórico ANTERIOR suficiente pra
+ * identificar quem já era comprador.
+ *
+ * O problema real, visto em produção: com 12 meses pedidos e só ~3,5 meses de
+ * histórico sincronizado, TODO comprador do período aparecia como "novo"
+ * (620 novos, 0 frequentes, taxa 0,0%) — não porque ninguém recomprou, mas
+ * porque não existia nenhum pedido ANTES do período pra comparar.
+ *
+ * A regra: reservar pelo menos metade do histórico disponível como linha de
+ * base. Com 3,5 meses de dados, mede ~1 mês e usa ~2,5 como base. Devolve
+ * null quando nem isso dá (menos de 2 meses de histórico) — aí não existe
+ * janela honesta, e a tela deve dizer isso em vez de exibir 0%.
+ */
+export function janelaRecomendadaMeses(historicoDesde: string | null, hojeISO: string): number | null {
+  if (!historicoDesde) return null;
+  const inicio = Date.parse(`${historicoDesde}T00:00:00Z`);
+  const hoje = Date.parse(`${hojeISO}T00:00:00Z`);
+  if (!Number.isFinite(inicio) || !Number.isFinite(hoje) || hoje <= inicio) return null;
+  const mesesDisponiveis = (hoje - inicio) / (30.44 * 86400000);
+  const recomendado = Math.floor(mesesDisponiveis / 2);
+  return recomendado >= 1 ? recomendado : null;
+}

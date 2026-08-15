@@ -48,7 +48,10 @@ export default function DesempenhoTab() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div className="seg">
-            {OPCOES_MESES.map((m) => (
+            {/* Inclui a janela recomendada pelo painel de compradores quando ela
+                não é uma das opções fixas — senão o botão trocaria o período e
+                nenhum item ficaria marcado como ativo. */}
+            {Array.from(new Set([...OPCOES_MESES, months])).sort((a, b) => a - b).map((m) => (
               <button key={m} type="button" className={`seg-btn ${months === m ? "active" : ""}`} onClick={() => setMonths(m)}>
                 {m}m
               </button>
@@ -86,6 +89,8 @@ export default function DesempenhoTab() {
               months={dados.months}
               periodoInicio={dados.from}
               historicoDesde={dados.historicoDesde}
+              to={dados.to}
+              onUsarJanela={setMonths}
             />
           </div>
 

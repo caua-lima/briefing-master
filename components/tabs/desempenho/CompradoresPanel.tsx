@@ -1,6 +1,6 @@
 "use client";
 
-import type { ResultadoCompradores } from "@/lib/domain/repurchase";
+import { janelaRecomendadaMeses, type ResultadoCompradores } from "@/lib/domain/repurchase";
 
 function fmtDataBR(iso: string): string {
   const [y, m, d] = iso.split("-");
@@ -8,12 +8,16 @@ function fmtDataBR(iso: string): string {
 }
 
 export default function CompradoresPanel({
-  compradores, months, periodoInicio, historicoDesde,
+  compradores, months, periodoInicio, historicoDesde, to, onUsarJanela,
 }: {
   compradores: ResultadoCompradores;
   months: number;
   periodoInicio: string;
   historicoDesde: string | null;
+  /** Fim do período analisado (hoje, em ISO) — base pra calcular a janela viável. */
+  to: string;
+  /** Troca a janela do painel pra uma que o histórico sincronizado sustenta. */
+  onUsarJanela?: (meses: number) => void;
 }) {
   const cor = (t: number) => (t >= 20 ? "var(--green)" : t >= 10 ? "var(--yellow)" : "var(--red)");
   const pctFrequentes = compradores.total > 0 ? (compradores.frequentes / compradores.total) * 100 : 0;
@@ -21,6 +25,10 @@ export default function CompradoresPanel({
   // margem antes dele), não dá pra saber quem já comprava antes — "novos"
   // fica inflado por falta de dado, não porque ninguém recomprou de verdade.
   const historicoIncompleto = historicoDesde != null && historicoDesde >= periodoInicio;
+  // Janela que o histórico sincronizado de fato sustenta — sem isso o aviso
+  // dizia "tente uma janela menor" sem dizer qual, e 3m podia ser pequeno ou
+  // grande demais dependendo de quanto histórico existe.
+  const janelaViavel = janelaRecomendadaMeses(historicoDesde, to);
 
   return (
     <div className="panel">
@@ -66,8 +74,28 @@ export default function CompradoresPanel({
             }}>
               O pedido mais antigo que temos sincronizado é de {historicoDesde ? fmtDataBR(historicoDesde) : "—"},
               já dentro (ou perto) do início do período. Sem pedido de antes pra comparar, ninguém consegue ser
-              marcado como &quot;frequente&quot; — a taxa de recompra abaixo está subestimada. Tente uma janela
-              menor (3m) ou espere o histórico completo terminar de sincronizar.
+              marcado como <b>frequente</b> — por isso a taxa acima aparece como 0%. Não significa que ninguém
+              recomprou: significa que não dá pra saber com o histórico que temos.
+              {janelaViavel != null ? (
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-warning btn-xs"
+                    onClick={() => onUsarJanela?.(janelaViavel)}
+                    disabled={!onUsarJanela || janelaViavel === months}
+                  >
+                    Usar janela de {janelaViavel} {janelaViavel === 1 ? "mês" : "meses"}
+                  </button>
+                  <span style={{ marginLeft: 8, fontSize: ".72rem" }}>
+                    deixa o histórico anterior livre pra servir de comparação
+                  </span>
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, fontSize: ".72rem" }}>
+                  Ainda não há histórico suficiente pra nenhuma janela honesta — são necessários pelo menos
+                  ~2 meses de pedidos sincronizados.
+                </div>
+              )}
             </div>
           )}
           <div style={{ fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.5 }}>

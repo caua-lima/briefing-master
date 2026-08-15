@@ -29,4 +29,24 @@ describe("calcularConcentracaoVendas", () => {
     const r = calcularConcentracaoVendas([{ date_created: "" }, { date_created: undefined }, { date_created: "abc" }]);
     expect(r.totalVendas).toBe(0);
   });
+
+  it("timestamp em UTC (sufixo Z) e convertido pro horario de Brasilia", () => {
+    // 17:32 UTC = 14:32 em Brasilia (-03:00) — nao pode cair na hora 17.
+    const r = calcularConcentracaoVendas([{ date_created: "2026-08-11T17:32:10.000Z" }]);
+    expect(r.horaMaisForte).toBe(14);
+    expect(r.grid[new Date(2026, 7, 11).getDay()][14]).toBe(1);
+  });
+
+  it("UTC de madrugada volta pro DIA anterior em Brasilia", () => {
+    // 01:30 UTC de 12/ago = 22:30 de 11/ago em Brasilia (terca, nao quarta).
+    const r = calcularConcentracaoVendas([{ date_created: "2026-08-12T01:30:00.000Z" }]);
+    const terca = new Date(2026, 7, 11).getDay();
+    expect(r.diaMaisForte).toBe(terca);
+    expect(r.horaMaisForte).toBe(22);
+  });
+
+  it("timestamp com offset explicito continua sendo lido por fatia, sem reparse", () => {
+    const r = calcularConcentracaoVendas([{ date_created: "2026-08-11T14:32:10.000-03:00" }]);
+    expect(r.horaMaisForte).toBe(14);
+  });
 });
