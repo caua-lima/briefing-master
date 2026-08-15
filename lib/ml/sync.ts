@@ -20,6 +20,27 @@ export function currentMonthRangeBR(): SyncRange {
   };
 }
 
+/**
+ * Intervalo do MÊS ANTERIOR (fuso BR). O cron precisa dele porque dado de
+ * venda não para de mudar quando o mês vira: o repasse do Mercado Pago cai
+ * dias depois, devolução em disputa fecha depois, envio finaliza depois.
+ * Sincronizar só o mês corrente congelava o fechamento do mês passado.
+ */
+export function previousMonthRangeBR(): SyncRange {
+  const brTime = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const year = brTime.getUTCFullYear();
+  const month = brTime.getUTCMonth(); // 0-based; -1 = mês anterior
+  const ini = new Date(Date.UTC(year, month - 1, 1));
+  const y = ini.getUTCFullYear();
+  const m = ini.getUTCMonth();
+  const mm = String(m + 1).padStart(2, "0");
+  const ld = String(new Date(Date.UTC(y, m + 1, 0)).getUTCDate()).padStart(2, "0");
+  return {
+    from: `${y}-${mm}-01T00:00:00.000-03:00`,
+    to: `${y}-${mm}-${ld}T23:59:59.999-03:00`,
+  };
+}
+
 /** Intervalo dos últimos N dias (fuso BR) em ISO, incluindo hoje. */
 export function lastNDaysRangeBR(days: number): SyncRange {
   const brNow = new Date(Date.now() - 3 * 60 * 60 * 1000);

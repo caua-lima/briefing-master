@@ -7,6 +7,7 @@ import RequisitosMercadoLiderPanel from "./desempenho/RequisitosMercadoLiderPane
 import CompradoresPanel from "./desempenho/CompradoresPanel";
 import HeatmapVendas from "./desempenho/HeatmapVendas";
 import EntregasPanel from "./desempenho/EntregasPanel";
+import BackfillHistorico from "./desempenho/BackfillHistorico";
 import type { DesempenhoResponse } from "./desempenho/desempenho-types";
 
 const OPCOES_MESES = [3, 6, 12, 24];
@@ -110,6 +111,10 @@ export default function DesempenhoTab() {
               onUsarJanela={(m) => { setDias(null); setMonths(m); }}
             />
           </div>
+
+          {/* Fica logo abaixo do painel de compradores: e onde a falta de
+              historico se manifesta (recompra travada). */}
+          <BackfillHistorico onConcluir={() => carregar(true)} />
 
           <HeatmapVendas heatmap={dados.heatmap} from={dados.from} to={dados.to} />
 
