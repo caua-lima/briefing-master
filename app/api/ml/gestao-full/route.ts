@@ -390,8 +390,14 @@ export async function GET(req: Request) {
     const CUSTO_MAX_REMESSAS = 20; // teto de chamadas — o resto fica sem custo, sem estourar cota
     const alvosCusto = remessas.filter((r) => r.remessa !== "—").slice(0, CUSTO_MAX_REMESSAS);
     const custoPorRemessa = new Map<string, number>();
-    let custoRemessaIndisponivel = 0;
+    let custoRemessaIndisponivel = 0; // recalculado depois do merge com o manual
     await mapPool(alvosCusto, 4, async (r) => {
+      /**
+       * Duas tentativas, nesta ordem. Nenhuma e documentada pra inbound — a
+       * doc de Fulfillment do ML diz que a API so expoe estoque e operacoes —
+       * mas o inbound_id e um shipment, entao vale tentar os mesmos caminhos
+       * que ja funcionam pro frete de saida antes de exigir digitacao.
+       */
       try {
         const rc = await fetch(`${ML_API}/shipments/${r.remessa}/costs`, { headers, cache: "no-store" });
         if (rc.ok) {
@@ -401,10 +407,21 @@ export async function GET(req: Request) {
           const valor = soma > 0 ? soma : Number(jc?.gross_amount ?? 0);
           if (valor > 0) { custoPorRemessa.set(r.remessa, valor); return; }
         }
-        custoRemessaIndisponivel++;
-      } catch {
-        custoRemessaIndisponivel++;
-      }
+      } catch { /* cai na 2a tentativa */ }
+
+      try {
+        const rs = await fetch(`${ML_API}/shipments/${r.remessa}`, { headers, cache: "no-store" });
+        if (rs.ok) {
+          const js = (await rs.json()) as {
+            base_cost?: number;
+            shipping_option?: { cost?: number; list_cost?: number };
+          };
+          const valor = Number(js?.shipping_option?.list_cost ?? 0)
+            || Number(js?.shipping_option?.cost ?? 0)
+            || Number(js?.base_cost ?? 0);
+          if (valor > 0) { custoPorRemessa.set(r.remessa, valor); return; }
+        }
+      } catch { /* segue sem custo da API */ }
     });
 
     /**

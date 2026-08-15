@@ -5,6 +5,7 @@ import { fmtBRL, isFullMonth, prevPeriod, todayStr } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
 import { Delta } from "@/components/dashboard/ExecutiveKpis";
+import { salvarCustoRemessaFull } from "@/lib/firebase/data";
 
 type CustoDre = { nome: string; valor: number; freq: string };
 
@@ -166,7 +167,12 @@ function GrupoDre({ children }: { children: React.ReactNode }) {
  * de gestão do Full consegue buscar (limite do próprio ML) — nesse caso não
  * temos como afirmar nada, e a linha aparece como indisponível em vez de R$ 0.
  */
-type CustoColetaFull = { total: number; parcial: boolean; foraDaJanela: boolean; remessas: number };
+type RemessaSemCusto = { remessa: string; data: string; recebido: number };
+type CustoColetaFull = {
+  total: number; parcial: boolean; foraDaJanela: boolean; remessas: number;
+  /** Remessas do período que ainda estão sem custo — preenchíveis aqui mesmo. */
+  pendentes: RemessaSemCusto[];
+};
 
 const JANELA_MAX_DIAS_FULL = 55; // teto do ML na busca de operações de estoque
 
@@ -195,12 +201,14 @@ export default function DreTab() {
       const hoje = todayStr();
       const diasAte = Math.ceil((Date.parse(`${hoje}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86400000) + 1;
       if (!Number.isFinite(diasAte) || diasAte > JANELA_MAX_DIAS_FULL) {
-        setColetaFull({ total: 0, parcial: false, foraDaJanela: true, remessas: 0 });
+        setColetaFull({ total: 0, parcial: false, foraDaJanela: true, remessas: 0, pendentes: [] });
       } else {
         const rf = await authedFetch(`/api/ml/gestao-full?dias=${Math.max(diasAte, 1)}`, { cache: "no-store" });
         if (!rf.ok) setColetaFull(null);
         else {
-          const j = (await rf.json()) as { remessas?: { data: string; custo?: number | null; ehTransferencia?: boolean }[] };
+          const j = (await rf.json()) as {
+            remessas?: { remessa: string; data: string; recebido?: number; custo?: number | null; ehTransferencia?: boolean }[];
+          };
           // Transferência entre centros do ML não é coleta sua — não tem taxa sua.
           const noPeriodo = (j.remessas ?? []).filter(
             (x) => !x.ehTransferencia && x.data >= range.from && x.data <= range.to,
@@ -211,6 +219,9 @@ export default function DreTab() {
             parcial: noPeriodo.some((x) => x.custo == null),
             foraDaJanela: false,
             remessas: noPeriodo.length,
+            pendentes: noPeriodo
+              .filter((x) => x.custo == null)
+              .map((x) => ({ remessa: x.remessa, data: x.data, recebido: Number(x.recebido ?? 0) })),
           });
         }
       }
@@ -441,6 +452,18 @@ export default function DreTab() {
             }
           />
         ) : null}
+        {/* Preencher o custo aqui mesmo. A API publica do ML nao expoe a taxa
+            da coleta (a doc de Fulfillment e explicita: so estoque e
+            operacoes), e sem esse numero o Resultado liquido fica otimista —
+            que e exatamente o oposto do que a DRE existe pra mostrar. Obrigar
+            a ir ate a aba Full pra digitar tornava provavel ficar sem. */}
+        {!!coletaFull?.pendentes.length && (
+          <ColetaPendentes
+            pendentes={coletaFull.pendentes}
+            onSalvo={load}
+          />
+        )}
+
         <div style={{ marginTop: 10 }}>
           <Linha
             rotulo="Resultado líquido"
@@ -489,6 +512,93 @@ export default function DreTab() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Preenchimento rápido do custo das coletas que ainda estão sem valor.
+ *
+ * Fica dentro da própria DRE de propósito: é aqui que a falta do número
+ * aparece (Resultado líquido otimista), então é aqui que ele tem que poder
+ * ser corrigido. O valor sai do Seller Center, em Envios › detalhe do envio ›
+ * Tarifas › Custo da coleta Full — normalmente com selo ESTIMADO, calculado
+ * por volume × distância, e é esse estimado mesmo que deve entrar até o ML
+ * fechar o valor real.
+ */
+function ColetaPendentes({
+  pendentes, onSalvo,
+}: {
+  pendentes: RemessaSemCusto[];
+  onSalvo: () => void;
+}) {
+  const [valores, setValores] = useState<Record<string, string>>({});
+  const [salvando, setSalvando] = useState("");
+  const [erro, setErro] = useState("");
+
+  async function salvar(remessa: string) {
+    const bruto = (valores[remessa] ?? "").trim().replace(",", ".");
+    if (!bruto) return;
+    const n = Number(bruto);
+    if (!Number.isFinite(n) || n < 0) { setErro("Informe um valor válido."); return; }
+    setSalvando(remessa);
+    setErro("");
+    try {
+      await salvarCustoRemessaFull(remessa, n);
+      onSalvo();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSalvando("");
+    }
+  }
+
+  return (
+    <div style={{
+      margin: "10px 12px 0", padding: "12px 14px", borderRadius: 10,
+      background: "var(--warning-soft)", border: "1px solid rgba(255,138,31,.35)",
+    }}>
+      <div style={{ fontSize: ".8rem", color: "var(--warning)", fontWeight: 700, marginBottom: 4 }}>
+        {pendentes.length} coleta(s) sem custo informado
+      </div>
+      <div style={{ fontSize: ".74rem", color: "var(--muted)", lineHeight: 1.5, marginBottom: 10 }}>
+        O Mercado Livre não expõe esse valor pela API. Pegue em <b>Envios › detalhe do envio › Tarifas ›
+        Custo da coleta Full</b> (o valor marcado como <i>estimado</i> serve) e informe aqui — ele entra
+        direto no Resultado líquido.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {pendentes.map((r) => (
+          <div key={r.remessa} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: ".78rem", fontWeight: 700, minWidth: 96 }}>
+              #{r.remessa}
+            </span>
+            <span style={{ fontSize: ".72rem", color: "var(--muted)", minWidth: 130 }}>
+              {r.data.split("-").reverse().join("/")} · {r.recebido} un
+            </span>
+            <span style={{ fontSize: ".72rem", color: "var(--muted)" }}>R$</span>
+            <input
+              type="number" min="0" step="0.01" inputMode="decimal"
+              aria-label={`Custo da coleta da remessa ${r.remessa}`}
+              value={valores[r.remessa] ?? ""}
+              onChange={(e) => setValores((s) => ({ ...s, [r.remessa]: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === "Enter") salvar(r.remessa); }}
+              style={{
+                width: 100, fontSize: 16, padding: "5px 9px", textAlign: "right",
+                background: "var(--surface)", border: "1px solid var(--border)",
+                borderRadius: 7, color: "var(--text)", outline: "none",
+              }}
+            />
+            <button
+              type="button" className="btn btn-success btn-xs"
+              disabled={salvando === r.remessa || !(valores[r.remessa] ?? "").trim()}
+              onClick={() => salvar(r.remessa)}
+            >
+              {salvando === r.remessa ? "…" : "Salvar"}
+            </button>
+          </div>
+        ))}
+      </div>
+      {erro && <div style={{ marginTop: 8, fontSize: ".72rem", color: "var(--red)" }}>{erro}</div>}
     </div>
   );
 }
