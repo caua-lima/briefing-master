@@ -92,9 +92,12 @@ export default function LoginCard() {
           <ZxpMark size={46} />
         </div>
         <h2 className="font-display" style={{ fontWeight: 700, letterSpacing: ".03em", color: "var(--text)" }}>
-          ZXP SOLUTIONS
+          ZXP MARKET
         </h2>
-        <p style={{ marginBottom: 2 }}>Dashboard Mercado Livre</p>
+        {/* Nome do PRODUTO, não da matriz: ZXP Solutions (matriz) > VAZXPRESS
+            (a loja) > ZXP Market (este dashboard). A assinatura da matriz fica
+            no rodapé, onde ela pertence. */}
+        <p style={{ marginBottom: 2 }}>Dashboard da VAZXPRESS no Mercado Livre</p>
         <p style={{ fontSize: ".8rem" }}>Entre com e-mail e senha ou com sua conta Google.</p>
 
         <form onSubmit={handleEmail} style={{ textAlign: "left", marginBottom: 6 }}>

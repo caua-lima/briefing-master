@@ -284,10 +284,10 @@ function AppShell() {
                     color: "var(--text)",
                   }}
                 >
-                  ZXP SOLUTIONS
+                  ZXP MARKET
                 </div>
                 <div style={{ fontSize: ".68rem", color: "var(--muted)", marginTop: 1 }}>
-                  Dashboard Mercado Livre
+                  VAZXPRESS · Mercado Livre
                 </div>
               </div>
             </div>

@@ -12,9 +12,13 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 const sora = Sora({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-sora", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "ZXP Solutions | Dashboard Mercado Livre",
-  description: "ZXP Solutions — Dashboard de controle financeiro e de vendas para vendedor do Mercado Livre",
-  applicationName: "ZXP Solutions",
+  // Hierarquia de marca: ZXP Solutions (matriz) > VAZXPRESS (a loja) >
+  // ZXP Market (ESTE dashboard). O app se apresentava como "ZXP Solutions",
+  // que é a matriz, não o produto — o nome do repositório (zxp-market) já
+  // refletia isso antes do app.
+  title: "ZXP Market | Dashboard VAZXPRESS",
+  description: "ZXP Market — dashboard financeiro e operacional da VAZXPRESS no Mercado Livre. Um produto ZXP Solutions.",
+  applicationName: "ZXP Market",
   // manifest.ts na raiz do app já é linkado automaticamente pelo Next — isto
   // aqui é só a parte que o manifest NÃO cobre: o iOS Safari ignora o
   // manifest pra instalação e só reconhece "Adicionar à Tela de Início" via
@@ -22,7 +26,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "ZXP Solutions",
+    title: "ZXP Market",
   },
   // O Next só emite a tag padrão `mobile-web-app-capable` — iOS mais antigo
   // (antes do WebKit adotar o padrão) só reconhece a variante `apple-*`.

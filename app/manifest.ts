@@ -7,9 +7,9 @@ import type { MetadataRoute } from "next";
 // não é suficiente lá.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "ZXP Solutions — Dashboard Mercado Livre",
-    short_name: "ZXP Solutions",
-    description: "Dashboard de controle financeiro e de vendas para vendedor do Mercado Livre",
+    name: "ZXP Market — Dashboard VAZXPRESS",
+    short_name: "ZXP Market",
+    description: "ZXP Market — dashboard financeiro e operacional da VAZXPRESS no Mercado Livre. Um produto ZXP Solutions.",
     start_url: "/",
     scope: "/",
     display: "standalone",
