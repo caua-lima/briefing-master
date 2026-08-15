@@ -1,0 +1,100 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Modal from "@/components/Modal";
+import { fmtBRL } from "@/lib/domain/calc";
+import { agregarPorCampanha, type CampanhaAgregada, type ItemParaCampanha } from "@/lib/domain/ads-campaigns";
+import { corRoas, num, type Modo } from "./ads-types";
+import AdsFunnel from "./AdsFunnel";
+
+/**
+ * Performance POR CAMPANHA. O funil do topo soma tudo, o que esconde o caso
+ * mais comum: uma campanha saudável carregando outra que sangra. Aqui cada
+ * campanha tem seu próprio "Ver performance", que abre o mesmo funil aplicado
+ * só a ela — mesmas fórmulas, mesmo componente, só o recorte muda.
+ */
+export default function AdsCampaignList({ itens, modo }: { itens: ItemParaCampanha[]; modo: Modo }) {
+  // "log" (logística) não tem recorte próprio de campanha — cai no geral.
+  const modoAgg: "pub" | "geral" = modo === "pub" ? "pub" : "geral";
+  const campanhas = useMemo(() => agregarPorCampanha(itens, modoAgg), [itens, modoAgg]);
+  const [aberta, setAberta] = useState<CampanhaAgregada | null>(null);
+
+  if (campanhas.length === 0) return null;
+
+  return (
+    <div className="panel">
+      <div className="panel-head" style={{ marginBottom: 8 }}>
+        <span className="panel-title">Performance por campanha</span>
+        <span className="panel-sub">{campanhas.length} campanha(s) · maior investimento primeiro</span>
+      </div>
+
+      <div className="table-wrapper" style={{ border: "none" }}>
+        <table className="tbl-modern tbl-cards">
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left" }}>Campanha</th>
+              <th>Investido</th>
+              <th>Receita</th>
+              <th>ROAS</th>
+              <th>Lucro após Ads</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {campanhas.map((c) => (
+              <tr key={c.campaignId}>
+                <td style={{ textAlign: "left", fontWeight: 600 }}>
+                  {c.campaignName}
+                  <span style={{ display: "block", fontSize: ".68rem", color: "var(--muted)", fontWeight: 400 }}>
+                    {c.anuncios} anúncio(s) · {num(c.clicks)} cliques
+                  </span>
+                </td>
+                <td data-label="Investido" style={{ color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(c.cost)}</td>
+                <td data-label="Receita" style={{ color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(c.receita)}</td>
+                <td data-label="ROAS" style={{ fontWeight: 700, whiteSpace: "nowrap", color: c.roas != null ? corRoas(c.roas) : "var(--muted)" }}>
+                  {c.roas != null ? `${num(c.roas, 2)}x` : "—"}
+                </td>
+                <td
+                  data-label="Lucro após Ads"
+                  title={c.lucroAposAds == null ? "Nenhum anúncio desta campanha tem venda vinculada no período — não é prejuízo, é falta de dado." : undefined}
+                  style={{
+                    fontWeight: 700, whiteSpace: "nowrap",
+                    color: c.lucroAposAds == null ? "var(--muted)" : c.lucroAposAds >= 0 ? "var(--green)" : "var(--red)",
+                  }}
+                >
+                  {c.lucroAposAds != null ? fmtBRL(c.lucroAposAds) : "—"}
+                </td>
+                <td data-cell="acoes" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setAberta(c)}>
+                    Ver performance
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {aberta && (
+        <Modal open onClose={() => setAberta(null)} wide>
+          <div className="modal-title">{aberta.campaignName}</div>
+          <div className="modal-sub">
+            funil desta campanha · {aberta.anuncios} anúncio(s) ·{" "}
+            {aberta.acos != null ? `ACOS ${num(aberta.acos, 1)}%` : "ACOS indisponível"}
+          </div>
+          <AdsFunnel
+            impressoes={aberta.prints}
+            cliques={aberta.clicks}
+            investimento={aberta.cost}
+            vendas={aberta.unidades}
+            receita={aberta.receita}
+            lucroAposAds={aberta.lucroAposAds}
+          />
+          <div className="modal-btns">
+            <button type="button" className="btn btn-ghost" onClick={() => setAberta(null)}>Fechar</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}

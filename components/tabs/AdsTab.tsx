@@ -14,6 +14,7 @@ import AdsChangelogPanel from "@/components/tabs/ads/AdsChangelogPanel";
 import AdsModeDescription from "@/components/tabs/ads/AdsModeDescription";
 import AdsOverview, { type OverviewTotais } from "@/components/tabs/ads/AdsOverview";
 import AdsFunnel from "@/components/tabs/ads/AdsFunnel";
+import AdsCampaignList from "@/components/tabs/ads/AdsCampaignList";
 import AdsDecisionPanel from "@/components/tabs/ads/AdsDecisionPanel";
 import AdsDataQuality from "@/components/tabs/ads/AdsDataQuality";
 import AdsFilters, { AdsStatusQuickFilters, type FiltrosAdsState } from "@/components/tabs/ads/AdsFilters";
@@ -356,6 +357,10 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
                     vendas={pub ? t.directUn : t.totalUn} receita={pub ? t.direct : t.total}
                     lucroAposAds={pub ? t.lucroLiqDireto : t.lucroLiq}
                   />
+
+                  {/* Mesmo funil, recortado por campanha — o de cima soma
+                      tudo e esconde a campanha que está sangrando. */}
+                  <AdsCampaignList itens={items} modo={modo} />
 
                   <AdsDecisionPanel linhas={linhas} changelog={changelog} onAbrirAnuncio={abrirAnuncio} />
 
