@@ -218,6 +218,9 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
     const { qtd: full, proprio, ehFull } = fullDe(p, estoqueML);
     return s + (full + foraDoFullDe(casa, proprio, ehFull)) * custoMedioDe(p);
   }, 0);
+  // Produto ativo sem nenhum MLB ligado: a venda dele nunca casa com o
+  // cadastro, então entra no lucro com CMV zero (ver metrics/route.ts).
+  const semAnuncio = data.products.filter((p) => p.ativo && mlbsDe(p).filter(Boolean).length === 0);
   // Produtos NO FULL com estoque baixo E unidades em casa pra reabastecer.
   const reabastecer = data.products.filter((p) => {
     const f = fullDe(p, estoqueML);
@@ -243,6 +246,14 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
     }
     return { ruptura, critico, repor, encalhado, valorEmRisco };
   }, [data.products, estoqueML, forecast]);
+
+  /**
+   * Total de produtos que pedem alguma ação. `ruptura` fica FORA da soma
+   * porque todo produto sem estoque já é contado em `critico` ou `encalhado`
+   * pelo getCoverageStatus — somar os quatro contaria o mesmo produto duas
+   * vezes e o cartão mostraria mais produtos em risco do que existem.
+   */
+  const precisamAtencao = resumoCobertura.critico + resumoCobertura.repor + resumoCobertura.encalhado;
 
   function onAdd() {
     setEditProduct({ id: newId(), name: "", custo: "", sku: "", imposto: "", mlbs: [""], ativo: true });
@@ -271,19 +282,61 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         )}
       </div>
 
-      {/* Resumo */}
+      {/*
+        Resumo — 5 cartões em vez dos 10 de antes. Eram tantos que nenhum se
+        destacava: quatro deles ("Em ruptura", "Cobertura crítica", "Cobertura
+        baixa", "Capital parado") são o MESMO assunto (produto que precisa de
+        ação) fatiado, e "Em casa"/"No Full" são as duas metades do estoque que
+        o cartão de valor já resume. Agora cada cartão responde uma pergunta
+        distinta, e o detalhe das faixas fica no `k-sub`, sem perder informação.
+      */}
       <div className="kpi-grid">
-        <div className="kpi k-acc"><div className="k-lbl">Produtos</div><div className="k-val">{total}</div><div className="k-sub">{ativos} ativos</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">Valor em estoque</div><div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div><div className="k-sub">(casa + Full) × custo médio</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Em casa</div><div className="k-val" style={{ color: "var(--yellow)" }}>{unCasa} un</div><div className="k-sub">controle manual</div></div>
-        <div className="kpi k-pos"><div className="k-lbl">No Full (ML)</div><div className="k-val" style={{ color: unFull > 0 ? "var(--green)" : "var(--muted)" }}>{unFull} un</div><div className="k-sub">ao vivo do Mercado Livre</div></div>
-        <div className="kpi k-acc"><div className="k-lbl">Venda potencial</div><div className="k-val">{fmtBRL(valorPotencialVenda)}</div><div className="k-sub">estoque × preço ML atual</div></div>
-        <div className="kpi k-neg"><div className="k-lbl">Em ruptura</div><div className="k-val" style={{ color: resumoCobertura.ruptura > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.ruptura}</div><div className="k-sub">estoque total zerado</div></div>
-        <div className="kpi k-neg"><div className="k-lbl">Cobertura crítica</div><div className="k-val" style={{ color: resumoCobertura.critico > 0 ? "var(--red)" : "var(--muted)" }}>{resumoCobertura.critico}</div><div className="k-sub">&lt; 7 dias de giro</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Cobertura baixa</div><div className="k-val" style={{ color: resumoCobertura.repor > 0 ? "var(--yellow)" : "var(--muted)" }}>{resumoCobertura.repor}</div><div className="k-sub">7–15 dias, repor em breve</div></div>
-        <div className="kpi k-warn"><div className="k-lbl">Capital parado</div><div className="k-val" style={{ color: resumoCobertura.encalhado > 0 ? "var(--warning)" : "var(--muted)" }}>{resumoCobertura.encalhado}</div><div className="k-sub">sem venda no período</div></div>
-        <div className="kpi k-neg"><div className="k-lbl">Valor em risco</div><div className="k-val" style={{ color: resumoCobertura.valorEmRisco > 0 ? "var(--red)" : "var(--muted)" }}>{fmtBRL(resumoCobertura.valorEmRisco)}</div><div className="k-sub">crítico + encalhado × custo médio</div></div>
+        <div className="kpi k-acc">
+          <div className="k-lbl">Produtos</div>
+          <div className="k-val">{total}</div>
+          <div className="k-sub">{ativos} ativos</div>
+        </div>
+        <div className="kpi k-pos">
+          <div className="k-lbl">Valor em estoque</div>
+          <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div>
+          <div className="k-sub">(casa + Full) × custo médio</div>
+        </div>
+        <div className="kpi k-acc">
+          <div className="k-lbl">Unidades</div>
+          <div className="k-val">{unCasa + unFull}</div>
+          <div className="k-sub">{unCasa} em casa · {unFull} no Full</div>
+        </div>
+        <div className="kpi k-acc">
+          <div className="k-lbl">Venda potencial</div>
+          <div className="k-val">{fmtBRL(valorPotencialVenda)}</div>
+          <div className="k-sub">estoque × preço ML atual</div>
+        </div>
+        <div className={precisamAtencao > 0 ? "kpi k-neg" : "kpi k-pos"}>
+          <div className="k-lbl">Precisam de atenção</div>
+          <div className="k-val" style={{ color: precisamAtencao > 0 ? "var(--red)" : "var(--green)" }}>{precisamAtencao}</div>
+          <div className="k-sub">
+            {precisamAtencao === 0
+              ? "nenhum produto em risco"
+              : `${resumoCobertura.ruptura} sem estoque · ${resumoCobertura.critico} crítico · ${resumoCobertura.repor} repor · ${resumoCobertura.encalhado} parado · ${fmtBRL(resumoCobertura.valorEmRisco)} em risco`}
+          </div>
+        </div>
       </div>
+
+      {/* Produto cadastrado sem nenhum anúncio ligado nunca recebe venda no
+          cálculo de lucro — o pedido chega, não acha o produto e o CMV entra
+          como zero. Detectado localmente (sem custo de API) pra o atalho de
+          vincular por SKU aparecer sozinho em vez de ficar escondido no botão. */}
+      {semAnuncio.length > 0 && canEdit && (
+        <div className="note note-warn" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+          <span>
+            <b>{semAnuncio.length} produto(s) sem anúncio vinculado</b> — as vendas deles entram com custo zero
+            e inflam o lucro: {semAnuncio.slice(0, 4).map((p) => p.name || "sem nome").join(", ")}{semAnuncio.length > 4 ? "…" : ""}
+          </span>
+          <button type="button" className="btn btn-warning btn-sm" onClick={() => setVincularSku(true)}>
+            Vincular por SKU
+          </button>
+        </div>
+      )}
 
       {/* Busca */}
       <input
