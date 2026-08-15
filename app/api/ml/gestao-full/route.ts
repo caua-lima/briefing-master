@@ -18,6 +18,20 @@ export const maxDuration = 60;
 const cache = new Map<string, { at: number; body: Record<string, unknown> }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
+/** Executa `fn` sobre `items` com no máximo `limit` chamadas simultâneas — mesmo
+ *  helper de lib/ml/sync.ts, repetido aqui pra não exportar de um módulo que é
+ *  "server-only" por outro motivo. Segura o burst que já causou HTTP 429 no ML. */
+async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+}
+
 function normId(s: string) {
   const up = String(s).trim().toUpperCase();
   return up ? (up.startsWith("MLB") ? up : `MLB${up}`) : "";
@@ -357,10 +371,54 @@ export async function GET(req: Request) {
       }))
       .sort((x, y) => y.data.localeCompare(x.data));
 
+    /**
+     * Custo da COLETA/remessa pro Full — a taxa que o ML cobra pra levar seu
+     * estoque de casa até o centro de distribuição (no Seller Center aparece
+     * como "R$ 81,70", "R$ 63" etc. na lista de envios).
+     *
+     * É um custo REAL que não estava em lugar nenhum do app: `totalEnvio` do
+     * Dashboard/DRE é só o `shipping_cost` de cada PEDIDO — frete de SAÍDA,
+     * do centro até o comprador. A entrada (essa coleta) nunca entrava em
+     * nenhuma conta, então o lucro estava otimista pelo valor dela.
+     *
+     * O id da remessa (inbound_id) é um shipment do ML, então tentamos os
+     * mesmos endpoints de custo que lib/ml/sync.ts já usa pro frete de saída.
+     * Best-effort de propósito: se o ML não expuser custo pra shipment de
+     * entrada, `custo` fica null e a tela mostra "não informado pela API" em
+     * vez de fingir R$ 0,00 (que subestimaria o custo e inflaria o lucro).
+     */
+    const CUSTO_MAX_REMESSAS = 20; // teto de chamadas — o resto fica sem custo, sem estourar cota
+    const alvosCusto = remessas.filter((r) => r.remessa !== "—").slice(0, CUSTO_MAX_REMESSAS);
+    const custoPorRemessa = new Map<string, number>();
+    let custoRemessaIndisponivel = 0;
+    await mapPool(alvosCusto, 4, async (r) => {
+      try {
+        const rc = await fetch(`${ML_API}/shipments/${r.remessa}/costs`, { headers, cache: "no-store" });
+        if (rc.ok) {
+          const jc = (await rc.json()) as { senders?: { cost?: number }[]; gross_amount?: number };
+          const senders = Array.isArray(jc?.senders) ? jc.senders : [];
+          const soma = senders.reduce((s, x) => s + Number(x?.cost ?? 0), 0);
+          const valor = soma > 0 ? soma : Number(jc?.gross_amount ?? 0);
+          if (valor > 0) { custoPorRemessa.set(r.remessa, valor); return; }
+        }
+        custoRemessaIndisponivel++;
+      } catch {
+        custoRemessaIndisponivel++;
+      }
+    });
+
+    const remessasComCusto = remessas.map((r) => ({
+      ...r,
+      // null (não 0) quando o ML não devolveu — a tela precisa distinguir
+      // "coleta de graça" de "não sabemos quanto custou".
+      custo: custoPorRemessa.get(r.remessa) ?? null,
+    }));
+    const custoTotalRemessas = Array.from(custoPorRemessa.values()).reduce((s, v) => s + v, 0);
+
     const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas, truncado, linhasBrutas: recebimentos.length, duplicadasIgnoradas, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
+    const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas: remessasComCusto, custoTotalRemessas, custoRemessaIndisponivel, truncado, linhasBrutas: recebimentos.length, duplicadasIgnoradas, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
     // Só guarda resposta boa: cachear erro esconderia o problema por 5 minutos.
     if (opStatus === 200) cache.set(chaveCache, { at: Date.now(), body });
     return NextResponse.json(body);

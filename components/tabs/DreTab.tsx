@@ -59,9 +59,11 @@ type LinhaProps = {
   base?: number;
   /** Explica o que compõe este subtotal/resultado — mesmo padrão ⓘ + hover usado nos KPIs do Dashboard (ExecutiveKpis/PerformanceGauge). */
   tooltip?: string;
+  /** Dado que não temos: mostra "—" em vez de R$ 0,00, que seria um número errado. */
+  indisponivel?: boolean;
 };
 
-function Linha({ rotulo, valor, nota, tipo, base, tooltip }: LinhaProps) {
+function Linha({ rotulo, valor, nota, tipo, base, tooltip, indisponivel }: LinhaProps) {
   const ehResultado = tipo === "resultado";
   const ehSub = tipo === "subtotal" || ehResultado;
   const ehDed = tipo === "deducao";
@@ -70,7 +72,7 @@ function Linha({ rotulo, valor, nota, tipo, base, tooltip }: LinhaProps) {
     : ehDed ? "var(--red)" : "var(--text)";
   // % sobre a receita: é o que torna a DRE comparável entre meses de tamanhos
   // diferentes — R$ 3 mil de taxa significa coisas distintas em 20k e em 60k.
-  const pct = base && base !== 0 ? (valor / base) * 100 : null;
+  const pct = indisponivel ? null : base && base !== 0 ? (valor / base) * 100 : null;
   const larguraBarra = pct === null ? 0 : Math.min(Math.abs(pct), 100);
 
   return (
@@ -112,9 +114,9 @@ function Linha({ rotulo, valor, nota, tipo, base, tooltip }: LinhaProps) {
       <span className="dre-val" style={{
         fontSize: ehResultado ? "1.05rem" : ehSub ? ".95rem" : ".86rem",
         fontWeight: ehSub ? 800 : 600,
-        whiteSpace: "nowrap", color: cor, fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap", color: indisponivel ? "var(--muted)" : cor, fontVariantNumeric: "tabular-nums",
       }}>
-        {ehDed ? "−" : ""}{fmtBRL(Math.abs(valor))}
+        {indisponivel ? "—" : <>{ehDed ? "−" : ""}{fmtBRL(Math.abs(valor))}</>}
       </span>
 
       {/* % sobre a receita, com mini-barra para leitura rápida */}
@@ -151,10 +153,28 @@ function GrupoDre({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Custo das coletas pro Full no período — a taxa que o ML cobra pra levar seu
+ * estoque de casa até o centro de distribuição. NÃO é o mesmo que `totalEnvio`
+ * (aquele é o frete de SAÍDA, do centro até o comprador, cobrado por pedido).
+ * Até agora esse custo não entrava em conta nenhuma do app, então o resultado
+ * saía otimista pelo valor dele.
+ *
+ * `parcial` = alguma remessa do período veio sem custo da API do ML; o total
+ * abaixo é só do que veio, então é PISO, não o valor fechado.
+ * `foraDaJanela` = o período pedido é mais antigo do que a janela que a rota
+ * de gestão do Full consegue buscar (limite do próprio ML) — nesse caso não
+ * temos como afirmar nada, e a linha aparece como indisponível em vez de R$ 0.
+ */
+type CustoColetaFull = { total: number; parcial: boolean; foraDaJanela: boolean; remessas: number };
+
+const JANELA_MAX_DIAS_FULL = 55; // teto do ML na busca de operações de estoque
+
 export default function DreTab() {
   const [range, setRange] = useState(() => monthRange());
   const [m, setM] = useState<Metrics | null>(null);
   const [mPrev, setMPrev] = useState<Metrics | null>(null);
+  const [coletaFull, setColetaFull] = useState<CustoColetaFull | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -166,6 +186,36 @@ export default function DreTab() {
       setM(null);
     } finally {
       setLoading(false);
+    }
+
+    // Coleta pro Full: best-effort, nunca trava a DRE. Só as remessas que
+    // caem DENTRO do período é que entram — a rota devolve uma janela em dias
+    // corridos a partir de hoje, então filtramos pela data de cada remessa.
+    try {
+      const hoje = todayStr();
+      const diasAte = Math.ceil((Date.parse(`${hoje}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86400000) + 1;
+      if (!Number.isFinite(diasAte) || diasAte > JANELA_MAX_DIAS_FULL) {
+        setColetaFull({ total: 0, parcial: false, foraDaJanela: true, remessas: 0 });
+      } else {
+        const rf = await authedFetch(`/api/ml/gestao-full?dias=${Math.max(diasAte, 1)}`, { cache: "no-store" });
+        if (!rf.ok) setColetaFull(null);
+        else {
+          const j = (await rf.json()) as { remessas?: { data: string; custo?: number | null; ehTransferencia?: boolean }[] };
+          // Transferência entre centros do ML não é coleta sua — não tem taxa sua.
+          const noPeriodo = (j.remessas ?? []).filter(
+            (x) => !x.ehTransferencia && x.data >= range.from && x.data <= range.to,
+          );
+          const total = noPeriodo.reduce((s, x) => s + (x.custo ?? 0), 0);
+          setColetaFull({
+            total,
+            parcial: noPeriodo.some((x) => x.custo == null),
+            foraDaJanela: false,
+            remessas: noPeriodo.length,
+          });
+        }
+      }
+    } catch {
+      setColetaFull(null);
     }
     // Período anterior equivalente — mesma lógica do Dashboard (mês cheio vs
     // mês anterior; mês em andamento vs mesmo dia do mês anterior). Falha
@@ -202,7 +252,15 @@ export default function DreTab() {
   const receitaOperacional = m.totalRetorno; // já é líquida de taxa e frete
   const lucroBruto = receitaOperacional - m.totalCMV;
   const resultadoOperacional = m.lucroComCustos; // o mesmo do Dashboard
-  const resultadoLiquido = resultadoOperacional - m.custosDre;
+  /**
+   * Coleta pro Full entra ABAIXO do resultado operacional de propósito: o
+   * Dashboard não conhece esse custo, e a linha "Resultado operacional" tem
+   * a promessa explícita de bater com ele. Descontar aqui embaixo mantém as
+   * duas telas coerentes E deixa o Resultado líquido correto — mesmo
+   * tratamento que já é dado a pró-labore/contador (custosDre).
+   */
+  const custoColetaFull = coletaFull && !coletaFull.foraDaJanela ? coletaFull.total : 0;
+  const resultadoLiquido = resultadoOperacional - m.custosDre - custoColetaFull;
 
   const base = receitaLiquida;
   const margem = (v: number) => (base ? (v / base) * 100 : 0);
@@ -227,6 +285,7 @@ export default function DreTab() {
       { rotulo: "Despesas operacionais", valor: metrics.custosOperacionais, ded: true },
       { rotulo: "Resultado operacional", valor: resultadoOperacional },
       ...metrics.custosDreDetalhe.map((c) => ({ rotulo: `Despesa da empresa: ${c.nome}`, valor: c.valor, ded: true })),
+      { rotulo: "Coleta pro Full (taxa de envio ao centro)", valor: custoColetaFull, ded: true },
       { rotulo: "Resultado líquido", valor: resultadoLiquido },
     ];
     const header = ["Linha", "Valor (R$)", "% receita líquida"];
@@ -351,13 +410,37 @@ export default function DreTab() {
 
         <GrupoDre>Despesas da empresa</GrupoDre>
         <Linha rotulo="Pró-labore, contador, retirada" valor={m.custosDre} tipo="deducao" base={base} nota="só aparecem aqui, fora do lucro do Dashboard" />
+        {coletaFull?.foraDaJanela ? (
+          <Linha
+            rotulo="Coleta pro Full (taxa de envio ao centro)"
+            valor={0}
+            tipo="deducao"
+            base={base}
+            indisponivel
+            nota={`o Mercado Livre só devolve as remessas dos últimos ${JANELA_MAX_DIAS_FULL} dias — período antigo demais pra consultar`}
+          />
+        ) : coletaFull ? (
+          <Linha
+            rotulo="Coleta pro Full (taxa de envio ao centro)"
+            valor={coletaFull.total}
+            tipo="deducao"
+            base={base}
+            nota={
+              coletaFull.remessas === 0
+                ? "nenhuma remessa pro Full neste período"
+                : coletaFull.parcial
+                  ? `${coletaFull.remessas} remessa(s) — o ML não devolveu o custo de todas, então este valor é o mínimo`
+                  : `${coletaFull.remessas} remessa(s) enviada(s) no período`
+            }
+          />
+        ) : null}
         <div style={{ marginTop: 10 }}>
           <Linha
             rotulo="Resultado líquido"
             valor={resultadoLiquido}
             tipo="resultado"
             base={base}
-            tooltip="Resultado operacional menos as despesas da empresa marcadas 'Só na DRE' (pró-labore, contador, retirada). É o número final de tudo que saiu, inclusive o que o Dashboard não desconta."
+            tooltip="Resultado operacional menos as despesas da empresa marcadas 'Só na DRE' (pró-labore, contador, retirada) e a taxa de coleta pro Full. É o número final de tudo que saiu, inclusive o que o Dashboard não desconta."
           />
         </div>
       </div>

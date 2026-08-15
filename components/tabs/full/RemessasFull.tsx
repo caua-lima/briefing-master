@@ -5,6 +5,7 @@ import type { EstoqueMovimento } from "@/lib/domain/types";
 import { movIdRemessa, remessaTemBaixa, type Remessa } from "@/lib/domain/remessas";
 import { addMovimento, ignorarRemessaFull, reabrirRemessaFull, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { fmtBRL } from "@/lib/domain/calc";
 
 // ── Remessas pro Full: baixa a partir do que o ML recebeu ─────────────────
 export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
@@ -181,6 +182,22 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
                     </span>
                     <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>
                       {r.produtos.length} produto{r.produtos.length === 1 ? "" : "s"} · {r.recebido} un recebidas
+                    </span>
+                    {/* Taxa da coleta: custo real que o ML cobra pra levar do seu
+                        galpão ao centro do Full. null = a API não devolveu —
+                        mostrado como "sem custo informado", nunca como R$ 0,00. */}
+                    <span
+                      title={r.custo != null
+                        ? "Taxa que o Mercado Livre cobrou por esta coleta — entra no Resultado líquido da DRE."
+                        : "O Mercado Livre não devolveu o custo desta coleta pela API. Não mostro R$ 0,00 pra não subestimar o custo."}
+                      style={{
+                        fontSize: ".75rem", fontWeight: 700, borderRadius: 6, padding: "2px 8px", cursor: "help",
+                        color: r.custo != null ? "var(--red)" : "var(--muted)",
+                        background: r.custo != null ? "var(--red-bg)" : "var(--surface)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      {r.custo != null ? `coleta ${fmtBRL(r.custo)}` : "coleta sem custo informado"}
                     </span>
                   </div>
                   {feita ? (

@@ -21,6 +21,12 @@ export type Remessa = {
   refs: string[];
   /** Só TRANSFER_DELIVERY: unidade vinda de outro centro do ML, não é envio seu. */
   ehTransferencia: boolean;
+  /**
+   * Taxa que o ML cobrou pra levar esta remessa de casa até o centro do Full.
+   * `null` = a API não devolveu o custo — diferente de 0 (coleta grátis).
+   * Nunca tratar null como zero: subestimaria o custo e inflaria o lucro.
+   */
+  custo?: number | null;
 };
 
 /**
