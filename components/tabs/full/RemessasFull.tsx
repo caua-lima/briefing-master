@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EstoqueMovimento } from "@/lib/domain/types";
 import { movIdRemessa, remessaTemBaixa, type Remessa } from "@/lib/domain/remessas";
+import { separarParaAutoBaixa } from "@/lib/domain/full-auto-baixa";
 import { addMovimento, ignorarRemessaFull, reabrirRemessaFull, salvarCustoRemessaFull, watchRemessasIgnoradas } from "@/lib/firebase/data";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { fmtBRL } from "@/lib/domain/calc";
@@ -27,6 +28,24 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
   // esse valor (ver salvarCustoRemessaFull) — sem isto ele nunca chega na DRE.
   const [custos, setCustos] = useState<Record<string, string>>({});
   const [salvandoCusto, setSalvandoCusto] = useState("");
+  /**
+   * Ligada por padrão, mas desligável e lembrada no aparelho: baixa de estoque
+   * mexe em dinheiro, e quem não quiser automação precisa conseguir sair dela
+   * sem depender de deploy.
+   */
+  const [autoBaixaLigada, setAutoBaixaLigada] = useState(true);
+  // Lido no efeito, e nao na inicializacao do useState, de proposito:
+  // localStorage nao existe no servidor, e inicializar com o valor salvo
+  // faria o HTML do servidor (sempre "ligada") divergir do cliente. Mesmo
+  // padrao dos filtros salvos em PedidosTab.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setAutoBaixaLigada(localStorage.getItem("full:auto-baixa") !== "0"); } catch { /* sem storage: segue ligada */ }
+  }, []);
+  function alternarAutoBaixa(v: boolean) {
+    setAutoBaixaLigada(v);
+    try { localStorage.setItem("full:auto-baixa", v ? "1" : "0"); } catch { /* ignora */ }
+  }
 
   useEffect(() => watchRemessasIgnoradas(setIgnoradas), []);
 
@@ -88,6 +107,53 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
   const pendentes = remessas.filter((r) => !resolvida(r));
   const resolvidas = remessas.filter(resolvida);
 
+  /**
+   * Baixa automática das remessas que não têm NADA pra decidir (ver
+   * lib/domain/full-auto-baixa.ts): recebimento sem divergência, todo produto
+   * cadastrado, não é transferência. Nesse caso conferir era só ritual — o
+   * número já vinha certo e o clique só atrasava o lançamento.
+   *
+   * O que tem divergência ou produto sem cadastro continua na lista pra você
+   * decidir: é onde o olho humano vale, e automatizar erraria caro (baixa
+   * errada entra silenciosa no custo médio e contamina a margem das vendas
+   * seguintes).
+   */
+  const { automaticas } = separarParaAutoBaixa(remessas, resolvida);
+  // Guarda o que já foi disparado nesta sessão: o efeito reroda quando
+  // `movimentos` chega de volta e sem isto lançaria duas vezes a mesma
+  // remessa antes do Firestore refletir a primeira.
+  const autoEmCurso = useRef<Set<string>>(new Set());
+  const [autoFeitas, setAutoFeitas] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!autoBaixaLigada || !aberto) return;
+    for (const r of automaticas) {
+      if (autoEmCurso.current.has(r.remessa)) continue;
+      autoEmCurso.current.add(r.remessa);
+      (async () => {
+        try {
+          for (const prod of r.produtos) {
+            if (!prod.productId) continue;
+            await addMovimento({
+              id: movIdRemessa(r.remessa, prod.productId),
+              productId: prod.productId,
+              tipo: "saida_full",
+              quantidade: prod.qtd,
+              data: r.data,
+              obs: `Remessa Full #${r.remessa} · baixa automática (recebimento sem divergência)`,
+            });
+          }
+          setAutoFeitas((s) => (s.includes(r.remessa) ? s : [...s, r.remessa]));
+        } catch {
+          // Solta o cadeado pra tentar de novo na próxima carga, em vez de
+          // ficar travado achando que já lançou.
+          autoEmCurso.current.delete(r.remessa);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [automaticas.map((r) => r.remessa).join(","), autoBaixaLigada, aberto]);
+
   async function darBaixa(r: Remessa) {
     // Pula quem já tem baixa gravada: reenviar de novo é inofensivo (mesmo id,
     // sobrescreve com o mesmo valor), mas melhor nem tocar no que já está certo.
@@ -127,9 +193,28 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
         Cada remessa só dá baixa uma vez.
       </div>
 
-      <button type="button" className="btn btn-ghost btn-sm" onClick={buscar} disabled={carregando}>
-        {carregando ? "Buscando…" : aberto ? "Buscar de novo" : "Buscar remessas"}
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={buscar} disabled={carregando}>
+          {carregando ? "Buscando…" : aberto ? "Buscar de novo" : "Buscar remessas"}
+        </button>
+        <label
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: ".8rem", cursor: "pointer" }}
+          title="Aplica a baixa sozinho só quando a remessa não tem nada pra decidir: recebimento sem divergência e todo produto cadastrado. Divergência ou produto sem cadastro continua vindo pra você."
+        >
+          <input type="checkbox" checked={autoBaixaLigada} onChange={(e) => alternarAutoBaixa(e.target.checked)} />
+          Baixa automática quando não há divergência
+        </label>
+      </div>
+
+      {autoFeitas.length > 0 && (
+        <div className="note note-accent" style={{ marginTop: 10 }}>
+          <b>{autoFeitas.length} remessa(s) baixada(s) automaticamente</b> — recebimento bateu sem divergência
+          e todos os produtos estavam cadastrados: {autoFeitas.map((r) => `#${r}`).join(", ")}.
+          <div style={{ marginTop: 4, fontSize: ".72rem" }}>
+            Aparecem em &quot;já resolvidas&quot; abaixo, e cada lançamento está no histórico do produto no Estoque.
+          </div>
+        </div>
+      )}
 
       {erro && (
         <div style={{
