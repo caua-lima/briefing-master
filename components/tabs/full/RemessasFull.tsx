@@ -9,7 +9,13 @@ import { fmtBRL } from "@/lib/domain/calc";
 
 // ── Remessas pro Full: baixa a partir do que o ML recebeu ─────────────────
 export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovimento[] }) {
-  const [dados, setDados] = useState<{ opStatus?: number; opErro?: string; remessas?: Remessa[]; dias?: number; janela?: { from: string; to: string } } | null>(null);
+  const [dados, setDados] = useState<{
+    opStatus?: number; opErro?: string; remessas?: Remessa[]; dias?: number;
+    janela?: { from: string; to: string };
+    totalDisponivel?: number; totalVendido?: number;
+    custoTotalRemessas?: number; custoRemessaIndisponivel?: number;
+    duplicadasIgnoradas?: number;
+  } | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(false);
   const [qtds, setQtds] = useState<Record<string, string>>({});
@@ -51,6 +57,14 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
   // Envio seu tira estoque de casa; transferência entre centros do ML, não.
   const remessas = todas.filter((r) => !r.ehTransferencia);
   const transferencias = todas.filter((r) => r.ehTransferencia);
+  /**
+   * Unidades que chegaram no centro mas NÃO viraram estoque vendável
+   * (avaria, divergência de conferência). É o equivalente da coluna
+   * "Diferenças" da tela de envio do Seller Center: se este número for
+   * maior que zero, o que você enviou e o que virou venda não batem, e a
+   * diferença é prejuízo silencioso — sai do seu estoque e nunca vende.
+   */
+  const divergencia = remessas.reduce((s, r) => s + (r.problema ?? 0), 0);
   // Produto específico já com baixa gravada nesta remessa (não a remessa
   // inteira). Sem isso, reabrir a página depois de uma baixa parcial (falhou
   // no meio do loop) reapresentava TODOS os produtos editáveis com o valor
@@ -132,6 +146,44 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
           {remessas.length > 0 && pendentes.length === 0 && (
             <div style={{ fontSize: ".82rem", color: "var(--green)", marginBottom: 10 }}>
               Nenhuma remessa pendente — tudo que chegou já foi resolvido.
+            </div>
+          )}
+
+          {/* Panorama do Full com o que a API de fato entrega. Nada aqui é
+              estimativa: unidades vêm do estoque ao vivo do ML, remessas e
+              divergência vêm das operações de recebimento, custo vem do
+              shipment. Reaproveita a MESMA resposta já buscada — zero chamada
+              extra ao Mercado Livre. */}
+          {dados && (
+            <div className="kpi-grid" style={{ marginBottom: 14 }}>
+              <div className="kpi k-pos">
+                <div className="k-lbl">Disponível no Full</div>
+                <div className="k-val" style={{ color: "var(--green)" }}>{dados.totalDisponivel ?? 0} un</div>
+                <div className="k-sub">ao vivo do Mercado Livre</div>
+              </div>
+              <div className="kpi k-acc">
+                <div className="k-lbl">Recebido no período</div>
+                <div className="k-val">{remessas.reduce((s, r) => s + r.recebido, 0)} un</div>
+                <div className="k-sub">{remessas.length} remessa(s) sua(s)</div>
+              </div>
+              <div className="kpi k-neg">
+                <div className="k-lbl">Custo das coletas</div>
+                <div className="k-val" style={{ color: (dados.custoTotalRemessas ?? 0) > 0 ? "var(--red)" : "var(--muted)" }}>
+                  {fmtBRL(dados.custoTotalRemessas ?? 0)}
+                </div>
+                <div className="k-sub">
+                  {(dados.custoRemessaIndisponivel ?? 0) > 0
+                    ? `${dados.custoRemessaIndisponivel} sem custo na API — valor é o mínimo`
+                    : "entra no Resultado líquido da DRE"}
+                </div>
+              </div>
+              <div className={divergencia > 0 ? "kpi k-warn" : "kpi k-pos"}>
+                <div className="k-lbl">Unidades com divergência</div>
+                <div className="k-val" style={{ color: divergencia > 0 ? "var(--warning)" : "var(--green)" }}>{divergencia}</div>
+                <div className="k-sub">
+                  {divergencia > 0 ? "chegaram mas não ficaram vendáveis" : "tudo que chegou virou estoque"}
+                </div>
+              </div>
             </div>
           )}
 
