@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
-import { addMovimento, deleteMovimento, deleteProduct, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
+import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, type CoverageStatus } from "@/lib/domain/estoque";
 import Modal from "@/components/Modal";
@@ -362,8 +362,18 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           isNew={!data.products.some((p) => p.id === editProduct.id)}
           onClose={() => setEditProduct(null)}
           onSave={async (prod) => {
+            const ehNovo = !data.products.some((p) => p.id === prod.id);
             try {
               await upsertProduct(uid, prod);
+              // Trilha de auditoria: mexer no custo médio de um produto muda a
+              // margem de vendas passadas (ver custoNaData) — precisa de rastro.
+              logAudit({
+                acao: ehNovo ? "criar" : "editar",
+                entidade: "produto",
+                entidadeId: prod.id,
+                entidadeLabel: prod.name || "(sem nome)",
+                detalhe: `custo ${fmtBRL(prod.custoMedio ?? parseNum(prod.custo))} · imposto ${prod.imposto ?? 0}%`,
+              }).catch(() => {});
             } catch (err: unknown) {
               alert("Erro ao salvar produto: " + (err instanceof Error ? err.message : String(err)));
             } finally {
@@ -510,7 +520,11 @@ function ProductRow({
               <button type="button" className="btn btn-ghost btn-xs" title="Ver o estoque de cada anúncio fora do Full (envio por conta sua/agência)" onClick={onAgencias}>Agências</button>
             )}
             <button type="button" className="btn btn-warning btn-xs" title="Editar produto" onClick={onEdit}>Editar</button>
-            <button type="button" className="btn btn-danger btn-xs" title="Remover produto" onClick={() => { if (!confirm(`Remover "${product.name}"?`)) return; deleteProduct("", product.id).catch(() => {}); }}>Excluir</button>
+            <button type="button" className="btn btn-danger btn-xs" title="Remover produto" onClick={() => {
+              if (!confirm(`Remover "${product.name}"?`)) return;
+              deleteProduct("", product.id).catch(() => {});
+              logAudit({ acao: "excluir", entidade: "produto", entidadeId: product.id, entidadeLabel: product.name || "(sem nome)" }).catch(() => {});
+            }}>Excluir</button>
           </div>
         </td>
       </tr>
@@ -603,7 +617,15 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
                     <td data-label="Custo un.">{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
                     <td data-label="Obs" style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
                     <td data-cell="acoes">
-                      <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => { if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return; deleteMovimento(m.id, product.id).catch(() => {}); }}>Excluir</button>
+                      <button type="button" className="btn btn-danger btn-xs" title="Excluir movimentação" onClick={() => {
+                        if (!confirm("Excluir esta movimentação? O custo médio será recalculado.")) return;
+                        deleteMovimento(m.id, product.id).catch(() => {});
+                        logAudit({
+                          acao: "excluir", entidade: "movimento", entidadeId: m.id,
+                          entidadeLabel: `${product.name || "(sem nome)"} · ${TIPO_LABEL[m.tipo]}`,
+                          detalhe: `${m.quantidade} un em ${m.data}`,
+                        }).catch(() => {});
+                      }}>Excluir</button>
                     </td>
                   </tr>
                 );
@@ -670,9 +692,10 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
       return;
     }
     setSaving(true);
+    const movId = newMovId();
     try {
       await addMovimento({
-        id: newMovId(),
+        id: movId,
         productId: product.id,
         tipo,
         quantidade: isAjuste ? qNum : Math.abs(qNum),
@@ -681,6 +704,15 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
         obs: obs.trim() || undefined,
         // Entrada e saldo do Full gravam o custo médio recalculado.
       }, precisaCusto ? novoAvg : undefined);
+      // Entrada muda o custo médio a partir desta data (ver custoNaData) —
+      // registra na trilha o custo informado e o novo médio resultante.
+      logAudit({
+        acao: "criar", entidade: "movimento", entidadeId: movId,
+        entidadeLabel: `${product.name || "(sem nome)"} · ${titulo}`,
+        detalhe: precisaCusto
+          ? `${qNum} un a ${fmtBRL(cNum)} · custo médio ${fmtBRL(avgAtual)} → ${fmtBRL(novoAvg)}`
+          : `${qNum} un em ${data}`,
+      }).catch(() => {});
       onSaved();
     } catch (err: unknown) {
       alert("Erro ao salvar movimentação: " + (err instanceof Error ? err.message : String(err)));

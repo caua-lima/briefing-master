@@ -53,11 +53,15 @@ export default function AccessControlTab({
 
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
+  const [auditErro, setAuditErro] = useState("");
   useEffect(() => {
-    const unsubscribe = watchAuditLog((events) => {
-      setAuditLog(events);
-      setAuditLoading(false);
-    });
+    const unsubscribe = watchAuditLog(
+      (events) => { setAuditLog(events); setAuditLoading(false); setAuditErro(""); },
+      200,
+      // Sem isto a tela ficava em "Carregando…" pra sempre quando a leitura
+      // era negada — o erro morria dentro do onSnapshot.
+      (msg) => { setAuditErro(msg); setAuditLoading(false); },
+    );
     return () => unsubscribe();
   }, []);
 
@@ -196,7 +200,7 @@ export default function AccessControlTab({
     criar: "criou", editar: "editou", arquivar: "arquivou", reativar: "reativou", excluir: "excluiu",
   };
   const AUDIT_ENTIDADE_LABEL: Record<AuditEvent["entidade"], string> = {
-    custo: "custo", meta: "meta", acesso: "acesso",
+    custo: "custo", meta: "meta", acesso: "acesso", produto: "produto", movimento: "movimentação de estoque",
   };
   const AUDIT_TONE: Record<AuditEvent["acao"], string> = {
     criar: "var(--green)", editar: "var(--brand)", arquivar: "var(--yellow)", reativar: "var(--green)", excluir: "var(--red)",
@@ -382,7 +386,14 @@ export default function AccessControlTab({
             Registro imutável de quem criou, editou, arquivou ou excluiu custos, metas e acessos. Não cobre edição campo a campo (ex.: digitar num valor de custo) — só ações discretas, pra não virar ruído.
           </div>
           <div className="list-stack">
-            {auditLoading ? (
+            {auditErro ? (
+              <div className="note note-danger">
+                <b>Não consegui ler a trilha de auditoria.</b> Se a mensagem abaixo fala em permissão,
+                as regras do Firestore precisam ser republicadas com a coleção <b>auditLog</b>{" "}
+                (<code>firebase deploy --only firestore:rules</code>).
+                <div style={{ marginTop: 6, fontFamily: "ui-monospace, monospace", fontSize: ".7rem", overflowWrap: "anywhere" }}>{auditErro}</div>
+              </div>
+            ) : auditLoading ? (
               <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>Carregando…</div>
             ) : auditLog.length === 0 ? (
               <div className="empty-state"><span className="empty-ico">📜</span>Nenhuma ação registrada ainda.</div>

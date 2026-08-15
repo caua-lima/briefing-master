@@ -349,7 +349,10 @@ export function appendAtividade(atual: TaskAtividade[] | undefined, evento: Task
 // "Excluir"), não o auto-save por campo do Custos: logar cada tecla digitada
 // viraria ruído, não auditoria.
 export type AuditAction = "criar" | "editar" | "arquivar" | "reativar" | "excluir";
-export type AuditEntity = "custo" | "meta" | "acesso";
+// "produto" e "movimento" (estoque) entraram depois: mexer em custo médio ou
+// lançar/apagar uma movimentação muda o lucro de vendas passadas, então é
+// exatamente o tipo de ação que precisa de rastro de quem fez.
+export type AuditEntity = "custo" | "meta" | "acesso" | "produto" | "movimento";
 
 export type AuditEvent = {
   id: string;

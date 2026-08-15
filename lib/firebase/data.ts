@@ -506,11 +506,24 @@ export async function logAudit(evt: {
   await setDoc(sDoc("auditLog", id), sanitizeUndefined({ ...evt, id, por: email, em: Date.now() }));
 }
 
-export function watchAuditLog(cb: (events: AuditEvent[]) => void, max = 200): () => void {
+/**
+ * `onError` não é opcional por capricho: sem ele, uma falha de permissão
+ * (regra do Firestore ainda não publicada, papel rebaixado) fazia o
+ * onSnapshot nunca chamar o callback de sucesso — e a tela ficava em
+ * "Carregando…" pra sempre, sem nenhuma pista do que aconteceu. Era esse o
+ * "a trilha de auditoria não funciona": ela não estava vazia, estava travada.
+ */
+export function watchAuditLog(
+  cb: (events: AuditEvent[]) => void,
+  max = 200,
+  onError?: (msg: string) => void,
+): () => void {
   const q = query(sCol("auditLog"), orderBy("em", "desc"), limit(max));
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => d.data() as AuditEvent));
-  });
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => d.data() as AuditEvent)),
+    (err) => onError?.(err instanceof Error ? err.message : String(err)),
+  );
 }
 
 // ── Central de Notificações (Fase 7) ────────────────────────────
