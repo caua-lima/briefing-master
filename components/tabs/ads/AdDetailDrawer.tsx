@@ -83,6 +83,12 @@ export default function AdDetailDrawer({
           <Linha label="Margem" valor={l.margemAtual != null ? `${num(l.margemAtual, 1)}%` : "—"} cor={l.margemAtual != null ? corMargem(l.margemAtual) : "var(--muted)"} />
           <Linha label="ROAS" valor={l.i.cost > 0 ? `${num(l.r, 2)}x` : "—"} cor={corRoas(l.r)} />
           <Linha label="Break-even ROAS" valor={l.breakEven != null ? `${num(l.breakEven, 2)}x` : "sem lucro antes de Ads pra calcular"} />
+          <Linha
+            label="ROAS ideal (margem alvo)"
+            valor={l.roasIdeal != null
+              ? `${num(l.roasIdeal, 2)}x${l.abaixoDoIdeal ? " — você está abaixo" : " — atingido"}`
+              : "este produto não alcança a margem alvo nem sem Ads"}
+          />
           <Linha label={pub ? "ACOS" : "TACOS"} valor={l.v > 0 ? `${num(l.a, 1)}%` : "—"} cor={corAcos(l.a, l.v > 0)} />
           {!l.i.diretoDisponivel && pub && (
             <div style={{ marginTop: 6, fontSize: ".72rem", color: "var(--warning)" }}>

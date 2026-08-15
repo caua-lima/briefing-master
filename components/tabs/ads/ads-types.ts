@@ -37,6 +37,12 @@ export type LinhaAds = {
   i: AdItem;
   v: number; un: number; r: number; a: number; ctr: number; cpc: number; pctAds: number;
   breakEven: number | null; abaixoDoBreakEven: boolean;
+  /**
+   * ROAS ideal: o mínimo pra sobrar a margem alvo, não só pra empatar
+   * (ver calculateTargetRoas). null = o produto não alcança essa margem nem
+   * gastando zero em ads — não existe alvo possível.
+   */
+  roasIdeal: number | null; abaixoDoIdeal: boolean;
   lucroAtual: number | null; margemAtual: number | null;
   reco: AdRecommendation;
 };

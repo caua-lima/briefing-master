@@ -16,6 +16,37 @@ export function calculateBreakEvenRoas(vendas: number, lucroAntesAds: number): n
   return vendas / lucroAntesAds;
 }
 
+/**
+ * ROAS IDEAL — o mínimo pra sobrar a margem que você quer, não só pra empatar.
+ *
+ * Break-even responde "a partir de quanto eu paro de perder"; este responde
+ * "a partir de quanto eu de fato LUCRO o que quero". A diferença entre os dois
+ * é a faixa em que o anúncio se paga mas não entrega margem — que é onde a
+ * maioria das campanhas vive sem ninguém notar.
+ *
+ * Dedução (R = receita, C = custo do ad, L0 = lucro ANTES do ad, m = margem
+ * alvo em fração):
+ *     margem após ads = (L0 − C) / R ≥ m
+ *     ⇒ C ≤ L0 − m·R
+ *     ⇒ ROAS = R / C ≥ R / (L0 − m·R)
+ *
+ * Retorna null quando L0 ≤ m·R: nesse caso o produto não gera margem
+ * suficiente NEM gastando zero em ads — nenhum ROAS resolve, e devolver um
+ * número aqui (0, Infinity) faria a tela sugerir uma meta impossível. Com
+ * m = 0 o resultado é exatamente o break-even, por construção.
+ */
+export function calculateTargetRoas(
+  vendas: number,
+  lucroAntesAds: number,
+  metaMargemPct: number,
+): number | null {
+  if (vendas <= 0 || lucroAntesAds <= 0) return null;
+  const m = Math.max(metaMargemPct, 0) / 100;
+  const folga = lucroAntesAds - m * vendas;
+  if (folga <= 0) return null;
+  return vendas / folga;
+}
+
 export type AdRecommendation = {
   acao: "pausar" | "reduzir" | "escalar" | "sem-dados";
   label: string;

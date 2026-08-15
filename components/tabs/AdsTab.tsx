@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
-import { calculateBreakEvenRoas, getAdRecommendation } from "@/lib/domain/ads";
+import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation } from "@/lib/domain/ads";
 import { calculateAdsReconciliation } from "@/lib/domain/ads-reconciliation";
 import { derivarPeriodoAnterior, periodoAnteriorTemDadosSuficientes } from "@/lib/domain/ads-comparison";
 import { formatarResumoAlteracao } from "@/lib/domain/ads-changelog";
@@ -182,8 +182,12 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
     const ctr = i.prints > 0 ? (i.clicks / i.prints) * 100 : 0;
     const cpc = i.clicks > 0 ? i.cost / i.clicks : 0;
     const pctAds = i.totalSales > 0 ? (i.adSales / i.totalSales) * 100 : 0;
-    const breakEven = calculateBreakEvenRoas(v, pub ? i.lucroDiretoAntesAds : i.lucroAntesAds);
+    const lucroAntes = pub ? i.lucroDiretoAntesAds : i.lucroAntesAds;
+    const breakEven = calculateBreakEvenRoas(v, lucroAntes);
     const abaixoDoBreakEven = breakEven != null && i.cost > 0 && r < breakEven;
+    // ROAS ideal = o que sobra a margem ALVO, não só o que empata.
+    const roasIdeal = calculateTargetRoas(v, lucroAntes, metaMargem);
+    const abaixoDoIdeal = roasIdeal != null && i.cost > 0 && r < roasIdeal;
     const lucroAtual = pub ? (i.diretoDisponivel ? i.lucroDiretoLiquido : null) : i.lucroLiquido;
     const margemAtual = v > 0 && lucroAtual != null ? (lucroAtual / v) * 100 : null;
     const reco = getAdRecommendation({
@@ -191,7 +195,7 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
       roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
       metaMargem,
     });
-    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, lucroAtual, margemAtual, reco };
+    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, roasIdeal, abaixoDoIdeal, lucroAtual, margemAtual, reco };
   }), [items, pub, metaMargem]);
 
   const linhasFiltradas = useMemo(() => {
@@ -247,14 +251,14 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
   function exportarCsv() {
     const header = [
       "Anúncio", "MLB", "Investido", pub ? "Vendas diretas" : "Vendas totais", "Unidades",
-      pub ? "ACOS %" : "TACOS %", "ROAS", "Break-even ROAS", "Lucro", "Margem %",
+      pub ? "ACOS %" : "TACOS %", "ROAS", "Break-even ROAS", "ROAS ideal (margem alvo)", "Lucro", "Margem %",
       "Decisão", "Qualidade dos dados", "Última alteração manual", "Período", "Modo",
     ];
-    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, breakEven, lucroAtual, margemAtual, reco }) => {
+    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, breakEven, roasIdeal, lucroAtual, margemAtual, reco }) => {
       const ultima = changelog.filter((e) => e.campaignId === i.campaignId).sort((x, y) => y.createdAt - x.createdAt)[0];
       return [
         i.title || i.itemId, i.itemId, num(i.cost, 2), num(v, 2), num(un),
-        i.cost > 0 ? num(a, 1) : "", i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "",
+        i.cost > 0 ? num(a, 1) : "", i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "", roasIdeal != null ? num(roasIdeal, 2) : "",
         lucroAtual != null ? num(lucroAtual, 2) : "não disponível", margemAtual != null ? num(margemAtual, 1) : "",
         reco.label, reconciliacao.status, ultima ? formatarResumoAlteracao(ultima) : "",
         `${range.from} a ${range.to}`, pub ? "Publicidade direta" : "Geral",

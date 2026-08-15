@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateBreakEvenRoas, getAdRecommendation } from "./ads";
+import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation } from "./ads";
 
 describe("calculateBreakEvenRoas", () => {
   it("lucroAntesAds <= 0 nunca tem ROAS que salve — retorna null, nao 0/Infinity", () => {
@@ -51,5 +51,36 @@ describe("getAdRecommendation", () => {
   it("abaixo do alvo E do break-even recomenda reduzir", () => {
     const r = getAdRecommendation({ ...base, lucro: 5, roas: 1, roasTarget: 2, breakEvenRoas: 2 });
     expect(r.acao).toBe("reduzir");
+  });
+});
+
+describe("calculateTargetRoas", () => {
+  it("com meta 0%, e exatamente o break-even (por construcao)", () => {
+    const be = calculateBreakEvenRoas(1000, 250);
+    expect(calculateTargetRoas(1000, 250, 0)).toBeCloseTo(be!, 10);
+  });
+
+  it("meta de margem exige ROAS MAIOR que o break-even", () => {
+    const be = calculateBreakEvenRoas(1000, 250)!;   // 4x
+    const alvo = calculateTargetRoas(1000, 250, 10)!; // margem 10%
+    expect(alvo).toBeGreaterThan(be);
+    // R / (L0 - m*R) = 1000 / (250 - 100) = 6,666...
+    expect(alvo).toBeCloseTo(1000 / 150, 6);
+  });
+
+  it("produto que nao alcanca a margem nem gastando zero em ads devolve null", () => {
+    // L0 = 100 e a meta de 20% sobre 1000 exigiria 200 de lucro: impossivel.
+    expect(calculateTargetRoas(1000, 100, 20)).toBeNull();
+  });
+
+  it("sem venda ou sem lucro antes de ads, nao ha alvo", () => {
+    expect(calculateTargetRoas(0, 250, 10)).toBeNull();
+    expect(calculateTargetRoas(1000, 0, 10)).toBeNull();
+    expect(calculateTargetRoas(1000, -50, 10)).toBeNull();
+  });
+
+  it("meta negativa e tratada como zero, nunca afrouxa abaixo do break-even", () => {
+    const be = calculateBreakEvenRoas(1000, 250)!;
+    expect(calculateTargetRoas(1000, 250, -30)).toBeCloseTo(be, 10);
   });
 });

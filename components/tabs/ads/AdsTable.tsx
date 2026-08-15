@@ -107,6 +107,12 @@ export default function AdsTable({
                 ROAS{ordem.col === "roas" ? (ordem.dir === -1 ? " ↓" : " ↑") : ""}
               </th>
               <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }} title="ROAS mínimo pra não perder dinheiro com o ad.">Break-even</th>
+              <th
+                style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}
+                title="ROAS ideal: o mínimo pra sobrar a sua margem alvo, não só pra empatar. Entre o break-even e este número o anúncio se paga mas não entrega margem."
+              >
+                ROAS ideal
+              </th>
               <th style={{ textAlign: "left", position: "sticky", top: 0, background: "var(--surface)", cursor: "pointer" }} onClick={() => alternarOrdem("decisao", 1)} title="Ordenar por impacto — pior impacto primeiro">
                 Decisão{ordem.col === "decisao" ? (ordem.dir === 1 ? " ↓" : " ↑") : ""}
               </th>
@@ -136,6 +142,25 @@ export default function AdsTable({
                 <td data-label="ROAS" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: corRoas(l.r), fontWeight: 700 }}>{l.i.cost > 0 ? `${num(l.r, 2)}x` : "—"}</td>
                 <td data-label="Break-even" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.abaixoDoBreakEven ? "var(--red)" : "var(--muted)", fontWeight: l.abaixoDoBreakEven ? 700 : 400 }}>
                   {l.breakEven != null ? `${num(l.breakEven, 2)}x` : "—"}{l.abaixoDoBreakEven ? " ⚠" : ""}
+                </td>
+                {/* Entre break-even e ideal o anúncio se paga mas não entrega
+                    margem — é a faixa em que a maioria das campanhas vive sem
+                    ninguém notar, por isso ela tem cor própria (atenção), não
+                    a mesma do prejuízo. */}
+                <td
+                  data-label="ROAS ideal"
+                  title={l.roasIdeal == null
+                    ? "Este produto não alcança a margem alvo nem gastando zero em Ads — não existe ROAS que resolva."
+                    : l.abaixoDoIdeal
+                      ? "Abaixo do ROAS que entrega a sua margem alvo."
+                      : "Acima do ROAS que entrega a sua margem alvo."}
+                  style={{
+                    textAlign: "right", whiteSpace: "nowrap", padding: padCel,
+                    color: l.roasIdeal == null ? "var(--muted)" : l.abaixoDoIdeal ? "var(--warning)" : "var(--green)",
+                    fontWeight: l.abaixoDoIdeal ? 700 : 400,
+                  }}
+                >
+                  {l.roasIdeal != null ? `${num(l.roasIdeal, 2)}x` : "—"}
                 </td>
                 <td
                   data-label="Decisão"
