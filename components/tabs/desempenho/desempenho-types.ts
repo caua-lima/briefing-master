@@ -6,6 +6,10 @@ import type { RequisitoMercadoLider } from "@/lib/domain/mercadolider-requisitos
 
 export type DesempenhoResponse = {
   months: number;
+  /** Quando setado, o periodo foi medido em dias (pra bater com o painel do ML). */
+  dias: number | null;
+  /** Pedidos validos do periodo sem buyer_id — ficam fora da conta de compradores. */
+  semComprador: number;
   from: string;
   to: string;
   compradores: ResultadoCompradores;

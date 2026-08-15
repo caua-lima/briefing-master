@@ -171,6 +171,21 @@ export async function POST(req: Request) {
       date_created: String(order.date_created ?? ""),
       total_amount: Number(order.total_amount ?? 0),
       currency: order.currency_id ?? "BRL",
+      /**
+       * buyer_id é o que permite calcular taxa de recompra (ver
+       * lib/domain/repurchase.ts). lib/ml/sync.ts já gravava, mas o webhook
+       * NÃO — então todo pedido que entrou por aqui e nunca passou por um
+       * sync completo ficava sem comprador e sumia da conta de compradores
+       * únicos, jogando a taxa pra baixo. Como é o webhook que registra as
+       * vendas em tempo real, isso atingia justamente os pedidos recentes.
+       */
+      // Spread condicional, NAO `buyer_id: ... : null`: a gravacao usa
+      // { merge: true }, entao escrever null APAGARIA o buyer_id que um sync
+      // completo ja tivesse salvo. Quando o webhook nao traz o comprador, o
+      // certo e nao tocar no campo.
+      ...(((order.buyer as Record<string, unknown> | undefined)?.id)
+        ? { buyer_id: String((order.buyer as Record<string, unknown>).id) }
+        : {}),
       items,
       pack_id: order.pack_id ? String(order.pack_id) : null,
       updatedAt: new Date().toISOString(),

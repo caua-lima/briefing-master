@@ -47,8 +47,16 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const monthsParam = Number(url.searchParams.get("months") ?? "12");
     const months = Number.isFinite(monthsParam) && monthsParam > 0 ? monthsParam : 12;
+    /**
+     * Janela em DIAS, opcional. Existe pra dar pra comparar o numero com o
+     * painel "Detalhe dos compradores" do proprio Mercado Livre, que trabalha
+     * em periodos curtos (7/15/30 dias) — com a janela em meses nao dava pra
+     * conferir se a nossa taxa bate com a deles.
+     */
+    const diasParam = Number(url.searchParams.get("dias") ?? "");
+    const dias = Number.isFinite(diasParam) && diasParam > 0 ? Math.floor(diasParam) : null;
 
-    const cacheKey = String(months);
+    const cacheKey = dias != null ? `d${dias}` : String(months);
     const bust = url.searchParams.get("fresh") === "1";
     if (!bust) {
       const cached = cache.get(cacheKey);
@@ -59,7 +67,7 @@ export async function GET(req: Request) {
 
     const db = getAdminDb();
     const toStr = brDayISO();
-    const periodoInicio = monthsAgoISO(months);
+    const periodoInicio = dias != null ? brDayISO(-(dias - 1)) : monthsAgoISO(months);
     const historicoInicio = monthsAgoISO(months + HISTORICO_EXTRA_MESES);
 
     const start = `${historicoInicio}T00:00:00.000Z`;
@@ -83,8 +91,20 @@ export async function GET(req: Request) {
     const excluidos = new Set<string>();
     for (const snap of [retUTC, retBR]) for (const doc of snap.docs) excluidos.add(doc.id);
 
-    const validos = Array.from(ordersMap.entries())
-      .filter(([id, d]) => !excluidos.has(id) && !isNaoVenda(d.status))
+    const validosBrutos = Array.from(ordersMap.entries())
+      .filter(([id, d]) => !excluidos.has(id) && !isNaoVenda(d.status));
+    /**
+     * Pedido valido do periodo SEM buyer_id nao entra na conta de compradores
+     * e puxa a taxa de recompra pra baixo sem aviso. Ate agora o webhook nao
+     * gravava esse campo (so o sync completo), entao era o caso comum nos
+     * pedidos recentes — expor o numero e o que torna o problema visivel.
+     */
+    const semComprador = validosBrutos.filter(([, d]) => {
+      const dia = String(d.date_created ?? "").slice(0, 10);
+      return !d.buyer_id && dia >= periodoInicio && dia <= toStr;
+    }).length;
+
+    const validos = validosBrutos
       .map(([, d]) => ({
         buyer_id: (d.buyer_id as string | null | undefined) ?? null,
         date_created: String(d.date_created ?? ""),
@@ -114,6 +134,8 @@ export async function GET(req: Request) {
 
     const body = {
       months,
+      dias,
+      semComprador,
       from: periodoInicio,
       to: toStr,
       compradores,

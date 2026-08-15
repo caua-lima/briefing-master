@@ -10,9 +10,18 @@ import EntregasPanel from "./desempenho/EntregasPanel";
 import type { DesempenhoResponse } from "./desempenho/desempenho-types";
 
 const OPCOES_MESES = [3, 6, 12, 24];
+/**
+ * Janelas curtas, em dias. Existem pra dar pra CONFERIR o numero contra o
+ * painel "Detalhe dos compradores" do proprio Mercado Livre, que trabalha em
+ * periodos curtos — sem isso nao havia como saber se a nossa taxa bate com a
+ * deles. 7 dias e o padrao que o ML abre.
+ */
+const OPCOES_DIAS = [7, 15, 30];
 
 export default function DesempenhoTab() {
   const [months, setMonths] = useState(12);
+  // null = periodo em meses; numero = periodo em dias (tem prioridade).
+  const [dias, setDias] = useState<number | null>(7);
   const [dados, setDados] = useState<DesempenhoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(false);
@@ -22,7 +31,8 @@ export default function DesempenhoTab() {
     if (fresh) setRefreshing(true); else setLoading(true);
     setErro(false);
     try {
-      const r = await authedFetch(`/api/ml/desempenho?months=${months}${fresh ? "&fresh=1" : ""}`, { cache: "no-store" });
+      const q = dias != null ? `dias=${dias}` : `months=${months}`;
+      const r = await authedFetch(`/api/ml/desempenho?${q}${fresh ? "&fresh=1" : ""}`, { cache: "no-store" });
       if (!r.ok) { setErro(true); return; }
       const j = await r.json();
       setDados(j);
@@ -32,7 +42,7 @@ export default function DesempenhoTab() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [months]);
+  }, [months, dias]);
 
   // Falso positivo comprovado (mesmo padrão do resto do app): fetch no
   // mount/troca de período — carregar() faz setState de forma assíncrona,
@@ -48,11 +58,16 @@ export default function DesempenhoTab() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div className="seg">
+            {OPCOES_DIAS.map((d) => (
+              <button key={`d${d}`} type="button" className={`seg-btn ${dias === d ? "active" : ""}`} onClick={() => setDias(d)}>
+                {d}d
+              </button>
+            ))}
             {/* Inclui a janela recomendada pelo painel de compradores quando ela
                 não é uma das opções fixas — senão o botão trocaria o período e
                 nenhum item ficaria marcado como ativo. */}
             {Array.from(new Set([...OPCOES_MESES, months])).sort((a, b) => a - b).map((m) => (
-              <button key={m} type="button" className={`seg-btn ${months === m ? "active" : ""}`} onClick={() => setMonths(m)}>
+              <button key={m} type="button" className={`seg-btn ${dias == null && months === m ? "active" : ""}`} onClick={() => { setDias(null); setMonths(m); }}>
                 {m}m
               </button>
             ))}
@@ -90,7 +105,9 @@ export default function DesempenhoTab() {
               periodoInicio={dados.from}
               historicoDesde={dados.historicoDesde}
               to={dados.to}
-              onUsarJanela={setMonths}
+              dias={dados.dias}
+              semComprador={dados.semComprador}
+              onUsarJanela={(m) => { setDias(null); setMonths(m); }}
             />
           </div>
 

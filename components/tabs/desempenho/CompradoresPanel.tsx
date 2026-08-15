@@ -8,7 +8,7 @@ function fmtDataBR(iso: string): string {
 }
 
 export default function CompradoresPanel({
-  compradores, months, periodoInicio, historicoDesde, to, onUsarJanela,
+  compradores, months, periodoInicio, historicoDesde, to, dias, semComprador, onUsarJanela,
 }: {
   compradores: ResultadoCompradores;
   months: number;
@@ -16,6 +16,10 @@ export default function CompradoresPanel({
   historicoDesde: string | null;
   /** Fim do período analisado (hoje, em ISO) — base pra calcular a janela viável. */
   to: string;
+  /** Quando setado, o período foi medido em dias (pra comparar com o painel do ML). */
+  dias?: number | null;
+  /** Pedidos do período sem comprador identificado — ficam fora da conta. */
+  semComprador?: number;
   /** Troca a janela do painel pra uma que o histórico sincronizado sustenta. */
   onUsarJanela?: (meses: number) => void;
 }) {
@@ -34,7 +38,9 @@ export default function CompradoresPanel({
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 10 }}>
         <span className="panel-title">Detalhe dos compradores</span>
-        <span className="panel-sub">últimos {months} {months === 1 ? "mês" : "meses"}</span>
+        <span className="panel-sub">
+          {dias != null ? `últimos ${dias} dias` : `últimos ${months} ${months === 1 ? "mês" : "meses"}`}
+        </span>
       </div>
 
       {compradores.total === 0 ? (
@@ -67,6 +73,17 @@ export default function CompradoresPanel({
               </div>
             </div>
           </div>
+          {(semComprador ?? 0) > 0 && (
+            <div style={{
+              marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: ".76rem", lineHeight: 1.5,
+              background: "var(--warning-soft)", border: "1px solid rgba(255,138,31,.35)", color: "var(--warning)",
+            }}>
+              <b>{semComprador} pedido(s) do período sem comprador identificado</b> — eles ficam de fora da conta
+              acima, então a taxa está subestimada. Acontece com pedido que entrou pelo aviso em tempo real e
+              ainda não passou por uma sincronização completa: clique em <b>⟳ Atualizar ML</b> no Dashboard
+              pra preencher.
+            </div>
+          )}
           {historicoIncompleto && (
             <div style={{
               marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: ".76rem", lineHeight: 1.5,
