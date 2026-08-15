@@ -126,6 +126,9 @@ export type ForegroundPushEvent = {
   estimatedProfit?: string;
   estimatedMargin?: string;
   financialState?: string;
+  /** "1" = produto com campanha de Ads ativa (nao e atribuicao por pedido). */
+  viaAds?: string;
+  adsInvestido?: string;
   timestamp: string;
 };
 
@@ -171,7 +174,9 @@ export async function initForegroundPush(): Promise<void> {
       tag: d.tag ?? "", orderId: d.orderId || undefined, deepLink: d.deepLink ?? "/",
       productName: d.productName || undefined, grossAmount: d.grossAmount || undefined,
       estimatedProfit: d.estimatedProfit || undefined, estimatedMargin: d.estimatedMargin || undefined,
-      financialState: d.financialState || undefined, timestamp: d.timestamp ?? new Date().toISOString(),
+      financialState: d.financialState || undefined,
+      viaAds: d.viaAds || undefined, adsInvestido: d.adsInvestido || undefined,
+      timestamp: d.timestamp ?? new Date().toISOString(),
     };
     foregroundListeners.forEach((cb) => cb(evt));
   });

@@ -75,6 +75,20 @@ export function SaleNotificationToast({
       </div>
 
       {event.productName && <div className="sale-toast-product">{event.productName}</div>}
+      {/* Selo de publicidade. O texto diz "produto anunciado", NÃO "venda veio
+          do anúncio": o Mercado Livre não expõe atribuição por pedido, e
+          afirmar causalidade aqui seria inventar dado (ver
+          lib/ml/ads-attribution.ts). O valor é o investimento do PRODUTO na
+          semana, que é o que ajuda a ler a margem desta venda. */}
+      {event.viaAds === "1" && (
+        <div
+          className="sale-toast-ads"
+          title="Este produto está com campanha de Ads ativa. O Mercado Livre não informa se esta venda específica veio do anúncio — o valor ao lado é o investimento do produto nos últimos 7 dias."
+        >
+          📣 Produto anunciado
+          {event.adsInvestido ? ` · ${fmtBRL(event.adsInvestido)} em Ads (7 dias)` : ""}
+        </div>
+      )}
       {event.orderId && <div className="sale-toast-sub">Pedido #{event.orderId}</div>}
 
       {grossFmt && <div className="sale-toast-value tabular-nums">{grossFmt}</div>}

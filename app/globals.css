@@ -1021,6 +1021,10 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .sale-toast-close{flex-shrink:0;background:none;border:none;color:var(--text-secondary,var(--muted));cursor:pointer;padding:2px;border-radius:6px;line-height:1}
 .sale-toast-close:hover{color:var(--text-primary,var(--text));background:var(--surface-hover,var(--surface2))}
 .sale-toast-product{margin-top:8px;font-size:.9rem;font-weight:700;color:var(--text-primary,var(--text));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Selo de produto anunciado no toast de venda. Dourado (identidade/acao),
+   nao laranja: nao e alerta operacional, e contexto — o produto esta em
+   campanha. Ver components/SaleNotificationToast.tsx. */
+.sale-toast-ads{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:700;color:var(--brand);background:var(--brand-soft);border:1px solid rgba(244,185,66,.35);cursor:help}
 .sale-toast-sub{margin-top:2px;font-size:.74rem;color:var(--text-secondary,var(--muted))}
 .sale-toast-value{margin-top:8px;font-size:1.15rem;font-weight:800;color:var(--text-primary,var(--text))}
 .sale-toast-finance{margin-top:3px;font-size:.76rem;color:var(--text-secondary,var(--muted));line-height:1.5}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { verificarProdutoAnunciado } from "@/lib/ml/ads-attribution";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { mapOrderItems } from "@/lib/ml/sync";
@@ -72,6 +73,8 @@ function tipoParaSeveridade(type: NotificationEventType): NotificationEventSever
 function buildPayload(eventId: string, type: NotificationEventType, title: string, body: string, opts: {
   orderId: string; productName?: string; grossAmount?: number; estimatedProfit?: number; estimatedMargin?: number;
   financialState?: "estimated" | "confirmed" | "unavailable"; tag: string;
+  /** Produto com campanha de Ads ativa — ver lib/ml/ads-attribution.ts. */
+  viaAds?: boolean; adsInvestido?: number;
 }): SalePushPayload {
   return {
     eventId, type, title, body, tag: opts.tag,
@@ -81,6 +84,8 @@ function buildPayload(eventId: string, type: NotificationEventType, title: strin
     estimatedProfit: opts.estimatedProfit != null ? opts.estimatedProfit.toFixed(2) : undefined,
     estimatedMargin: opts.estimatedMargin != null ? opts.estimatedMargin.toFixed(1) : undefined,
     financialState: opts.financialState,
+    viaAds: opts.viaAds ? "1" : undefined,
+    adsInvestido: opts.adsInvestido != null ? opts.adsInvestido.toFixed(2) : undefined,
     timestamp: new Date().toISOString(),
   };
 }
@@ -173,7 +178,13 @@ export async function POST(req: Request) {
 
     // ── Venda confirmada (transição pra "paid") ──────────────────
     if (status === "paid" && !jaEstavaPago) {
-      const [{ porMlb, porSku }, metaMargem] = await Promise.all([carregarProdutos(db), metaMargemAtual(db)]);
+      const [{ porMlb, porSku }, metaMargem, selo] = await Promise.all([
+        carregarProdutos(db),
+        metaMargemAtual(db),
+        // Best-effort e com cache proprio: nunca pode atrasar nem derrubar a
+        // notificacao da venda (ver lib/ml/ads-attribution.ts).
+        verificarProdutoAnunciado(items.map((it) => String(it.item_id ?? ""))),
+      ]);
       const finance = estimateOrderFinance(
         items, porMlb, porSku,
         typeof order.shipping_cost === "number" ? (order.shipping_cost as number) : null,
@@ -209,6 +220,7 @@ export async function POST(req: Request) {
           orderId, productName: finance.productName, grossAmount: finance.grossAmount,
           estimatedProfit: finance.estimatedProfit ?? undefined, estimatedMargin: finance.estimatedMargin ?? undefined,
           financialState, tag: `sale-${orderId}`,
+          viaAds: selo.anunciado, adsInvestido: selo.anunciado ? selo.investido : undefined,
         });
 
         // Prejuízo/margem negativa NUNCA agrupa — precisa continuar
