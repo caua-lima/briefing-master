@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getMlAccessToken } from "../token";
 import { isCronRequest } from "@/lib/api-auth";
 import { currentMonthRangeBR, previousMonthRangeBR, syncOrdersRange, syncReturnsRange, syncClaimsRange } from "@/lib/ml/sync";
+import { enviarLembretesDeTarefa } from "@/lib/task-reminders-run";
 
 export const maxDuration = 60;
 
@@ -59,10 +60,20 @@ export async function GET(req: Request) {
     ]);
     const [ordensAtual, devAtual, claimsAtual, ordensAnterior, devAnterior, claimsAnterior] = resultados;
 
+    // Lembrete de prazo das tarefas pega carona nesta execução diária em vez
+    // de virar um cron próprio (ver o aviso do Hobby acima). Best-effort: um
+    // erro aqui não pode derrubar a sincronização de pedidos, que é o que
+    // realmente importa neste endpoint.
+    const lembretes = await enviarLembretesDeTarefa().catch((err: unknown) => {
+      console.error("[cron] lembrete de tarefa falhou", err);
+      return null;
+    });
+
     return NextResponse.json({
       ok: true,
       atual: { orders: ordensAtual, returns: devAtual, claims: claimsAtual, range: atual },
       anterior: { orders: ordensAnterior, returns: devAnterior, claims: claimsAnterior, range: anterior },
+      lembretesTarefa: lembretes,
       at: new Date().toISOString(),
     });
   } catch (err: unknown) {
