@@ -4,6 +4,8 @@ import { sendSalePushToAll } from "@/lib/push-send";
 import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered } from "@/lib/notification-events";
 import { montarResumoDiario } from "@/lib/domain/resumo-diario";
 import { calculateBreakEvenRoas } from "@/lib/domain/ads";
+import { findProdutosEmRisco, type RiskProduto } from "@/lib/domain/risk";
+import { getAdminDb } from "@/lib/firebase/admin";
 import type { SalePushPayload } from "@/lib/domain/notifications";
 
 export const maxDuration = 60;
@@ -35,9 +37,11 @@ async function handler(req: Request) {
     const auth = req.headers.get("authorization");
     const headers: Record<string, string> = auth ? { Authorization: auth } : {};
 
-    const [rMetrics, rAds] = await Promise.all([
+    const [rMetrics, rAds, rForecast] = await Promise.all([
       fetch(`${origem}/api/ml/metrics?from=${hoje}&to=${hoje}`, { headers, cache: "no-store" }),
       fetch(`${origem}/api/ml/ads?from=${hoje}&to=${hoje}`, { headers, cache: "no-store" }).catch(() => null),
+      // Best-effort: sem forecast, produtosEmRisco fica 0 em vez de derrubar o resumo inteiro.
+      fetch(`${origem}/api/ml/estoque-forecast?dias=30`, { headers, cache: "no-store" }).catch(() => null),
     ]);
 
     if (!rMetrics.ok) {
@@ -76,12 +80,34 @@ async function handler(req: Request) {
       }
     }
 
+    // Produtos ativos com cobertura de estoque crítica (<7 dias pela mesma
+    // régua da aba Estoque). Reaproveita findProdutosEmRisco (lib/domain/risk.ts)
+    // em vez de recalcular a régua aqui — margem fica de fora de propósito
+    // (metaMargem: 0 nunca dispara "margem-baixa"): este resumo já tem sua
+    // própria linha de margem, contar de novo aqui duplicaria o aviso.
+    let produtosEmRisco = 0;
+    if (rForecast?.ok) {
+      try {
+        const forecast = (await rForecast.json()) as { vendas?: Record<string, number>; dias?: number };
+        const prodSnap = await getAdminDb().collection("estoque").get();
+        const produtos: RiskProduto[] = prodSnap.docs.map((d) => {
+          const p = d.data();
+          return {
+            id: String(p.id ?? d.id), name: String(p.name ?? ""), ativo: Boolean(p.ativo),
+            qtdLocal: Number(p.qtdLocal ?? 0), mlb: p.mlb, mlbs: p.mlbs,
+          };
+        });
+        const riscos = findProdutosEmRisco(produtos, [], 0, { vendas: forecast.vendas ?? {}, dias: forecast.dias ?? 30 });
+        produtosEmRisco = riscos.filter((r) => r.motivos.includes("estoque-baixo")).length;
+      } catch { /* best-effort — resumo segue sem esta linha */ }
+    }
+
     const conteudo = montarResumoDiario({
       faturamento, pedidos, lucro, margem,
       // Meta diária depende de configuração por mês e não está nesta rota;
       // omitir é melhor do que exibir uma meta errada.
       metaDiaria: null,
-      produtosEmRisco: 0,
+      produtosEmRisco,
       anunciosNoPrejuizo,
     });
 
