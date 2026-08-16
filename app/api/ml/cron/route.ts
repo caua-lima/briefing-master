@@ -3,6 +3,7 @@ import { getMlAccessToken } from "../token";
 import { isCronRequest } from "@/lib/api-auth";
 import { currentMonthRangeBR, previousMonthRangeBR, syncOrdersRange, syncReturnsRange, syncClaimsRange } from "@/lib/ml/sync";
 import { enviarLembretesDeTarefa } from "@/lib/task-reminders-run";
+import { ehDomingoBR, fazerBackupSemanal } from "@/lib/backup-run";
 
 export const maxDuration = 60;
 
@@ -69,11 +70,22 @@ export async function GET(req: Request) {
       return null;
     });
 
+    // Backup semanal (ver lib/backup-run.ts) — igual ao lembrete, pega carona
+    // nesta execução diária em vez de virar cron próprio, e só faz algo aos
+    // domingos. Best-effort: nunca pode derrubar a sincronização de pedidos.
+    const backup = ehDomingoBR()
+      ? await fazerBackupSemanal().catch((err: unknown) => {
+          console.error("[cron] backup semanal falhou", err);
+          return null;
+        })
+      : null;
+
     return NextResponse.json({
       ok: true,
       atual: { orders: ordensAtual, returns: devAtual, claims: claimsAtual, range: atual },
       anterior: { orders: ordensAnterior, returns: devAnterior, claims: claimsAnterior, range: anterior },
       lembretesTarefa: lembretes,
+      backupSemanal: backup,
       at: new Date().toISOString(),
     });
   } catch (err: unknown) {
