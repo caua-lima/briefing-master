@@ -114,6 +114,7 @@ function serializarPayload(payload: SalePushPayload): Record<string, string> {
     estimatedProfit: payload.estimatedProfit ?? "",
     estimatedMargin: payload.estimatedMargin ?? "",
     financialState: payload.financialState ?? "",
+    itensJson: payload.itensJson ?? "",
     timestamp: payload.timestamp,
   };
 }

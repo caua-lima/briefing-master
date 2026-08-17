@@ -44,6 +44,8 @@ export type NotificationEvent = {
   productName?: string;
   productCount?: number;
   quantity?: number;
+  /** Um item por produto distinto do pedido (nome + quantidade) — usado pelo "ver itens" da Central quando productCount > 1. */
+  itens?: { title: string; quantity: number }[];
   grossAmount?: number;
   returnAmount?: number;
   estimatedProfit?: number;
@@ -76,6 +78,13 @@ export type SalePushPayload = {
   estimatedProfit?: string;
   estimatedMargin?: string;
   financialState?: "estimated" | "confirmed" | "unavailable";
+  /**
+   * Itens do pedido (nome + quantidade), serializados em JSON — o payload
+   * `data` do FCM só aceita string (ver serializarPayload em lib/push-send.ts).
+   * Só o toast de foreground consome isto; a Central lê o array direto do
+   * evento persistido (NotificationEvent.itens), sem passar por aqui.
+   */
+  itensJson?: string;
   timestamp: string;
 };
 
@@ -131,8 +140,10 @@ export type SaleContentInput = SaleFinanceInput & {
   semCadastro?: boolean;
   /** Nome do primeiro/principal produto do pedido. */
   productName: string;
-  /** Quantos itens DISTINTOS tem o pedido — 1 = só o produto principal; 2+ vira "N itens no pedido". */
+  /** Quantos itens DISTINTOS tem o pedido — 1 = só o produto principal; 2+ nomeia os produtos (ver buildSaleContent). */
   itemCount: number;
+  /** Nome de cada item distinto, na ordem do pedido — usado só quando itemCount > 1. */
+  itens?: { title: string; quantity: number }[];
 };
 
 export type SaleContent = { title: string; body: string };
@@ -142,8 +153,26 @@ export type SaleContent = { title: string; body: string };
  * spec, num lugar só, pra webhook e teste de cenário (Fase 9 do painel de
  * testes) usarem exatamente o mesmo resultado.
  */
+/**
+ * Nome a exibir pro pedido — 1 item usa o nome do produto; 2+ nomeia quem
+ * são, em vez do genérico "N itens no pedido" que não dizia nada até você
+ * abrir o pedido pra descobrir. 2 itens: os dois nomes. 3+: o primeiro + "e
+ * outros N", porque listar tudo no título estoura a notificação nativa (o SO
+ * corta o texto sem aviso). O detalhe completo (nome × quantidade de cada
+ * item) fica disponível no "ver itens" do toast e da Central — ver
+ * SaleNotificationToast.tsx e NotificationCenter.tsx.
+ */
+function nomeDoPedido(input: SaleContentInput): string {
+  if (input.itemCount <= 1) return input.productName || "Produto";
+  const nomes = (input.itens ?? []).map((i) => i.title).filter(Boolean);
+  if (nomes.length === 0) return `${input.itemCount} itens no pedido`; // sem detalhe — fallback antigo
+  if (nomes.length === 1) return nomes[0];
+  if (nomes.length === 2) return `${nomes[0]} e ${nomes[1]}`;
+  return `${nomes[0]} e outros ${nomes.length - 1}`;
+}
+
 export function buildSaleContent(input: SaleContentInput): SaleContent {
-  const produto = input.itemCount > 1 ? `${input.itemCount} itens no pedido` : input.productName || "Produto";
+  const produto = nomeDoPedido(input);
   const valor = fmtBRL(input.grossAmount);
 
   switch (input.type) {

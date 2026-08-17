@@ -126,6 +126,8 @@ export type ForegroundPushEvent = {
   estimatedProfit?: string;
   estimatedMargin?: string;
   financialState?: string;
+  /** JSON de { title, quantity }[] — ver o campo homônimo em SalePushPayload. */
+  itensJson?: string;
   timestamp: string;
 };
 
@@ -172,6 +174,7 @@ export async function initForegroundPush(): Promise<void> {
       productName: d.productName || undefined, grossAmount: d.grossAmount || undefined,
       estimatedProfit: d.estimatedProfit || undefined, estimatedMargin: d.estimatedMargin || undefined,
       financialState: d.financialState || undefined,
+      itensJson: d.itensJson || undefined,
       timestamp: d.timestamp ?? new Date().toISOString(),
     };
     foregroundListeners.forEach((cb) => cb(evt));

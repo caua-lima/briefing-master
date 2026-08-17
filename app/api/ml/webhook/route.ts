@@ -69,9 +69,14 @@ function tipoParaSeveridade(type: NotificationEventType): NotificationEventSever
   }
 }
 
+/** Máximos defensivos pro payload `data` do FCM (~4KB de teto) — nunca deveria chegar perto disso num pedido normal. */
+const ITENS_PUSH_MAX = 15;
+const ITENS_PUSH_TITULO_MAX = 80;
+
 function buildPayload(eventId: string, type: NotificationEventType, title: string, body: string, opts: {
   orderId: string; productName?: string; grossAmount?: number; estimatedProfit?: number; estimatedMargin?: number;
   financialState?: "estimated" | "confirmed" | "unavailable"; tag: string;
+  itens?: { title: string; quantity: number }[];
 }): SalePushPayload {
   return {
     eventId, type, title, body, tag: opts.tag,
@@ -81,6 +86,11 @@ function buildPayload(eventId: string, type: NotificationEventType, title: strin
     estimatedProfit: opts.estimatedProfit != null ? opts.estimatedProfit.toFixed(2) : undefined,
     estimatedMargin: opts.estimatedMargin != null ? opts.estimatedMargin.toFixed(1) : undefined,
     financialState: opts.financialState,
+    // Só serializa quando há de fato mais de 1 item — pedido comum (a
+    // maioria) não carrega essa string à toa.
+    itensJson: opts.itens && opts.itens.length > 1
+      ? JSON.stringify(opts.itens.slice(0, ITENS_PUSH_MAX).map((i) => ({ title: i.title.slice(0, ITENS_PUSH_TITULO_MAX), quantity: i.quantity })))
+      : undefined,
     timestamp: new Date().toISOString(),
   };
 }
@@ -215,6 +225,9 @@ export async function POST(req: Request) {
         title: content.title, body: content.body,
         orderId, orderExternalId: orderId,
         productName: finance.productName, productCount: finance.itemCount, quantity: finance.quantityTotal,
+        // Só grava a lista quando há mais de 1 item — pedido de 1 item não
+        // precisa dela, o productName já basta.
+        itens: finance.itemCount > 1 ? finance.itens : undefined,
         grossAmount: finance.grossAmount,
         estimatedProfit: finance.estimatedProfit ?? undefined,
         estimatedMargin: finance.estimatedMargin ?? undefined,
@@ -226,7 +239,7 @@ export async function POST(req: Request) {
         const payload = buildPayload(eventId, type, content.title, content.body, {
           orderId, productName: finance.productName, grossAmount: finance.grossAmount,
           estimatedProfit: finance.estimatedProfit ?? undefined, estimatedMargin: finance.estimatedMargin ?? undefined,
-          financialState, tag: `sale-${orderId}`,
+          financialState, tag: `sale-${orderId}`, itens: finance.itens,
         });
 
         // Prejuízo/margem negativa NUNCA agrupa — precisa continuar

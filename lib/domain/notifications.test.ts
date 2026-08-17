@@ -33,3 +33,26 @@ describe("buildSaleContent — venda sem produto cadastrado", () => {
     expect(c.title).toBe("Nova venda confirmada");
   });
 });
+
+describe("buildSaleContent — pedido com mais de um produto", () => {
+  it("2 itens nomeia os dois, nao fala 'itens no pedido'", () => {
+    const c = buildSaleContent({
+      ...base, itemCount: 2, estimatedProfit: 20, estimatedMargin: 22,
+      itens: [{ title: "Erva Mate", quantity: 1 }, { title: "Cuia de vidro", quantity: 1 }],
+    });
+    expect(c.body).toContain("Erva Mate e Cuia de vidro");
+  });
+
+  it("3+ itens nomeia o primeiro e conta o resto", () => {
+    const c = buildSaleContent({
+      ...base, itemCount: 3, estimatedProfit: 20, estimatedMargin: 22,
+      itens: [{ title: "Erva Mate", quantity: 1 }, { title: "Cuia", quantity: 1 }, { title: "Bomba", quantity: 1 }],
+    });
+    expect(c.body).toContain("Erva Mate e outros 2");
+  });
+
+  it("sem detalhe de itens, cai no texto antigo — nunca quebra", () => {
+    const c = buildSaleContent({ ...base, itemCount: 4, estimatedProfit: 20, estimatedMargin: 22 });
+    expect(c.body).toContain("4 itens no pedido");
+  });
+});

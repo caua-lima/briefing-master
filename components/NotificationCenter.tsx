@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useAccess } from "@/components/tabs/AccessGuard";
 import { markNotificationRead, watchNotificationEvents } from "@/lib/firebase/data";
 import { NOTIFICATION_TYPE_META, type NotificationEvent } from "@/lib/domain/notifications";
@@ -49,6 +49,19 @@ export function NotificationCenter({ onNavigate }: { onNavigate: (deepLink: stri
   const [eventos, setEventos] = useState<NotificationEvent[]>([]);
   const [open, setOpen] = useState(false);
   const [aba, setAba] = useState<AbaFiltro>("todas");
+  // Micro menu: pedido com 2+ itens ganha um "ver itens" que expande sem
+  // navegar. Um Set de ids em vez de um único "expandido" — abrir um item da
+  // lista não deveria fechar o que já estava aberto em outro.
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+
+  function alternarExpandido(id: string, e: MouseEvent) {
+    e.stopPropagation(); // não deixa o clique no botão também abrir/navegar o card
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   useEffect(() => watchNotificationEvents(setEventos, 50), []);
 
@@ -140,6 +153,31 @@ export function NotificationCenter({ onNavigate }: { onNavigate: (deepLink: stri
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="notif-item-title">{evt.title}</div>
                         <div className="notif-item-body">{evt.body}{gross ? ` · ${gross}` : ""}</div>
+
+                        {evt.itens && evt.itens.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              className="notif-item-expand-btn"
+                              onClick={(e) => alternarExpandido(evt.id, e)}
+                              aria-expanded={expandidos.has(evt.id)}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: expandidos.has(evt.id) ? "rotate(90deg)" : "none", transition: "transform .15s" }}><path d="M9 6l6 6-6 6" /></svg>
+                              {expandidos.has(evt.id) ? "Ocultar itens" : `Ver ${evt.itens.length} itens`}
+                            </button>
+                            {expandidos.has(evt.id) && (
+                              <ul className="notif-item-itens" onClick={(e) => e.stopPropagation()}>
+                                {evt.itens.map((it, i) => (
+                                  <li key={i}>
+                                    <span>{it.title}</span>
+                                    <span className="tabular-nums">{it.quantity > 1 ? `×${it.quantity}` : ""}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        )}
+
                         <div className="notif-item-time">{horaRelativa(toMillis(evt.createdAt))}</div>
                       </div>
                     </div>

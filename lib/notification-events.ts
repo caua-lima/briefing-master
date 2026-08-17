@@ -5,6 +5,22 @@ import type { NotificationEvent } from "@/lib/domain/notifications";
 
 const COL = "notification_events";
 
+/**
+ * O Admin SDK, ao contrário do client SDK usado em lib/firebase/data.ts,
+ * REJEITA `undefined` em qualquer campo — `ref.create()` lança erro em vez de
+ * ignorar o campo. `estimatedProfit`/`estimatedMargin` chegam `undefined` em
+ * toda venda sem produto cadastrado (o caso que este app trata com um texto
+ * próprio, "Venda de produto sem cadastro"), então sem isto o evento dessas
+ * vendas nunca seria criado — a exceção subiria e derrubaria o webhook
+ * inteiro pra essa venda específica. Mesmo padrão que sanitizeUndefined em
+ * lib/firebase/data.ts, só que pro lado admin.
+ */
+function sanitizeUndefined<T extends Record<string, unknown>>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined),
+  ) as T;
+}
+
 export type NewNotificationEvent = Omit<NotificationEvent, "id" | "createdAt" | "readBy" | "dismissedBy" | "delivery">;
 
 /**
@@ -25,11 +41,11 @@ export async function createNotificationEventIdempotent(
   const db = getAdminDb();
   const ref = db.collection(COL).doc(input.dedupeKey);
   try {
-    await ref.create({
+    await ref.create(sanitizeUndefined({
       ...input,
       id: input.dedupeKey,
       createdAt: FieldValue.serverTimestamp(),
-    });
+    }));
     return { created: true, eventId: input.dedupeKey };
   } catch (err) {
     // ALREADY_EXISTS (code 6) é o caso esperado de retry — qualquer outro

@@ -1021,10 +1021,15 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .sale-toast-close{flex-shrink:0;background:none;border:none;color:var(--text-secondary,var(--muted));cursor:pointer;padding:2px;border-radius:6px;line-height:1}
 .sale-toast-close:hover{color:var(--text-primary,var(--text));background:var(--surface-hover,var(--surface2))}
 .sale-toast-product{margin-top:8px;font-size:.9rem;font-weight:700;color:var(--text-primary,var(--text));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Selo de produto anunciado no toast de venda. Dourado (identidade/acao),
-   nao laranja: nao e alerta operacional, e contexto — o produto esta em
-   campanha. Ver components/SaleNotificationToast.tsx. */
 .sale-toast-sub{margin-top:2px;font-size:.74rem;color:var(--text-secondary,var(--muted))}
+/* Micro menu do toast — pedido com 2+ produtos: um botão pequeno que expande
+   a lista de itens (nome + quantidade) sem precisar abrir o pedido. Ver
+   components/SaleNotificationToast.tsx. */
+.sale-toast-expand-btn{margin-top:6px;display:inline-flex;align-items:center;gap:4px;background:none;border:none;padding:0;color:var(--brand);font-size:.72rem;font-weight:700;cursor:pointer}
+.sale-toast-expand-btn:hover{text-decoration:underline}
+.sale-toast-itens{margin:6px 0 0;padding:6px 8px;list-style:none;background:var(--surface-hover,var(--surface2));border-radius:8px;display:flex;flex-direction:column;gap:3px}
+.sale-toast-itens li{display:flex;justify-content:space-between;gap:8px;font-size:.76rem;color:var(--text-secondary,var(--muted))}
+.sale-toast-itens li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sale-toast-value{margin-top:8px;font-size:1.15rem;font-weight:800;color:var(--text-primary,var(--text))}
 .sale-toast-finance{margin-top:3px;font-size:.76rem;color:var(--text-secondary,var(--muted));line-height:1.5}
 .sale-toast-updating{margin-top:6px;display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:700;color:var(--text-muted,var(--muted));background:var(--surface-hover,var(--surface2));border-radius:var(--radius-chip);padding:2px 8px}
@@ -1050,4 +1055,11 @@ select.inp{appearance:none;-webkit-appearance:none;background-image:linear-gradi
 .notif-item-icon{flex-shrink:0;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;margin-top:2px}
 .notif-item-title{font-size:.86rem;font-weight:700;color:var(--text-primary,var(--text))}
 .notif-item-body{font-size:.8rem;color:var(--text-secondary,var(--muted));margin-top:2px}
+/* Micro menu da Central — mesmo padrão do toast (ver .sale-toast-expand-btn),
+   só que persistente: o pedido continua expandido até você fechar de novo. */
+.notif-item-expand-btn{margin-top:4px;display:inline-flex;align-items:center;gap:4px;background:none;border:none;padding:0;color:var(--brand);font-size:.72rem;font-weight:700;cursor:pointer}
+.notif-item-expand-btn:hover{text-decoration:underline}
+.notif-item-itens{margin:5px 0 0;padding:6px 8px;list-style:none;background:var(--surface,var(--bg));border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;gap:3px}
+.notif-item-itens li{display:flex;justify-content:space-between;gap:8px;font-size:.74rem;color:var(--text-secondary,var(--muted))}
+.notif-item-itens li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .notif-item-time{font-size:.7rem;color:var(--text-muted,var(--muted));margin-top:4px}

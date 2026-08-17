@@ -26,6 +26,8 @@ export type OrderFinanceEstimate = SaleFinanceInput & {
    * alguém cadastrar o SKU.
    */
   semCadastro: boolean;
+  /** Um item por produto distinto do pedido — o que a notificação usa pra listar "+N itens" em detalhe. */
+  itens: { title: string; quantity: number }[];
 };
 
 const normSku = (s: string) => s.trim().toLowerCase();
@@ -80,11 +82,12 @@ export function estimateOrderFinance(
 
   const productName = items[0]?.title || "Produto";
   const itemCount = items.length;
+  const itens = items.map((it) => ({ title: it.title || "Produto", quantity: Number(it.quantity ?? 1) }));
 
   if (algumSemProduto || items.length === 0) {
     return {
       grossAmount, estimatedProfit: null, estimatedMargin: null, metaMargem,
-      productName, itemCount, quantityTotal, semCadastro: algumSemProduto,
+      productName, itemCount, quantityTotal, semCadastro: algumSemProduto, itens,
     };
   }
 
@@ -94,6 +97,6 @@ export function estimateOrderFinance(
 
   return {
     grossAmount, estimatedProfit, estimatedMargin, metaMargem,
-    productName, itemCount, quantityTotal, semCadastro: false,
+    productName, itemCount, quantityTotal, semCadastro: false, itens,
   };
 }

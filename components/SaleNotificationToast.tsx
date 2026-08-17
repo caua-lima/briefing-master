@@ -1,6 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import type { ForegroundPushEvent } from "@/lib/firebase/push";
+
+type ItemPedido = { title: string; quantity: number };
+
+/** Nunca deixa um JSON malformado (ou ausente) derrubar o toast — sem itens é só "sem detalhe pra expandir", não erro. */
+function parseItens(json: string | undefined): ItemPedido[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((i) => i && typeof i.title === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 type Tone = "success" | "warning" | "danger" | "info";
 
@@ -63,6 +77,8 @@ export function SaleNotificationToast({
   const grossFmt = fmtBRL(event.grossAmount);
   const lucroFmt = fmtBRL(event.estimatedProfit);
   const emAtualizacao = event.financialState === "unavailable" || (event.estimatedProfit == null && event.type !== "sale_cancelled" && event.type !== "return_completed");
+  const itens = parseItens(event.itensJson);
+  const [expandido, setExpandido] = useState(false);
 
   return (
     <div className={`sale-toast sale-toast-${tone}`} role={role} aria-live={tone === "danger" ? "assertive" : "polite"}>
@@ -76,6 +92,30 @@ export function SaleNotificationToast({
 
       {event.productName && <div className="sale-toast-product">{event.productName}</div>}
       {event.orderId && <div className="sale-toast-sub">Pedido #{event.orderId}</div>}
+
+      {itens.length > 1 && (
+        <>
+          <button
+            type="button"
+            className="sale-toast-expand-btn"
+            onClick={() => setExpandido((v) => !v)}
+            aria-expanded={expandido}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: expandido ? "rotate(90deg)" : "none", transition: "transform .15s" }}><path d="M9 6l6 6-6 6" /></svg>
+            {expandido ? "Ocultar itens" : `Ver ${itens.length} itens`}
+          </button>
+          {expandido && (
+            <ul className="sale-toast-itens">
+              {itens.map((it, i) => (
+                <li key={i}>
+                  <span>{it.title}</span>
+                  <span className="tabular-nums">{it.quantity > 1 ? `×${it.quantity}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
 
       {grossFmt && <div className="sale-toast-value tabular-nums">{grossFmt}</div>}
 
