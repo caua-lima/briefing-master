@@ -13,14 +13,26 @@ export function generatePkce(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-export function getAuthURL(codeChallenge: string): string {
+/**
+ * URL de autorização do ML.
+ *
+ * `state` deixou de ser `Date.now()` (que só servia de anti-cache): no
+ * multi-tenant ele é a ÚNICA coisa que atravessa o redirect e diz ao callback
+ * DE QUEM é esta autorização. O ML devolve o `state` intacto; o callback usa
+ * pra achar o registro em ml_oauth_states e descobrir tenant e usuário.
+ *
+ * Sem isso o callback não teria como saber em qual tenant gravar o token —
+ * e gravar no tenant errado entrega a conta do Mercado Livre de um cliente
+ * para outro.
+ */
+export function getAuthURL(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: ML_APP_ID,
     redirect_uri: ML_REDIRECT_URI,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    state: Date.now().toString(), // evita cache
+    state,
   });
 
   return `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;

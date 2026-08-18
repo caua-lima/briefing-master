@@ -1,65 +1,69 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "../../../../lib/firebase/admin";
 import { exchangeCodeForToken } from "@/lib/ml/client";
+import { consumirOAuthState, salvarConexao } from "@/lib/tenant";
 
-function readCookie(req: Request, name: string): string | null {
-  const raw = req.headers.get("cookie") ?? "";
-  const m = raw.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
-  return m ? decodeURIComponent(m[1]) : null;
+/**
+ * Retorno do OAuth do Mercado Livre.
+ *
+ * ─── COMO ELE SABE DE QUEM É A CONTA ────────────────────────────────────
+ *
+ * Esta rota NÃO tem sessão: é o Mercado Livre redirecionando o navegador de
+ * volta, não o app chamando. Então a identidade tem que vir de algo que
+ * atravessou o redirect — o `state`.
+ *
+ * O state é uma chave opaca criada em /api/ml/auth, guardada no servidor
+ * junto de tenantId, uid e o verifier do PKCE. Aqui ele é lido e QUEIMADO
+ * (uso único). Nada de tenant vem da URL nem de cookie: se viesse, bastaria
+ * adulterar o valor pra gravar a conta do Mercado Livre de alguém dentro do
+ * tenant de outro cliente.
+ *
+ * State ausente, já usado, expirado ou desconhecido = recusa. Nunca escolhe
+ * um tenant padrão — era esse tipo de fallback silencioso que fazia a versão
+ * single-tenant gravar tudo em ml_tokens/main.
+ */
+function erro(req: Request, motivo: string) {
+  // Volta pro app com o motivo na URL: a tela de conexão mostra a mensagem.
+  // Não devolve JSON porque quem está aqui é um navegador, no meio de um
+  // fluxo de login — JSON cru seria um beco sem saída pro usuário.
+  const url = new URL("/", req.url);
+  url.searchParams.set("ml_erro", motivo);
+  return NextResponse.redirect(url);
 }
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
 
-    if (!code) {
-      return NextResponse.json({ error: "Missing code" }, { status: 400 });
+    if (!code) return erro(req, "sem_code");
+    if (!state) return erro(req, "sem_state");
+
+    const registro = await consumirOAuthState(state);
+    if (!registro) return erro(req, "state_invalido");
+
+    const token = await exchangeCodeForToken(code, registro.verifier);
+
+    // salvarConexao já busca /users/me e persiste o seller_id — é ele que o
+    // webhook usa depois pra descobrir de qual tenant é o pedido que chegou.
+    const { sellerId, nickname } = await salvarConexao(registro.tenantId, registro.uid, {
+      access_token: token.access_token,
+      refresh_token: token.refresh_token,
+      expires_in: token.expires_in,
+    });
+
+    if (!sellerId) {
+      // Sem seller_id o webhook não consegue rotear a venda pro tenant certo.
+      // Conexão pela metade é pior que nenhuma: parece conectada e some com
+      // as vendas. Melhor dizer agora.
+      return erro(req, "sem_seller_id");
     }
 
-    // PKCE: recupera o code_verifier salvo no cookie pela rota /auth
-    const codeVerifier = readCookie(req, "ml_pkce_verifier") ?? "";
-    const token = await exchangeCodeForToken(code, codeVerifier);
-
-    const db = getAdminDb();
-
-    // try fetch the authenticated user's profile to store alongside tokens
-    let userProfile: any = null;
-    try {
-      const profileRes = await fetch("https://api.mercadolibre.com/users/me", {
-        headers: { Authorization: `Bearer ${token.access_token}` },
-        cache: "no-store",
-      });
-      if (profileRes.ok) userProfile = await profileRes.json();
-    } catch (e) {
-      // ignore profile fetch errors, token still saved
-    }
-
-    await db.collection("ml_tokens").doc("main").set(
-      {
-        access_token: token.access_token || null,
-        refresh_token: token.refresh_token || null,
-        expires_in: token.expires_in || null,
-        user_id: token.user_id || null,
-        user_profile: userProfile,
-        updated_at: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-
-    // Redireciona para a home em vez de retornar JSON
-    const response = NextResponse.redirect(new URL("/", req.url));
-    // Limpa o flag de desconectado e o verifier do PKCE
-    response.cookies.set("ml_disconnected", "false", { maxAge: 0 });
-    response.cookies.set("ml_pkce_verifier", "", { maxAge: 0, path: "/" });
-    return response;
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        error: "Unexpected error in callback",
-        details: error?.message || String(error),
-      },
-      { status: 500 }
-    );
+    const ok = new URL("/", req.url);
+    ok.searchParams.set("ml_conectado", nickname || sellerId);
+    return NextResponse.redirect(ok);
+  } catch (e: unknown) {
+    console.error("[ml/callback] falhou", e);
+    return erro(req, "falha_na_troca");
   }
 }

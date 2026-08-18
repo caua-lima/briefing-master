@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { MLConnectButton } from "./MLConnectButton";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { iniciarConexaoML } from "@/lib/api/conectar-ml";
 
 type Account = {
   connected: boolean;
@@ -44,7 +45,11 @@ export function MlAccountStatus() {
       const res = await authedFetch('/api/ml/disconnect', { method: 'POST' });
       if (res.ok) {
         localStorage.setItem('ml_disconnected', 'true');
-        window.location.href = '/api/ml/auth?login=true';
+        const r = await iniciarConexaoML();
+        if (!r.ok) {
+          setFeedback({ type: 'error', message: '❌ ' + r.erro });
+          setSwapLoading(false);
+        }
       } else {
         setFeedback({ type: 'error', message: '❌ Erro ao trocar conta' });
         setSwapLoading(false);

@@ -221,6 +221,56 @@ export async function tenantPorSellerId(sellerId: string): Promise<string | null
   return snap.docs[0].id;
 }
 
+// ── OAuth: quem está autorizando, e para qual tenant ──────────────
+
+const OAUTH_STATES = "ml_oauth_states"; // ml_oauth_states/{state}
+
+/** 10 min: tempo de sobra pra alguém logar no ML, curto pra um state vazado não valer muito. */
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+export type OAuthState = { tenantId: string; uid: string; verifier: string; criadoEm: number };
+
+/**
+ * Guarda a intenção de conectar ANTES de mandar o usuário pro Mercado Livre.
+ *
+ * O `state` é a única coisa que sobrevive ao redirect. Guardar tenant e uid do
+ * lado do SERVIDOR, indexados por ele, é o que impede que o callback confie em
+ * algo que o navegador poderia ter adulterado: se o tenantId viajasse no
+ * próprio state (ou num cookie), bastaria trocá-lo pra gravar o token da SUA
+ * conta do Mercado Livre dentro do tenant de outro cliente.
+ */
+export async function criarOAuthState(tenantId: string, uid: string, verifier: string): Promise<string> {
+  const state = crypto.randomUUID();
+  await getAdminDb().collection(OAUTH_STATES).doc(state).set({
+    tenantId, uid, verifier, criadoEm: Date.now(),
+  });
+  return state;
+}
+
+/**
+ * Lê e QUEIMA o state — de uso único, sempre. Devolve null se não existe, já
+ * foi usado ou expirou; quem chama deve recusar a conexão nesses casos, nunca
+ * seguir com um tenant adivinhado.
+ *
+ * Apaga antes de validar o prazo de propósito: mesmo state expirado sai do
+ * banco na primeira tentativa, em vez de ficar lá esperando uma segunda.
+ */
+export async function consumirOAuthState(state: string): Promise<OAuthState | null> {
+  const id = String(state ?? "").trim();
+  if (!id) return null;
+
+  const ref = getAdminDb().collection(OAUTH_STATES).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+
+  await ref.delete().catch(() => {});
+
+  const d = snap.data() as OAuthState;
+  if (!d?.tenantId || !d?.uid) return null;
+  if (Date.now() - (d.criadoEm ?? 0) > OAUTH_STATE_TTL_MS) return null;
+  return d;
+}
+
 export async function salvarConexao(
   tenantId: string,
   uid: string,

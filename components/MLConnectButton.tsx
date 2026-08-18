@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { authedFetch } from "@/lib/api/authed-fetch";
+import { iniciarConexaoML } from "@/lib/api/conectar-ml";
 
 type MlStatus = {
   connected: boolean;
@@ -59,10 +60,12 @@ export function MLConnectButton() {
       // 2. Limpa localStorage
       localStorage.setItem('ml_disconnected', 'true');
       
-      // 3. Aguarda um pouco e redireciona para login
-      setTimeout(() => {
-        window.location.href = '/api/ml/auth?login=true';
-      }, 300);
+      // 3. Inicia o OAuth por tenant (POST autenticado — ver iniciarConexaoML)
+      const r = await iniciarConexaoML();
+      if (!r.ok) {
+        alert('Não consegui conectar: ' + r.erro);
+        setConnecting(false);
+      }
     } catch (err) {
       console.error('Erro ao conectar ML', err);
       setConnecting(false);
