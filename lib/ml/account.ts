@@ -1,5 +1,5 @@
 import "server-only";
-import { getMlAccessToken } from "@/app/api/ml/token";
+import { getMlAccessToken } from "@/lib/tenant";
 
 export type MlUserProfile = {
   id?: number;
@@ -17,8 +17,8 @@ export type MlUserProfile = {
  * Desempenho, que já tem cache próprio de resposta (ver
  * app/api/ml/desempenho/route.ts).
  */
-export async function fetchMlUserProfileFresh(): Promise<MlUserProfile | null> {
-  const access = await getMlAccessToken();
+export async function fetchMlUserProfileFresh(tenantId: string): Promise<MlUserProfile | null> {
+  const access = await getMlAccessToken(tenantId);
   if (!access) return null;
   try {
     const res = await fetch("https://api.mercadolibre.com/users/me", {

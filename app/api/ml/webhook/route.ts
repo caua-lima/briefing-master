@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
-import { getValidMlAccessToken } from "@/lib/ml/getToken";
+import { getValidMlAccessToken, tenantCol, tenantPorSellerId } from "@/lib/tenant";
 import { mapOrderItems } from "@/lib/ml/sync";
 import { estimateOrderFinance, type ProdutoCusto } from "@/lib/ml/order-finance";
 import { sendSalePushToAll } from "@/lib/push-send";
@@ -25,8 +24,8 @@ const normSku = (s: string) => s.trim().toLowerCase();
 const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
 
 /** Custo médio + imposto de cada produto, indexado por MLB e SKU — mesmo padrão de app/api/ml/ads/route.ts. */
-async function carregarProdutos(db: FirebaseFirestore.Firestore) {
-  const snap = await db.collection("estoque").get();
+async function carregarProdutos(tenantId: string) {
+  const snap = await tenantCol(tenantId, "estoque").get();
   const porMlb = new Map<string, ProdutoCusto>();
   const porSku = new Map<string, ProdutoCusto>();
   for (const doc of snap.docs) {
@@ -46,11 +45,11 @@ async function carregarProdutos(db: FirebaseFirestore.Firestore) {
  * "margem em atenção"; sem meta configurada, classifySale já cai no
  * DEFAULT_LOW_MARGIN_THRESHOLD fixo.
  */
-async function metaMargemAtual(db: FirebaseFirestore.Firestore): Promise<number | null> {
+async function metaMargemAtual(tenantId: string): Promise<number | null> {
   try {
     const brNow = new Date(Date.now() - 3 * 3600 * 1000);
     const mesAtual = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}`;
-    const snap = await db.collection("metasHistorico").orderBy("createdAt", "desc").get();
+    const snap = await tenantCol(tenantId, "metasHistorico").orderBy("createdAt", "desc").get();
     const doMes = snap.docs.find((d) => d.data()?.mes === mesAtual);
     const escolhido = doMes ?? snap.docs[0];
     const v = escolhido?.data()?.metaMargem;
@@ -100,15 +99,15 @@ function buildPayload(eventId: string, type: NotificationEventType, title: strin
  * na trilha do próprio evento (nunca o token ou payload completo — só
  * metadados seguros, ver lib/notification-events.ts).
  */
-async function enviarEPersistirEntrega(eventId: string, type: NotificationEventType, payload: SalePushPayload, isSummary = false) {
-  await markPushAttempted(eventId);
+async function enviarEPersistirEntrega(tenantId: string, eventId: string, type: NotificationEventType, payload: SalePushPayload, isSummary = false) {
+  await markPushAttempted(tenantId, eventId);
   try {
-    const { enviados, bloqueadosPorPreferencia } = await sendSalePushToAll(payload, type, isSummary);
-    if (enviados > 0) await markPushDelivered(eventId);
-    else await markPushError(eventId, bloqueadosPorPreferencia > 0 ? "todos os destinatários bloquearam por preferência/horário silencioso" : "nenhum dispositivo registrado");
+    const { enviados, bloqueadosPorPreferencia } = await sendSalePushToAll(tenantId, payload, type, isSummary);
+    if (enviados > 0) await markPushDelivered(tenantId, eventId);
+    else await markPushError(tenantId, eventId, bloqueadosPorPreferencia > 0 ? "todos os destinatários bloquearam por preferência/horário silencioso" : "nenhum dispositivo registrado");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await markPushError(eventId, msg.slice(0, 160));
+    await markPushError(tenantId, eventId, msg.slice(0, 160));
   }
 }
 
@@ -130,7 +129,7 @@ async function enviarEPersistirEntrega(eventId: string, type: NotificationEventT
  * pra isso (ver lib/notification-events.ts).
  */
 export async function POST(req: Request) {
-  let body: { resource?: string; topic?: string } | null = null;
+  let body: { resource?: string; topic?: string; user_id?: string | number } | null = null;
   try {
     body = await req.json();
   } catch {
@@ -146,8 +145,30 @@ export async function POST(req: Request) {
   }
   const orderId = match[1];
 
+  /**
+   * DE QUAL TENANT É ESTE PEDIDO — o bloqueio de segurança #1 da auditoria.
+   *
+   * O ML manda `user_id` em toda notificação: é o seller dono da conta que
+   * está inscrita no tópico, não algo que o requisitante escolhe. Resolvido
+   * via tenantPorSellerId (lib/tenant.ts), que consulta quem gravou aquele
+   * seller_id na própria conexão — nunca aceita um tenantId vindo do corpo
+   * da requisição, que poderia ser forjado.
+   *
+   * Sem `user_id`, ou sem tenant que reivindique aquele seller: RECUSA. Antes
+   * disto o webhook usava a única conta configurada, sem checar nada — o
+   * pedido de qualquer cliente seria gravado ali, e notificado pro dono
+   * errado.
+   */
+  const sellerId = String(body?.user_id ?? "").trim();
+  if (!sellerId) return NextResponse.json({ ok: true, ignored: true, motivo: "sem_user_id" });
+  const tenantId = await tenantPorSellerId(sellerId);
+  if (!tenantId) {
+    console.error("[webhook] nenhum tenant reivindica o seller", { sellerId, orderId });
+    return NextResponse.json({ ok: true, ignored: true, motivo: "tenant_nao_resolvido" });
+  }
+
   try {
-    const token = await getValidMlAccessToken();
+    const token = await getValidMlAccessToken(tenantId);
     const res = await fetch(`${ML_API}/orders/${orderId}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
@@ -162,8 +183,7 @@ export async function POST(req: Request) {
     const items = mapOrderItems(order);
     const primeiro = items[0]?.title || "Pedido";
 
-    const db = getAdminDb();
-    const ref = db.collection("ml_orders").doc(orderId);
+    const ref = tenantCol(tenantId, "ml_orders").doc(orderId);
     const antes = await ref.get();
     const jaEstavaPago = antes.exists && antes.data()?.status === "paid";
 
@@ -199,8 +219,8 @@ export async function POST(req: Request) {
     // ── Venda confirmada (transição pra "paid") ──────────────────
     if (status === "paid" && !jaEstavaPago) {
       const [{ porMlb, porSku }, metaMargem] = await Promise.all([
-        carregarProdutos(db),
-        metaMargemAtual(db),
+        carregarProdutos(tenantId),
+        metaMargemAtual(tenantId),
       ]);
       const finance = estimateOrderFinance(
         items, porMlb, porSku,
@@ -220,7 +240,7 @@ export async function POST(req: Request) {
       // evento pro mesmo pedido — exatamente a duplicidade que isto existe
       // pra evitar.
       const dedupeKey = `sale_paid:${orderId}`;
-      const { created, eventId } = await createNotificationEventIdempotent({
+      const { created, eventId } = await createNotificationEventIdempotent(tenantId, {
         type, severity, entityType: "order", entityId: orderId, dedupeKey,
         title: content.title, body: content.body,
         orderId, orderExternalId: orderId,
@@ -246,11 +266,11 @@ export async function POST(req: Request) {
         // individual mesmo em pico de vendas, é o tipo de aviso que não pode
         // se perder dentro de um resumo.
         if (type === "sale_negative_margin") {
-          await enviarEPersistirEntrega(eventId, type, payload);
+          await enviarEPersistirEntrega(tenantId, eventId, type, payload);
         } else {
-          const decisao = await registrarVendaNaJanela(finance.grossAmount);
+          const decisao = await registrarVendaNaJanela(tenantId, finance.grossAmount);
           if (decisao.modo === "individual") {
-            await enviarEPersistirEntrega(eventId, type, payload);
+            await enviarEPersistirEntrega(tenantId, eventId, type, payload);
           } else if (decisao.modo === "resumo_dispara") {
             const resumo = buildGroupedSalesContent(decisao.totalNaJanela, decisao.grossAcumulado, decisao.janelaMinutos);
             const payloadResumo = buildPayload(eventId, type, resumo.title, resumo.body, {
@@ -259,7 +279,7 @@ export async function POST(req: Request) {
             // O evento individual desta venda já foi persistido acima (fonte
             // de verdade da Central) — o push é que vira um resumo pra não
             // empilhar 4+ notificações nativas em poucos segundos.
-            await enviarEPersistirEntrega(eventId, type, payloadResumo, true);
+            await enviarEPersistirEntrega(tenantId, eventId, type, payloadResumo, true);
           }
           // "resumo_silencioso": já mandou o resumo na venda que disparou o
           // agrupamento — esta aqui só soma ao contador, sem push novo.
@@ -272,7 +292,7 @@ export async function POST(req: Request) {
       const dedupeKey = `sale_cancelled:${orderId}`;
       const valorImpacto = Number(order.total_amount ?? antes.data()?.total_amount ?? 0);
       const content = buildCancelContent(primeiro, items.length, valorImpacto);
-      const { created, eventId } = await createNotificationEventIdempotent({
+      const { created, eventId } = await createNotificationEventIdempotent(tenantId, {
         type: "sale_cancelled", severity: "warning", entityType: "order", entityId: orderId, dedupeKey,
         title: content.title, body: content.body,
         orderId, orderExternalId: orderId,
@@ -284,7 +304,7 @@ export async function POST(req: Request) {
         const payload = buildPayload(eventId, "sale_cancelled", content.title, content.body, {
           orderId, productName: primeiro, grossAmount: valorImpacto, financialState: "estimated", tag: `sale-${orderId}`,
         });
-        await enviarEPersistirEntrega(eventId, "sale_cancelled", payload);
+        await enviarEPersistirEntrega(tenantId, eventId, "sale_cancelled", payload);
       }
     }
 

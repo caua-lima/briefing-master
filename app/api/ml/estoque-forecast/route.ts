@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
-const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 export const maxDuration = 30;
 
-// cache curto por lambda quente (evita bater no ML a cada abertura da aba)
-let cache: { at: number; dias: number; body: Record<string, unknown> } | null = null;
+/**
+ * Cache curto por lambda quente (evita bater no ML a cada abertura da aba),
+ * indexado por TENANT — antes era uma única variável de módulo, sem chave:
+ * a resposta de um cliente vazaria pro outro na próxima chamada.
+ */
+const cache = new Map<string, { at: number; dias: number; body: Record<string, unknown> }>();
 const CACHE_TTL = 60 * 1000;
 
 function normalizeItemId(s: string): string {
@@ -24,21 +26,24 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const dias = Math.max(1, Math.min(180, Number(url.searchParams.get("dias") ?? 30) || 30));
 
-    if (cache && cache.dias === dias && Date.now() - cache.at < CACHE_TTL) {
-      return NextResponse.json({ ...cache.body, cached: true });
+    const hit = cache.get(tenant.tenantId);
+    if (hit && hit.dias === dias && Date.now() - hit.at < CACHE_TTL) {
+      return NextResponse.json({ ...hit.body, cached: true });
     }
 
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
     if (!token) return NextResponse.json({ error: "sem token", vendas: {}, dias }, { status: 200 });
-
-    const db = getAdminDb();
+    const SELLER_ID = await getSellerId(tenant.tenantId);
 
     // Mapa MLB/SKU → productId
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     const porMlb = new Map<string, string>();
     const porSku = new Map<string, string>();
     for (const doc of prodSnap.docs) {
@@ -90,7 +95,7 @@ export async function GET(req: Request) {
     }
 
     const body = { vendas, dias, from: fromISO.slice(0, 10), to: toISO.slice(0, 10) };
-    cache = { at: Date.now(), dias, body };
+    cache.set(tenant.tenantId, { at: Date.now(), dias, body });
     return NextResponse.json(body);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

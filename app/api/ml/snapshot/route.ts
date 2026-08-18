@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { isCronRequest, requireAccess } from "@/lib/api-auth";
 import { fetchMlUserProfileFresh } from "@/lib/ml/account";
 import { sendSalePushToAll } from "@/lib/push-send";
 import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered } from "@/lib/notification-events";
+import { resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import {
   apenasPioras, compararAnuncios, compararReputacao,
   type AnuncioSnapshot, type ReputacaoSnapshot, type SnapshotDia,
@@ -43,18 +43,21 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function handler(req: Request) {
+async function handler(req: Request, gate: { uid: string; email: string }) {
   try {
+    const tenant = await resolverTenantDaRequisicao(gate);
+    if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
     const origem = new URL(req.url).origin;
     const auth = req.headers.get("authorization");
     const headers: Record<string, string> = auth ? { Authorization: auth } : {};
     const hoje = brDayISO();
-    const db = getAdminDb();
+    const col = tenantCol(tenant.tenantId, COL);
 
     // ── Retrato de hoje ────────────────────────────────────────
     const [rEstoque, perfil] = await Promise.all([
       fetch(`${origem}/api/ml/estoque-ml`, { headers, cache: "no-store" }),
-      fetchMlUserProfileFresh(),
+      fetchMlUserProfileFresh(tenant.tenantId),
     ]);
 
     const anuncios: AnuncioSnapshot[] = [];
@@ -93,12 +96,12 @@ async function handler(req: Request) {
     // ── Compara com o retrato anterior ─────────────────────────
     // Busca o mais recente ANTES de hoje: se o cron falhou ontem, comparar
     // com anteontem ainda é melhor do que não comparar com nada.
-    const anteriorSnap = await db.collection(COL)
+    const anteriorSnap = await col
       .where("dia", "<", hoje).orderBy("dia", "desc").limit(1).get();
     const anterior = anteriorSnap.empty ? null : (anteriorSnap.docs[0].data() as SnapshotDia);
 
     // Grava sempre, mesmo sem anterior — é o retrato que serve de base amanhã.
-    await db.collection(COL).doc(hoje).set({ ...snapshotHoje, gravadoEm: Date.now() });
+    await col.doc(hoje).set({ ...snapshotHoje, gravadoEm: Date.now() });
 
     if (!anterior) {
       return NextResponse.json({ ok: true, dia: hoje, primeiroRetrato: true, anuncios: anuncios.length });
@@ -129,7 +132,7 @@ async function handler(req: Request) {
 
     const titulo = piorasReputacao.length > 0 ? "Reputação piorou" : "Mudanças nos seus anúncios";
     const dedupeKey = `snapshot_alerta:${hoje}`;
-    const { created, eventId } = await createNotificationEventIdempotent({
+    const { created, eventId } = await createNotificationEventIdempotent(tenant.tenantId, {
       // "sync_warning" é o tipo mais próximo do que isto é: aviso operacional
       // do sistema, não venda. Reaproveita o toggle que o usuário já conhece.
       type: "sync_warning", severity: piorasReputacao.length > 0 ? "warning" : "info",
@@ -144,9 +147,9 @@ async function handler(req: Request) {
         eventId, type: "sync_warning", title: titulo, body: linhas.join(" · "),
         tag: `snapshot-${hoje}`, deepLink: "/?tab=estoque", timestamp: new Date().toISOString(),
       };
-      await markPushAttempted(eventId);
-      ({ enviados } = await sendSalePushToAll(payload, "sync_warning"));
-      if (enviados > 0) await markPushDelivered(eventId);
+      await markPushAttempted(tenant.tenantId, eventId);
+      ({ enviados } = await sendSalePushToAll(tenant.tenantId, payload, "sync_warning"));
+      if (enviados > 0) await markPushDelivered(tenant.tenantId, eventId);
     }
 
     return NextResponse.json({
@@ -163,12 +166,12 @@ async function handler(req: Request) {
 /** GET = Vercel Cron. */
 export async function GET(req: Request) {
   if (!isCronRequest(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  return handler(req);
+  return handler(req, { uid: "cron", email: "cron@system" });
 }
 
 /** POST = disparo manual, pra testar sem esperar o horário. */
 export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
-  return handler(req);
+  return handler(req, gate);
 }

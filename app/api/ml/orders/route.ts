@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
-import { getMlAccessToken } from "../token";
 import { requireAccess } from "@/lib/api-auth";
+import { getMlAccessToken, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const adminDb = getAdminDb();
-    const accessToken = await getMlAccessToken();
+    const accessToken = await getMlAccessToken(tenant.tenantId);
 
     if (!accessToken) {
       return NextResponse.json(
@@ -40,13 +41,14 @@ export async function POST(req: Request) {
     const data = await response.json();
     const results = data.results ?? [];
 
-    const batch = adminDb.batch();
+    const col = tenantCol(tenant.tenantId, "ml_orders");
+    const batch = col.firestore.batch();
 
     for (const order of results) {
       const orderId = String(order.id);
 
       batch.set(
-        adminDb.collection("ml_orders").doc(orderId),
+        col.doc(orderId),
         {
           order_id: orderId,
           status: order.status ?? null,

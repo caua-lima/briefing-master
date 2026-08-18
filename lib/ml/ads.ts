@@ -1,33 +1,38 @@
 import "server-only";
-import { getValidMlAccessToken } from "@/lib/ml/getToken";
+import { getValidMlAccessToken } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
 
 type Advertiser = { advertiser_id?: number | string; site_id?: string; account_name?: string };
 type Adv = { id: string; siteId: string };
 
-// Cache do anunciante por lambda quente (evita resolver a cada chamada)
-let advCache: { adv: Adv | null; at: number } | null = null;
+/**
+ * Cache do anunciante por lambda quente, indexado por TENANT — antes era uma
+ * única variável de módulo, sem chave: numa lambda quente atendendo dois
+ * tenants em sequência, o segundo herdaria o advertiser_id do primeiro.
+ */
+const advCache = new Map<string, { adv: Adv | null; at: number }>();
 const ADV_TTL = 10 * 60 * 1000;
 
 /**
  * Resolve o anunciante da conta (NÃO é o seller_id) e o site dele.
  * O site entra na URL dos recursos de Product Ads, por isso vem junto.
  */
-async function getAdvertiser(token: string): Promise<Adv | null> {
-  if (advCache && Date.now() - advCache.at < ADV_TTL) return advCache.adv;
+async function getAdvertiser(tenantId: string, token: string): Promise<Adv | null> {
+  const cached = advCache.get(tenantId);
+  if (cached && Date.now() - cached.at < ADV_TTL) return cached.adv;
 
   const res = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
     headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
     cache: "no-store",
   });
-  if (!res.ok) return advCache?.adv ?? null; // mantém cache anterior em falha transitória
+  if (!res.ok) return cached?.adv ?? null; // mantém cache anterior em falha transitória
   const j = (await res.json()) as { advertisers?: Advertiser[] };
   const list = Array.isArray(j?.advertisers) ? j.advertisers : [];
   const chosen = list.find((a) => String(a.site_id ?? "").toUpperCase() === "MLB") ?? list[0];
   if (chosen?.advertiser_id == null) return null;
   const adv: Adv = { id: String(chosen.advertiser_id), siteId: String(chosen.site_id ?? "MLB").toUpperCase() };
-  advCache = { adv, at: Date.now() }; // NÃO cacheia null (evita travar em 0)
+  advCache.set(tenantId, { adv, at: Date.now() }); // NÃO cacheia null (evita travar em 0)
   return adv;
 }
 
@@ -242,9 +247,9 @@ async function buscar(urls: (offset: number) => string[], token: string): Promis
 }
 
 /** Linhas de item com métricas, tentando o recurso novo e, se preciso, por campanha. */
-async function adItemRows(from: string, to: string, metrics: string): Promise<Record<string, unknown>[]> {
-  const token = await getValidMlAccessToken();
-  const adv = await getAdvertiser(token);
+async function adItemRows(tenantId: string, from: string, to: string, metrics: string): Promise<Record<string, unknown>[]> {
+  const token = await getValidMlAccessToken(tenantId);
+  const adv = await getAdvertiser(tenantId, token);
   if (!adv) throw new Error("ml_ads_sem_anunciante");
 
   const q = (offset: number) => `date_from=${from}&date_to=${to}&metrics=${metrics}&limit=50&offset=${offset}`;
@@ -309,10 +314,10 @@ async function adItemRows(from: string, to: string, metrics: string): Promise<Re
  * Lança em falha — quem chama decide o que mostrar (nunca 0 como se fosse real).
  */
 export async function getAdsSpendByItem(
-  from: string, to: string, mlbs: string[] = [],
+  tenantId: string, from: string, to: string, mlbs: string[] = [],
 ): Promise<Record<string, number>> {
-  const token = await getValidMlAccessToken();
-  const rows = await resolverMlb(await adItemRows(from, to, "cost"), token, mlbs);
+  const token = await getValidMlAccessToken(tenantId);
+  const rows = await resolverMlb(await adItemRows(tenantId, from, to, "cost"), token, mlbs);
   const adsByItem: Record<string, number> = {};
   for (const row of rows) {
     const itemId = itemIdDe(row);
@@ -346,15 +351,15 @@ const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amou
 
 /** Métricas COMPLETAS de Product Ads por item no período (pra aba de análise). */
 export async function getAdsFullByItem(
-  from: string, to: string, mlbs: string[] = [],
+  tenantId: string, from: string, to: string, mlbs: string[] = [],
 ): Promise<AdItemFull[]> {
-  const token = await getValidMlAccessToken();
+  const token = await getValidMlAccessToken(tenantId);
   let rows: Record<string, unknown>[];
   try {
-    rows = await adItemRows(from, to, AD_METRICS);
+    rows = await adItemRows(tenantId, from, to, AD_METRICS);
   } catch (e) {
     // Uma métrica inválida derruba a busca inteira → tenta o conjunto essencial.
-    if (String(e).includes("ml_ads_http_4")) rows = await adItemRows(from, to, "clicks,prints,ctr,cost,cpc,acos");
+    if (String(e).includes("ml_ads_http_4")) rows = await adItemRows(tenantId, from, to, "clicks,prints,ctr,cost,cpc,acos");
     else throw e;
   }
   rows = await resolverMlb(rows, token, mlbs);
@@ -421,8 +426,8 @@ export async function getAdsFullByItem(
  * Pausado/Excluído na aba de Ads: o status dentro do Product Ads pode não
  * refletir que o anúncio foi encerrado no catálogo.
  */
-export async function getItemStatusByItem(mlbs: string[]): Promise<Record<string, string>> {
-  const token = await getValidMlAccessToken();
+export async function getItemStatusByItem(tenantId: string, mlbs: string[]): Promise<Record<string, string>> {
+  const token = await getValidMlAccessToken(tenantId);
   const out: Record<string, string> = {};
   const uniq = Array.from(new Set(mlbs.map((m) => m.toUpperCase()))).filter((m) => /^MLB\d+$/.test(m));
   for (let i = 0; i < uniq.length; i += 20) {
@@ -504,6 +509,7 @@ function campanhaDe(id: string, c: Record<string, unknown>): AdSettings {
  * como "sem campanha", não como erro).
  */
 export async function getAdsSettingsByItem(
+  tenantId: string,
   mlbs: string[],
   campaignIdByItem: Record<string, string> = {},
   costByItem: Record<string, number> = {},
@@ -526,8 +532,8 @@ export async function getAdsSettingsByItem(
   /** Objeto cru da 1ª campanha órfã recuperada — mostra por que ela faltava na lista. */
   amostraCampanhaOrfa: unknown;
 }> {
-  const token = await getValidMlAccessToken();
-  const adv = await getAdvertiser(token);
+  const token = await getValidMlAccessToken(tenantId);
+  const adv = await getAdvertiser(tenantId, token);
   const porItem: Record<string, AdSettings> = {};
   const tentativas: { url: string; status: number }[] = [];
   if (!adv || mlbs.length === 0) return {
@@ -801,9 +807,9 @@ export async function getAdsSettingsByItem(
 }
 
 /** Diagnóstico: mostra o que cada rota respondeu, com um trecho do corpo. */
-export async function probeAds(from: string, to: string): Promise<Record<string, unknown>> {
+export async function probeAds(tenantId: string, from: string, to: string): Promise<Record<string, unknown>> {
   try {
-    const token = await getValidMlAccessToken();
+    const token = await getValidMlAccessToken(tenantId);
     const advRes = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {
       headers: { Authorization: `Bearer ${token}`, "Api-Version": "1" },
       cache: "no-store",

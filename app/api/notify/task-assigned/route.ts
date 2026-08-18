@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
 import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered, markPushError } from "@/lib/notification-events";
 import { sendPushToUserIfAllowed } from "@/lib/push-send";
+import { resolverTenantDaRequisicao } from "@/lib/tenant";
 import {
   buildTaskAssignedContent,
   buildTaskDeepLink,
@@ -22,6 +23,9 @@ import {
 export async function POST(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
+
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ ok: false, error: "sem_tenant" }, { status: 403 });
 
   const body = await req.json().catch(() => null) as {
     taskId?: string; assigneeEmail?: string; title?: string; priority?: string; dueDate?: string;
@@ -50,7 +54,7 @@ export async function POST(req: Request) {
   // desabilitado durante o envio, então clique duplo não é um risco real aqui.
   const dedupeKey = `task_assigned:${taskId}:${Date.now()}`;
 
-  const { eventId } = await createNotificationEventIdempotent({
+  const { eventId } = await createNotificationEventIdempotent(tenant.tenantId, {
     type: "task_assigned", severity, entityType: "task", entityId: taskId, dedupeKey,
     title: content.title, body: content.body,
     deepLink: buildTaskDeepLink(taskId),
@@ -62,15 +66,15 @@ export async function POST(req: Request) {
     tag: `task-${taskId}`, deepLink: buildTaskDeepLink(taskId), timestamp: new Date().toISOString(),
   };
 
-  await markPushAttempted(eventId);
+  await markPushAttempted(tenant.tenantId, eventId);
   try {
-    const { enviados, bloqueadoPorPreferencia } = await sendPushToUserIfAllowed(assigneeEmail, payload, "task_assigned");
-    if (enviados > 0) await markPushDelivered(eventId);
-    else await markPushError(eventId, bloqueadoPorPreferencia ? "destinatário bloqueou por preferência/horário silencioso" : "nenhum dispositivo registrado");
+    const { enviados, bloqueadoPorPreferencia } = await sendPushToUserIfAllowed(tenant.tenantId, assigneeEmail, payload, "task_assigned");
+    if (enviados > 0) await markPushDelivered(tenant.tenantId, eventId);
+    else await markPushError(tenant.tenantId, eventId, bloqueadoPorPreferencia ? "destinatário bloqueou por preferência/horário silencioso" : "nenhum dispositivo registrado");
     return NextResponse.json({ ok: true, eventId, enviados });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await markPushError(eventId, msg.slice(0, 160));
+    await markPushError(tenant.tenantId, eventId, msg.slice(0, 160));
     return NextResponse.json({ ok: false, error: msg, eventId }, { status: 500 });
   }
 }

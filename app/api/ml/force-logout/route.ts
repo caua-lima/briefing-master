@@ -1,26 +1,17 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
+import { desconectarML, resolverTenantDaRequisicao } from "@/lib/tenant";
 
 export async function POST(req: Request) {
   const gate = await requireAccess(req, { adminOnly: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const db = getAdminDb();
-    
-    // Limpa todos os dados do ML do Firestore
-    await db.collection("ml_tokens").doc("main").set(
-      {
-        access_token: null,
-        refresh_token: null,
-        expires_in: null,
-        user_id: null,
-        user_profile: null,
-        updated_at: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    // Limpa a conexão do ML deste tenant
+    await desconectarML(tenant.tenantId);
 
     // Cria resposta com cookie de logout
     const response = NextResponse.json({ success: true });

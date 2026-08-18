@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { syncOrdersRange, syncReturnsRange, type SyncRange } from "@/lib/ml/sync";
 
 export const maxDuration = 60;
@@ -46,6 +45,9 @@ export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const hojeBR = new Date(Date.now() - 3 * 3600 * 1000);
@@ -62,19 +64,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "mês no futuro" }, { status: 400 });
     }
 
-    const accessToken = await getMlAccessToken();
+    const accessToken = await getMlAccessToken(tenant.tenantId);
     if (!accessToken) return NextResponse.json({ error: "Token ML não encontrado" }, { status: 400 });
+    const sellerId = await getSellerId(tenant.tenantId);
 
     const range = mesRange(ano, mes);
     const [orders, returns] = await Promise.all([
-      syncOrdersRange(accessToken, range),
-      syncReturnsRange(accessToken, range).catch(() => 0),
+      syncOrdersRange(tenant.tenantId, accessToken, sellerId, range),
+      syncReturnsRange(tenant.tenantId, accessToken, sellerId, range).catch(() => 0),
     ]);
 
     // Quanto do histórico já existe — deixa a tela mostrar progresso real em
     // vez de "rodou, e daí?".
-    const db = getAdminDb();
-    const total = await db.collection("ml_orders").count().get().catch(() => null);
+    const total = await tenantCol(tenant.tenantId, "ml_orders").count().get().catch(() => null);
 
     const anterior = mesAnterior(ano, mes);
     return NextResponse.json({

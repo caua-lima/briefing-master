@@ -5,7 +5,7 @@ import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered
 import { montarResumoDiario } from "@/lib/domain/resumo-diario";
 import { calculateBreakEvenRoas } from "@/lib/domain/ads";
 import { findProdutosEmRisco, type RiskProduto } from "@/lib/domain/risk";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import type { SalePushPayload } from "@/lib/domain/notifications";
 
 export const maxDuration = 60;
@@ -28,8 +28,11 @@ function brDayISO(): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-async function handler(req: Request) {
+async function handler(req: Request, gate: { uid: string; email: string }) {
   try {
+    const tenant = await resolverTenantDaRequisicao(gate);
+    if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
     const origem = new URL(req.url).origin;
     const hoje = brDayISO();
     // Repassa a credencial de quem chamou: as rotas internas exigem acesso, e
@@ -89,7 +92,7 @@ async function handler(req: Request) {
     if (rForecast?.ok) {
       try {
         const forecast = (await rForecast.json()) as { vendas?: Record<string, number>; dias?: number };
-        const prodSnap = await getAdminDb().collection("estoque").get();
+        const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
         const produtos: RiskProduto[] = prodSnap.docs.map((d) => {
           const p = d.data();
           return {
@@ -112,7 +115,7 @@ async function handler(req: Request) {
     });
 
     const dedupeKey = `resumo_diario:${hoje}`;
-    const { created, eventId } = await createNotificationEventIdempotent({
+    const { created, eventId } = await createNotificationEventIdempotent(tenant.tenantId, {
       type: "system", severity: "info", entityType: "system", entityId: hoje, dedupeKey,
       title: conteudo.title, body: conteudo.body,
       financialState: lucro == null ? "unavailable" : "estimated",
@@ -127,11 +130,11 @@ async function handler(req: Request) {
       eventId, type: "system", title: conteudo.title, body: conteudo.body,
       tag: `resumo-${hoje}`, deepLink: "/", timestamp: new Date().toISOString(),
     };
-    await markPushAttempted(eventId);
+    await markPushAttempted(tenant.tenantId, eventId);
     // Respeita as preferências de cada pessoa, igual ao resto: quem desligou
     // resumo não recebe, e horário silencioso vale (não é evento crítico).
-    const { enviados } = await sendSalePushToAll(payload, "system", true);
-    if (enviados > 0) await markPushDelivered(eventId);
+    const { enviados } = await sendSalePushToAll(tenant.tenantId, payload, "system", true);
+    if (enviados > 0) await markPushDelivered(tenant.tenantId, eventId);
 
     return NextResponse.json({ ok: true, dia: hoje, enviados, title: conteudo.title, body: conteudo.body });
   } catch (err: unknown) {
@@ -143,12 +146,12 @@ async function handler(req: Request) {
 /** GET = chamada do Vercel Cron. */
 export async function GET(req: Request) {
   if (!isCronRequest(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  return handler(req);
+  return handler(req, { uid: "cron", email: "cron@system" });
 }
 
 /** POST = disparo manual pra testar sem esperar o horário. */
 export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
-  return handler(req);
+  return handler(req, gate);
 }

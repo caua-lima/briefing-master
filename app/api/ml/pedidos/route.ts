@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
+import { resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
 import { paraBR } from "@/lib/domain/tempo";
 
@@ -36,15 +36,19 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const { start, end, startBR, endBR } = buildRange(url.searchParams.get("from"), url.searchParams.get("to"));
-    const db = getAdminDb();
+    const colOrders = tenantCol(tenant.tenantId, "ml_orders");
+    const colReturns = tenantCol(tenant.tenantId, "ml_returns");
 
     // Pedidos do período (dedupe UTC/BR)
     const [snapUTC, snapBR] = await Promise.all([
-      db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      colOrders.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      colOrders.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const ordersMap = new Map<string, FirebaseFirestore.DocumentData>();
     for (const snap of [snapUTC, snapBR])
@@ -57,8 +61,8 @@ export async function GET(req: Request) {
     // app/api/ml/metrics/route.ts usa pro Dashboard (não é cálculo novo, só
     // reaproveitado aqui pra marcar cada pedido).
     const [retUTC, retBR] = await Promise.all([
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      colReturns.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      colReturns.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const cancelIds = new Set<string>();
     const devolIds = new Set<string>();
@@ -118,7 +122,7 @@ export async function GET(req: Request) {
     });
 
     // Índice de produtos
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {

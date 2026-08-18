@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
 import { fazerBackupSemanal } from "@/lib/backup-run";
+import { resolverTenantDaRequisicao } from "@/lib/tenant";
 
 /**
  * Disparo MANUAL do backup semanal (ver lib/backup-run.ts para o que é
@@ -16,8 +17,11 @@ export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const r = await fazerBackupSemanal();
+    const r = await fazerBackupSemanal(tenant.tenantId);
     return NextResponse.json({ ok: true, ...r });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

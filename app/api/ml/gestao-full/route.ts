@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
-import { SELLER_ID } from "@/lib/ml/orders";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { consolidarEstoqueAnuncios } from "@/lib/domain/estoque";
 
 const ML_API = "https://api.mercadolibre.com";
@@ -49,8 +47,13 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   const params = new URL(req.url).searchParams;
-  const chaveCache = params.get("dias") ?? "padrao";
+  // Prefixado por tenant: cache é módulo-level (lambda quente compartilhada
+  // entre requisições) — sem isso a resposta de um cliente vazaria pro outro.
+  const chaveCache = `${tenant.tenantId}:${params.get("dias") ?? "padrao"}`;
   if (!params.has("forcar")) {
     const hit = cache.get(chaveCache);
     if (hit && Date.now() - hit.at < CACHE_TTL) {
@@ -59,13 +62,13 @@ export async function GET(req: Request) {
   }
 
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
     if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
-    const db = getAdminDb();
+    const SELLER_ID = await getSellerId(tenant.tenantId);
 
     // MLBs cadastrados no Estoque — servem para saber o que já é rastreado.
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     const cadastrados = new Set<string>();
     // MLB → produto do Estoque: sem isso a baixa não sabe de quem descontar.
     const produtoPorMlb = new Map<string, { id: string; nome: string }>();
@@ -438,7 +441,7 @@ export async function GET(req: Request) {
      */
     const custoManualPorRemessa = new Map<string, number>();
     try {
-      const remessaSnap = await db.collection("full_remessas").get();
+      const remessaSnap = await tenantCol(tenant.tenantId, "full_remessas").get();
       for (const doc of remessaSnap.docs) {
         const v = Number(doc.data()?.custoManual);
         if (Number.isFinite(v) && v > 0) custoManualPorRemessa.set(doc.id, v);

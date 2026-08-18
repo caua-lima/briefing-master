@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
-import { getValidMlAccessToken } from "@/lib/ml/getToken";
+import { getValidMlAccessToken, resolverTenantDaRequisicao } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -15,6 +15,9 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req, { adminOnly: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const now = new Date(Date.now() - 3 * 3600 * 1000);
@@ -22,7 +25,7 @@ export async function GET(req: Request) {
     const from = url.searchParams.get("from") || `${ym}-01`;
     const to = url.searchParams.get("to") || now.toISOString().slice(0, 10);
 
-    const token = await getValidMlAccessToken();
+    const token = await getValidMlAccessToken(tenant.tenantId);
 
     // 1. Anunciantes
     const advRes = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, {

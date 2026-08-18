@@ -1,4 +1,4 @@
-import { getAdminDb } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/tenant";
 
 /**
  * Backup semanal das coleções que NÃO dá pra reconstruir sozinho.
@@ -14,21 +14,25 @@ import { getAdminDb } from "@/lib/firebase/admin";
  * isso não é "espera a próxima sincronização", é perder o dado de verdade.
  *
  * ONDE FICA
- * `backups_semanais/{dia}/{colecao}/{docId}` — espelha a estrutura original
- * um-pra-um, então restaurar é copiar de volta, não decifrar um formato novo.
- * `dia` é a data em que rodou (não um número de semana ISO calculado): mais
- * simples de acertar, e como só roda aos domingos já dá uma entrada por
- * semana na prática.
+ * `tenants/{tenantId}/backups_semanais/{dia}/{colecao}/{docId}` — espelha a
+ * estrutura original um-pra-um, então restaurar é copiar de volta, não
+ * decifrar um formato novo. `dia` é a data em que rodou (não um número de
+ * semana ISO calculado): mais simples de acertar, e como só roda aos
+ * domingos já dá uma entrada por semana na prática.
  *
  * IDEMPOTÊNCIA
- * O doc `backups_semanais/{dia}` (o marcador, sem subcoleção) só existe
+ * O doc `.../backups_semanais/{dia}` (o marcador, sem subcoleção) só existe
  * depois que o backup terminou. Rodar de novo no mesmo dia (retry do cron,
  * disparo manual pra testar) vê o marcador e não refaz o trabalho.
+ *
+ * `controleAcesso` saiu da lista: não é mais dado DESTE tenant — virou
+ * `tenant_membros`/`licencas`, coleções globais fora do escopo do tenant (ver
+ * lib/domain/tenant.ts). Backup do vínculo/licença é outra tarefa, não esta.
  */
 
 const COLECOES_CRITICAS = [
   "estoque", "estoque_movimentos", "tarefas",
-  "metasHistorico", "custos", "controleAcesso", "full_remessas",
+  "metasHistorico", "custos", "full_remessas",
 ];
 
 /** Dia de hoje no fuso de São Paulo, "yyyy-mm-dd". */
@@ -46,10 +50,9 @@ export function ehDomingoBR(): boolean {
 
 export type ResultadoBackup = { feito: boolean; dia: string; colecoes: Record<string, number> };
 
-export async function fazerBackupSemanal(): Promise<ResultadoBackup> {
+export async function fazerBackupSemanal(tenantId: string): Promise<ResultadoBackup> {
   const dia = diaBR();
-  const db = getAdminDb();
-  const marcador = db.collection("backups_semanais").doc(dia);
+  const marcador = tenantCol(tenantId, "backups_semanais").doc(dia);
 
   if ((await marcador.get()).exists) {
     return { feito: false, dia, colecoes: {} };
@@ -57,19 +60,19 @@ export async function fazerBackupSemanal(): Promise<ResultadoBackup> {
 
   const colecoes: Record<string, number> = {};
   for (const nome of COLECOES_CRITICAS) {
-    const snap = await db.collection(nome).get();
+    const snap = await tenantCol(tenantId, nome).get();
     const destino = marcador.collection(nome);
 
     // writeBatch aceita até 500 operações; folga de 50 pra caber o commit
     // final sem estourar em coleção grande (estoque_movimentos cresce com o tempo).
-    let batch = db.batch();
+    let batch = marcador.firestore.batch();
     let pendentes = 0;
     for (const doc of snap.docs) {
       batch.set(destino.doc(doc.id), doc.data());
       pendentes++;
       if (pendentes >= 450) {
         await batch.commit();
-        batch = db.batch();
+        batch = marcador.firestore.batch();
         pendentes = 0;
       }
     }

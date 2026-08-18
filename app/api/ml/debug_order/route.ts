@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
+import { resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 export async function GET(req: Request) {
   const gate = await requireAccess(req, { adminOnly: true });
   if (gate instanceof NextResponse) return gate;
 
-  const db = getAdminDb();
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
 
   const [ordersSnap, estoqueSnap] = await Promise.all([
-    db.collection("ml_orders").limit(3).get(),
-    db.collection("estoque").get(),
+    tenantCol(tenant.tenantId, "ml_orders").limit(3).get(),
+    tenantCol(tenant.tenantId, "estoque").get(),
   ]);
 
   const sample_orders = ordersSnap.docs.map((doc) => {

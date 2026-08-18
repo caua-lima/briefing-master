@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsFullByItem, getAdsSettingsByItem, getItemStatusByItem, probeAds, type AdSettings } from "@/lib/ml/ads";
 
@@ -19,7 +18,7 @@ function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pau
   // "sem campanha" aqui seria falso.
   return "config_indisponivel";
 }
-import { getValidMlAccessToken } from "@/lib/ml/getToken";
+import { getSellerId, getValidMlAccessToken, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 
 export const maxDuration = 30;
@@ -80,6 +79,9 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const from = url.searchParams.get("from") || todayISO(29);
@@ -92,15 +94,15 @@ export async function GET(req: Request) {
 
     let ads;
     try {
-      ads = from <= adsTo ? await getAdsFullByItem(from, adsTo) : [];
+      ads = from <= adsTo ? await getAdsFullByItem(tenant.tenantId, from, adsTo) : [];
     } catch {
       // Pode ser o período terminando no dia corrente (dados de hoje ainda não
       // fecharam do lado do ML). Tenta de novo terminando ontem.
       const ontem = todayISO(1);
       try {
-        ads = from <= ontem ? await getAdsFullByItem(from, ontem) : [];
+        ads = from <= ontem ? await getAdsFullByItem(tenant.tenantId, from, ontem) : [];
       } catch (e2) {
-        const diag = await probeAds(from, adsTo);
+        const diag = await probeAds(tenant.tenantId, from, adsTo);
         return NextResponse.json({ error: "ads_failed", details: String(e2).slice(0, 200), diag, from, to: adsTo, items: [] });
       }
     }
@@ -112,10 +114,8 @@ export async function GET(req: Request) {
     ads = ads.filter((a) => a.cost > 0);
     const semGastoNoPeriodo = totalAntesDoFiltro - ads.length;
 
-    const db = getAdminDb();
-
     // ── Produtos (custo médio + imposto) indexados por MLB e SKU ──
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {
@@ -131,19 +131,21 @@ export async function GET(req: Request) {
     const fromISO = `${from}T00:00:00.000-03:00`;
     const toISO = `${to}T23:59:59.999-03:00`;
     const start = `${from}T00:00:00.000Z`, end = `${to}T23:59:59.999Z`;
-    const token = await getValidMlAccessToken().catch(() => "");
-    let orders = token ? await fetchOrdersLive(token, fromISO, toISO) : null;
-    if (!orders) orders = await loadOrders(db, start, end, fromISO, toISO);
+    const sellerId = await getSellerId(tenant.tenantId).catch(() => null);
+    const token = await getValidMlAccessToken(tenant.tenantId).catch(() => "");
+    let orders = token && sellerId ? await fetchOrdersLive(sellerId, token, fromISO, toISO) : null;
+    if (!orders) orders = await loadOrders(tenant.tenantId, start, end, fromISO, toISO);
 
     // enriquece frete do cache do Firestore
     const ids = orders.map((o) => String(o.order_id ?? "")).filter(Boolean);
-    const shipMap = await readShippingCosts(db, ids);
+    const shipMap = await readShippingCosts(tenant.tenantId, ids);
     for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
 
     // ── Devoluções + cancelamentos (excluídos do lucro, igual ao dashboard) ──
+    const colReturns = tenantCol(tenant.tenantId, "ml_returns");
     const [retUTC, retBR] = await Promise.all([
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", fromISO).where("date_created", "<=", toISO).get(),
+      colReturns.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      colReturns.where("date_created", ">=", fromISO).where("date_created", "<=", toISO).get(),
     ]);
     const cancelIds = new Set<string>();
     const devolIds = new Set<string>();
@@ -166,7 +168,7 @@ export async function GET(req: Request) {
       if (a.campaignId) campaignIdByItem[id] = a.campaignId;
       costByItem[id] = a.cost;
     }
-    const cfg = await getAdsSettingsByItem(mlbsAds, campaignIdByItem, costByItem).catch(
+    const cfg = await getAdsSettingsByItem(tenant.tenantId, mlbsAds, campaignIdByItem, costByItem).catch(
       () => ({
         porItem: {} as Record<string, AdSettings>, amostraCampanha: null,
         tentativas: [] as { url: string; status: number }[], campanhasEncontradas: 0,
@@ -179,7 +181,7 @@ export async function GET(req: Request) {
     );
     // Status do catálogo (se o anúncio em si está ativo/pausado/encerrado) —
     // vira só um dado extra no tooltip agora; a etiqueta principal é da campanha.
-    const statusPorItem = await getItemStatusByItem(mlbsAds).catch(() => ({} as Record<string, string>));
+    const statusPorItem = await getItemStatusByItem(tenant.tenantId, mlbsAds).catch(() => ({} as Record<string, string>));
 
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };

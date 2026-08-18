@@ -1,7 +1,7 @@
 import "server-only";
+import { tenantCol } from "@/lib/tenant";
 
 export const ML_API = "https://api.mercadolibre.com";
-export const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 export type OrderItemDoc = {
   sku?: string;
@@ -26,15 +26,16 @@ export type OrderDoc = {
 
 /** Lê os pedidos de um intervalo (UTC e BR) do Firestore, deduplicando por order_id. */
 export async function loadOrders(
-  db: FirebaseFirestore.Firestore,
+  tenantId: string,
   start: string,
   end: string,
   startBR: string,
   endBR: string,
 ): Promise<FirebaseFirestore.DocumentData[]> {
+  const col = tenantCol(tenantId, "ml_orders");
   const [snapUTC, snapBR] = await Promise.all([
-    db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-    db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+    col.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+    col.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
   ]);
   const map = new Map<string, FirebaseFirestore.DocumentData>();
   for (const snap of [snapUTC, snapBR])
@@ -51,6 +52,7 @@ export async function loadOrders(
  * O frete (shipping_cost) é enriquecido do cache do Firestore depois.
  */
 export async function fetchOrdersLive(
+  sellerId: string,
   token: string,
   fromISO: string,
   toISO: string,
@@ -60,7 +62,7 @@ export async function fetchOrdersLive(
     let offset = 0;
     while (true) {
       const url =
-        `${ML_API}/orders/search?seller=${SELLER_ID}` +
+        `${ML_API}/orders/search?seller=${sellerId}` +
         `&order.date_created.from=${encodeURIComponent(fromISO)}` +
         `&order.date_created.to=${encodeURIComponent(toISO)}` +
         `&limit=50&offset=${offset}`;
@@ -104,15 +106,16 @@ export async function fetchOrdersLive(
 
 /** Lê shipping_cost já sincronizado do Firestore para os pedidos informados. */
 export async function readShippingCosts(
-  db: FirebaseFirestore.Firestore,
+  tenantId: string,
   ids: string[],
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>();
+  const col = tenantCol(tenantId, "ml_orders");
   const CHUNK = 300;
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const refs = ids.slice(i, i + CHUNK).filter(Boolean).map((id) => db.collection("ml_orders").doc(id));
+    const refs = ids.slice(i, i + CHUNK).filter(Boolean).map((id) => col.doc(id));
     if (refs.length === 0) continue;
-    const snaps = await db.getAll(...refs);
+    const snaps = await col.firestore.getAll(...refs);
     for (const snap of snaps) {
       const v = snap.get("shipping_cost");
       if (typeof v === "number") map.set(snap.id, v);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, resolverTenantDaRequisicao } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -9,8 +9,11 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req, { adminOnly: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
     if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json", "x-format-new": "true" };
 

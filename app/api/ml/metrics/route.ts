@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsSpendByItem, probeAds } from "@/lib/ml/ads";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
 
 export const maxDuration = 30;
@@ -322,6 +321,9 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const from = parseDateParam(url.searchParams.get("from"));
@@ -330,7 +332,10 @@ export async function GET(req: Request) {
     const { start, end, startBR, endBR, fromStr, toStr } = buildRange(from, to, month);
 
     // ── Cache curto (bypass com ?fresh=1, usado no "Atualizar ML") ──
-    const cacheKey = `${fromStr}|${toStr}`;
+    // Prefixado por tenant: cache é módulo-level (compartilhado entre
+    // requisições da mesma lambda quente) — sem o tenantId, a resposta de um
+    // cliente vazaria pro outro na próxima chamada com a mesma janela.
+    const cacheKey = `${tenant.tenantId}|${fromStr}|${toStr}`;
     const bust = url.searchParams.get("fresh") === "1";
     if (!bust) {
       const cached = metricsCache.get(cacheKey);
@@ -339,10 +344,8 @@ export async function GET(req: Request) {
       }
     }
 
-    const db = getAdminDb();
-
     // ── 1. Estoque: indexar por MLB (sem prefixo) e por SKU ───
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     const porMlb = new Map<string, ProdutoData>();
     const porSku = new Map<string, ProdutoData>();
     for (const doc of prodSnap.docs) {
@@ -383,34 +386,35 @@ export async function GET(req: Request) {
     let adsByItem: Record<string, number> = {};
     if (fromStr <= adsTo) {
       try {
-        adsByItem = await getAdsSpendByItem(fromStr, adsTo);
+        adsByItem = await getAdsSpendByItem(tenant.tenantId, fromStr, adsTo);
       } catch {
         try {
-          adsByItem = fromStr <= ontem ? await getAdsSpendByItem(fromStr, ontem) : {};
+          adsByItem = fromStr <= ontem ? await getAdsSpendByItem(tenant.tenantId, fromStr, ontem) : {};
         } catch {
           adsFalhou = true;
         }
       }
     }
-    const adsHoje: Record<string, number> = await getAdsSpendByItem(hj, hj).catch(() => ({}));
+    const adsHoje: Record<string, number> = await getAdsSpendByItem(tenant.tenantId, hj, hj).catch(() => ({}));
 
     // ── 4. Pedidos do período + de hoje (AO VIVO, com fallback) ─
-    const token = await getMlAccessToken();
+    const sellerId = await getSellerId(tenant.tenantId).catch(() => null);
+    const token = await getMlAccessToken(tenant.tenantId);
     const fromISO = `${fromStr}T00:00:00.000-03:00`;
     const toISO = `${toStr}T23:59:59.999-03:00`;
     const hjFromISO = `${hj}T00:00:00.000-03:00`;
     const hjToISO = `${hj}T23:59:59.999-03:00`;
 
-    let orders = token ? await fetchOrdersLive(token, fromISO, toISO) : null;
-    let ordersHoje = token ? await fetchOrdersLive(token, hjFromISO, hjToISO) : null;
+    let orders = token && sellerId ? await fetchOrdersLive(sellerId, token, fromISO, toISO) : null;
+    let ordersHoje = token && sellerId ? await fetchOrdersLive(sellerId, token, hjFromISO, hjToISO) : null;
 
     // fallback para o Firestore se o fetch ao vivo falhar
-    if (!orders) orders = await loadOrders(db, start, end, startBR, endBR);
-    if (!ordersHoje) ordersHoje = await loadOrders(db, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, hjFromISO, hjToISO);
+    if (!orders) orders = await loadOrders(tenant.tenantId, start, end, startBR, endBR);
+    if (!ordersHoje) ordersHoje = await loadOrders(tenant.tenantId, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, hjFromISO, hjToISO);
 
     // enriquece o frete (shipping_cost) a partir do cache do Firestore
     const allIds = [...orders, ...ordersHoje].map((o) => String(o.order_id ?? "")).filter(Boolean);
-    const shipMap = await readShippingCosts(db, allIds);
+    const shipMap = await readShippingCosts(tenant.tenantId, allIds);
     for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
     for (const o of ordersHoje) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
 
@@ -418,9 +422,10 @@ export async function GET(req: Request) {
     // Cancelamento = venda que não aconteceu (estoque não saiu/voltou).
     // Devolução = venda revertida, produto volta ao estoque → 0 a 0.
     // Os dois entram no faturamento BRUTO, mas saem do líquido e do lucro.
+    const colReturnsM = tenantCol(tenant.tenantId, "ml_returns");
     const [retUTC, retBR] = await Promise.all([
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      colReturnsM.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      colReturnsM.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const retMap = new Map<string, FirebaseFirestore.DocumentData>();
     for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
@@ -456,7 +461,7 @@ export async function GET(req: Request) {
       .sort((a, b) => a.data.localeCompare(b.data));
 
     // Diagnóstico de ADS quando o total do período vem 0 (identifica a causa)
-    const adsDiag = agg.totalAds === 0 && fromStr <= adsTo ? await probeAds(fromStr, adsTo) : null;
+    const adsDiag = agg.totalAds === 0 && fromStr <= adsTo ? await probeAds(tenant.tenantId, fromStr, adsTo) : null;
 
     // ── 5. Devoluções ──
     // Só as concluídas (e os cancelamentos) foram excluídas do lucro acima. As
@@ -494,7 +499,7 @@ export async function GET(req: Request) {
     const isFullMonth = fy === ty && fm === tm && fd === 1 && td === lastDayFrom;
     const monthsInPeriod = Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
 
-    const custosSnap = await db.collection("custos").get();
+    const custosSnap = await tenantCol(tenant.tenantId, "custos").get();
     let custosOp = 0;
     // Custo marcado como "dre" fica fora do lucro do Dashboard de propósito:
     // é despesa da empresa (pró-labore, contador), não da operação de venda.

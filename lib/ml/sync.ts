@@ -1,9 +1,8 @@
 import "server-only";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
 const MP_API = "https://api.mercadopago.com";
-const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 export type SyncRange = { from: string; to: string };
 
@@ -162,14 +161,15 @@ async function fetchShipment(accessToken: string, shipmentId: string): Promise<S
 }
 
 /** Ids de pedidos cujo envio já está em estado FINAL (não precisa re-buscar). */
-async function terminalShipmentIds(db: FirebaseFirestore.Firestore, orderIds: string[]): Promise<Set<string>> {
+async function terminalShipmentIds(tenantId: string, orderIds: string[]): Promise<Set<string>> {
   const set = new Set<string>();
   const terminal = new Set(["delivered", "not_delivered", "cancelled"]);
+  const col = tenantCol(tenantId, "ml_orders");
   const CHUNK = 300;
   for (let i = 0; i < orderIds.length; i += CHUNK) {
-    const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
+    const refs = orderIds.slice(i, i + CHUNK).map((id) => col.doc(id));
     if (refs.length === 0) continue;
-    const snaps = await db.getAll(...refs);
+    const snaps = await col.firestore.getAll(...refs);
     for (const snap of snaps) {
       const st = String(snap.get("shipping_status") ?? "");
       if (!terminal.has(st)) continue;
@@ -182,13 +182,14 @@ async function terminalShipmentIds(db: FirebaseFirestore.Firestore, orderIds: st
 }
 
 /** Ids de pedidos que já têm o campo salvo no Firestore (evita re-buscar). */
-async function idsComCampo(db: FirebaseFirestore.Firestore, orderIds: string[], field: string): Promise<Set<string>> {
+async function idsComCampo(tenantId: string, orderIds: string[], field: string): Promise<Set<string>> {
   const set = new Set<string>();
+  const col = tenantCol(tenantId, "ml_orders");
   const CHUNK = 300;
   for (let i = 0; i < orderIds.length; i += CHUNK) {
-    const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
+    const refs = orderIds.slice(i, i + CHUNK).map((id) => col.doc(id));
     if (refs.length === 0) continue;
-    const snaps = await db.getAll(...refs);
+    const snaps = await col.firestore.getAll(...refs);
     for (const snap of snaps) if (snap.get(field)) set.add(snap.id);
   }
   return set;
@@ -214,6 +215,7 @@ async function fetchPaymentInfo(accessToken: string, paymentId: string): Promise
 
 async function fetchAllOrders(
   accessToken: string,
+  sellerId: string,
   range: SyncRange,
   extraQuery = "",
 ): Promise<Record<string, unknown>[]> {
@@ -223,7 +225,7 @@ async function fetchAllOrders(
 
   while (true) {
     const url =
-      `${ML_API}/orders/search?seller=${SELLER_ID}` +
+      `${ML_API}/orders/search?seller=${sellerId}` +
       `&order.date_created.from=${encodeURIComponent(range.from)}` +
       `&order.date_created.to=${encodeURIComponent(range.to)}` +
       `${extraQuery}&limit=${limit}&offset=${offset}`;
@@ -244,15 +246,15 @@ async function fetchAllOrders(
   return all;
 }
 
-/** Busca pedidos do período no ML (com custo de frete real) e grava em `ml_orders`. */
-export async function syncOrdersRange(accessToken: string, range: SyncRange): Promise<number> {
-  const db = getAdminDb();
-  const all = await fetchAllOrders(accessToken, range);
+/** Busca pedidos do período no ML (com custo de frete real) e grava em `tenants/{tenantId}/ml_orders`. */
+export async function syncOrdersRange(tenantId: string, accessToken: string, sellerId: string, range: SyncRange): Promise<number> {
+  const col = tenantCol(tenantId, "ml_orders");
+  const all = await fetchAllOrders(accessToken, sellerId, range);
 
   // ── Envio (Full): custo + status, via API de envios ──
   // Re-busca envios não-finais para o status ficar atualizado (a caminho→entregue)
   const orderIds = all.map((o) => String((o as Record<string, unknown>).id));
-  const finais = await terminalShipmentIds(db, orderIds);
+  const finais = await terminalShipmentIds(tenantId, orderIds);
 
   const toFetch: { orderId: string; shipmentId: string }[] = [];
   for (const o of all) {
@@ -282,7 +284,7 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     const rel = payments.map((p) => String(p.money_release_date ?? "")).filter(Boolean).sort().pop() ?? "";
     if (rel) releaseFromSearch.set(id, rel);
   }
-  const jaTemNet = await idsComCampo(db, orderIds, "net_received");
+  const jaTemNet = await idsComCampo(tenantId, orderIds, "net_received");
   const buscarMP = orderIds.filter((id) => !jaTemNet.has(id)).slice(0, 250);
   await mapPool(buscarMP, 8, async (id) => {
     let net = 0;
@@ -300,7 +302,7 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
   // ── Gravação em lote ──
   const BATCH_SIZE = 400;
   for (let i = 0; i < all.length; i += BATCH_SIZE) {
-    const batch = db.batch();
+    const batch = col.firestore.batch();
     for (const order of all.slice(i, i + BATCH_SIZE)) {
       const o = order as Record<string, unknown>;
       const orderId = String(o.id);
@@ -338,27 +340,27 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
         if (info.dateDelivered) doc.date_delivered = info.dateDelivered;
       }
 
-      batch.set(db.collection("ml_orders").doc(orderId), doc, { merge: true });
+      batch.set(col.doc(orderId), doc, { merge: true });
     }
     await batch.commit();
   }
   return all.length;
 }
 
-/** Busca pedidos cancelados do período e grava/atualiza em `ml_returns`. */
-export async function syncReturnsRange(accessToken: string, range: SyncRange): Promise<number> {
-  const db = getAdminDb();
-  const all = await fetchAllOrders(accessToken, range, "&order.status=cancelled");
+/** Busca pedidos cancelados do período e grava/atualiza em `tenants/{tenantId}/ml_returns`. */
+export async function syncReturnsRange(tenantId: string, accessToken: string, sellerId: string, range: SyncRange): Promise<number> {
+  const col = tenantCol(tenantId, "ml_returns");
+  const all = await fetchAllOrders(accessToken, sellerId, range, "&order.status=cancelled");
   if (all.length === 0) return 0;
 
   const BATCH_SIZE = 400;
   for (let i = 0; i < all.length; i += BATCH_SIZE) {
-    const batch = db.batch();
+    const batch = col.firestore.batch();
     for (const order of all.slice(i, i + BATCH_SIZE)) {
       const o = order as Record<string, unknown>;
       const id = String(o.id);
       batch.set(
-        db.collection("ml_returns").doc(id),
+        col.doc(id),
         {
           order_id: id,
           status: o.status ?? null,
@@ -380,8 +382,9 @@ export async function syncReturnsRange(accessToken: string, range: SyncRange): P
  * em `ml_returns` com motivo e produto. Best-effort: falha silenciosa (mantém
  * as devoluções baseadas em cancelamento como fallback).
  */
-export async function syncClaimsRange(accessToken: string, range: SyncRange): Promise<number> {
-  const db = getAdminDb();
+export async function syncClaimsRange(tenantId: string, accessToken: string, range: SyncRange): Promise<number> {
+  const colOrders = tenantCol(tenantId, "ml_orders");
+  const colReturns = tenantCol(tenantId, "ml_returns");
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "x-format-new": "true" };
 
   // 1. Coleta claims (paginado)
@@ -419,13 +422,13 @@ export async function syncClaimsRange(accessToken: string, range: SyncRange): Pr
   const orderMap = new Map<string, FirebaseFirestore.DocumentData>();
   const CHUNK = 300;
   for (let i = 0; i < orderIds.length; i += CHUNK) {
-    const refs = orderIds.slice(i, i + CHUNK).map((id) => db.collection("ml_orders").doc(id));
+    const refs = orderIds.slice(i, i + CHUNK).map((id) => colOrders.doc(id));
     if (refs.length === 0) continue;
-    const snaps = await db.getAll(...refs);
+    const snaps = await colOrders.firestore.getAll(...refs);
     for (const s of snaps) if (s.exists) orderMap.set(s.id, s.data()!);
   }
 
-  const batch = db.batch();
+  const batch = colReturns.firestore.batch();
   for (const c of devs) {
     const orderId = String(c.resource_id ?? c.resource ?? c.order_id ?? "");
     if (!orderId) continue;
@@ -434,7 +437,7 @@ export async function syncClaimsRange(accessToken: string, range: SyncRange): Pr
     const produto = items.map((it) => it.title).filter(Boolean).join(", ");
     const valor = Number(c.amount ?? ord?.total_amount ?? 0);
     batch.set(
-      db.collection("ml_returns").doc(orderId),
+      colReturns.doc(orderId),
       {
         order_id: orderId,
         claim_id: String(c.id ?? ""),

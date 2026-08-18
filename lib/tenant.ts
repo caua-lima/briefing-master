@@ -106,6 +106,47 @@ export async function resolverTenant(uid: string, email: string): Promise<Contex
   return { uid, email, tenantId: membro.tenantId, membro };
 }
 
+/**
+ * Resolve o tenant de uma chamada de API, cobrindo os dois jeitos que ela
+ * chega: sessão de usuário real (gate.uid/gate.email vêm de requireAccess) ou
+ * cron/job (gate.uid === "cron", sem usuário nenhum por trás — ver
+ * lib/api-auth.ts).
+ *
+ * ─── A DECISÃO PARA O CASO cron, E POR QUE ELA SE AUTO-EXPIRA ───────────
+ *
+ * Hoje existe exatamente UM tenant. Então, para chamadas de cron, esta
+ * função usa esse único tenant. É deliberadamente PROVISÓRIO: no instante em
+ * que existir um segundo tenant ATIVO, ela passa a RECUSAR — nunca escolhe
+ * qual dos dois é "o certo", porque não há como saber.
+ *
+ * Isso transforma a limitação em trava, não em bug esquecido: o cron
+ * simplesmente PARA de funcionar quando o segundo cliente é onboardado, com
+ * um log dizendo exatamente por quê. Ninguém vai deixar cron parado sem
+ * notar. É o gatilho que força a Fase 4 (cron iterando por tenant, com
+ * rate-limit e alerta por tenant) a existir antes do segundo cliente, em vez
+ * de depois — e antes é sempre mais barato.
+ */
+export async function resolverTenantDaRequisicao(
+  gate: { uid: string; email: string },
+): Promise<{ tenantId: string } | null> {
+  if (gate.uid !== "cron") {
+    const ctx = await resolverTenant(gate.uid, gate.email);
+    return ctx ? { tenantId: ctx.tenantId } : null;
+  }
+
+  const snap = await getAdminDb().collection("tenants").get();
+  if (snap.size !== 1) {
+    console.error(
+      `[tenant] cron chamado com ${snap.size} tenant(s) — recusando. ` +
+      `A resolução de tenant único do cron só vale para exatamente 1 tenant ` +
+      `(ver resolverTenantDaRequisicao em lib/tenant.ts). Implemente a Fase 4 ` +
+      `(cron por tenant) antes de onboardar o próximo cliente.`,
+    );
+    return null;
+  }
+  return { tenantId: snap.docs[0].id };
+}
+
 // ── Conexão com o Mercado Livre, por tenant ────────────────────────
 
 export type MlConexao = {
@@ -291,4 +332,16 @@ export async function salvarConexao(
     { merge: true },
   );
   return { sellerId: me?.id ? String(me.id) : null, nickname: me?.nickname ?? null };
+}
+
+/** Apaga tokens e identidade da conexão do tenant — usado por "Desconectar"/"Trocar conta". */
+export async function desconectarML(tenantId: string): Promise<void> {
+  await conexaoRef(tenantId).set(
+    {
+      access_token: null, refresh_token: null, expires_in: null,
+      seller_id: null, nickname: null,
+      updated_at: new Date().toISOString(),
+    },
+    { merge: true },
+  );
 }

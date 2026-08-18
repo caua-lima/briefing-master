@@ -1,26 +1,16 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "../../../../lib/firebase/admin";
-import { getMlAccessToken } from "../token";
 import { requireAccess } from "@/lib/api-auth";
-
-async function getSellerId() {
-  const envSellerId = process.env.ML_SELLER_ID;
-  if (envSellerId) return envSellerId;
-
-  const db = getAdminDb();
-  const doc = await db.collection("ml_tokens").doc("main").get();
-
-  if (!doc.exists) return null;
-  const data = doc.data();
-  return data?.user_id ? String(data.user_id) : null;
-}
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 export async function GET(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
 
     if (!token) {
       return NextResponse.json(
@@ -29,11 +19,11 @@ export async function GET(req: Request) {
       );
     }
 
-    const sellerId = await getSellerId();
+    const sellerId = await getSellerId(tenant.tenantId).catch(() => null);
 
     if (!sellerId) {
       return NextResponse.json(
-        { error: "ML_SELLER_ID not configured" },
+        { error: "seller_id_indisponivel" },
         { status: 500 }
       );
     }
@@ -58,7 +48,6 @@ export async function GET(req: Request) {
 
     const data = await response.json();
     const orders = data.results ?? [];
-    const db = getAdminDb();
 
     const returns = orders.map((order: any) => ({
       id: String(order.id),
@@ -72,11 +61,11 @@ export async function GET(req: Request) {
       updatedAt: new Date().toISOString(),
     }));
 
-    const batch = db.batch();
+    const col = tenantCol(tenant.tenantId, "ml_returns");
+    const batch = col.firestore.batch();
 
     returns.forEach((item: any) => {
-      const ref = db.collection("ml_returns").doc(item.id);
-      batch.set(ref, item, { merge: true });
+      batch.set(col.doc(item.id), item, { merge: true });
     });
 
     await batch.commit();

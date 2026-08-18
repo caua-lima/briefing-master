@@ -1,4 +1,4 @@
-import { getAdminDb } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/tenant";
 import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered, markPushError } from "@/lib/notification-events";
 import { sendPushToUserIfAllowed } from "@/lib/push-send";
 import { buildTaskDeepLink, type SalePushPayload } from "@/lib/domain/notifications";
@@ -33,14 +33,13 @@ export type ResultadoLembretes = {
   jaAvisadoHoje: number;
 };
 
-export async function enviarLembretesDeTarefa(diaForcado?: string): Promise<ResultadoLembretes> {
+export async function enviarLembretesDeTarefa(tenantId: string, diaForcado?: string): Promise<ResultadoLembretes> {
   const dia = diaForcado ?? diaBR();
-  const db = getAdminDb();
 
   // Só o que pode virar lembrete: tarefa aberta e COM prazo. O filtro de
   // status fica no Firestore (corta a maior parte, já que quadro antigo é
   // quase todo "done") e o resto da regra fica no módulo puro.
-  const snap = await db.collection("tarefas").where("status", "in", ["todo", "doing"]).limit(500).get();
+  const snap = await tenantCol(tenantId, "tarefas").where("status", "in", ["todo", "doing"]).limit(500).get();
   const tarefas: TarefaPrazo[] = snap.docs.map((d) => {
     const t = d.data() as Partial<TarefaPrazo>;
     return {
@@ -67,7 +66,7 @@ export async function enviarLembretesDeTarefa(diaForcado?: string): Promise<Resu
     const dedupeKey = `task_due:${grupo.email}:${dia}`;
     const destaque = grupo.atrasadas[0] ?? grupo.venceHoje[0];
 
-    const { created, eventId } = await createNotificationEventIdempotent({
+    const { created, eventId } = await createNotificationEventIdempotent(tenantId, {
       type: "task_assigned",
       severity: grupo.atrasadas.length > 0 ? "warning" : "info",
       entityType: "task", entityId: destaque.id, dedupeKey,
@@ -84,14 +83,14 @@ export async function enviarLembretesDeTarefa(diaForcado?: string): Promise<Resu
       timestamp: new Date().toISOString(),
     };
 
-    await markPushAttempted(eventId);
+    await markPushAttempted(tenantId, eventId);
     try {
-      const { enviados: n, bloqueadoPorPreferencia } = await sendPushToUserIfAllowed(grupo.email, payload, "task_assigned");
-      if (n > 0) { await markPushDelivered(eventId); enviados += n; }
-      else await markPushError(eventId, bloqueadoPorPreferencia ? "bloqueado por preferência/horário silencioso" : "nenhum dispositivo registrado");
+      const { enviados: n, bloqueadoPorPreferencia } = await sendPushToUserIfAllowed(tenantId, grupo.email, payload, "task_assigned");
+      if (n > 0) { await markPushDelivered(tenantId, eventId); enviados += n; }
+      else await markPushError(tenantId, eventId, bloqueadoPorPreferencia ? "bloqueado por preferência/horário silencioso" : "nenhum dispositivo registrado");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await markPushError(eventId, msg.slice(0, 160));
+      await markPushError(tenantId, eventId, msg.slice(0, 160));
     }
   }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
+import { resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 function buildRange(from?: string | null, to?: string | null) {
   if (from && to) {
@@ -26,14 +26,17 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const { start, end, startBR, endBR } = buildRange(url.searchParams.get("from"), url.searchParams.get("to"));
-    const db = getAdminDb();
+    const col = tenantCol(tenant.tenantId, "ml_orders");
 
     const [snapUTC, snapBR] = await Promise.all([
-      db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      col.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      col.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
     const map = new Map<string, FirebaseFirestore.DocumentData>();
     for (const snap of [snapUTC, snapBR]) for (const doc of snap.docs) { const d = doc.data(); map.set(d.order_id ?? doc.id, d); }

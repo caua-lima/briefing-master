@@ -1,5 +1,6 @@
 import "server-only";
 import { getAdminDb, getAdminMessaging } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/tenant";
 import type { NotificationEventType, SalePushPayload } from "@/lib/domain/notifications";
 import { isPushAllowedForRecipient } from "@/lib/domain/notification-preferences";
 import { agoraBR, getNotificationPreferencesByEmail } from "@/lib/notification-preferences";
@@ -127,9 +128,8 @@ function serializarPayload(payload: SalePushPayload): Record<string, string> {
  * token morto (app desinstalado, permissão revogada) sozinho.
  * Retorna quantos dispositivos realmente receberam.
  */
-async function enviarPara(registros: Registro[], payload: SalePushPayload): Promise<number> {
+async function enviarPara(tenantId: string, registros: Registro[], payload: SalePushPayload): Promise<number> {
   if (registros.length === 0) return 0;
-  const db = getAdminDb();
   const messaging = getAdminMessaging();
   const resp = await messaging.sendEachForMulticast({
     tokens: registros.map((r) => r.token),
@@ -151,8 +151,8 @@ async function enviarPara(registros: Registro[], payload: SalePushPayload): Prom
     }
   });
   if (mortos.length > 0) {
-    const batch = db.batch();
-    mortos.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    const batch = getAdminDb().batch();
+    mortos.forEach((id) => batch.delete(tenantCol(tenantId, "pushTokens").doc(id)));
     await batch.commit();
   }
   return resp.successCount;
@@ -167,18 +167,17 @@ async function enviarPara(registros: Registro[], payload: SalePushPayload): Prom
  * lib/domain/notifications.ts) — é o que faz o aparelho substituir em vez de
  * empilhar duas notificações do mesmo pedido.
  */
-export async function sendPushToAll(payload: SalePushPayload): Promise<{ enviados: number }> {
-  const db = getAdminDb();
-  const snap = await db.collection("pushTokens").get();
+export async function sendPushToAll(tenantId: string, payload: SalePushPayload): Promise<{ enviados: number }> {
+  const snap = await tenantCol(tenantId, "pushTokens").get();
   const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
 
   if (duplicados.length > 0) {
-    const batch = db.batch();
-    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    const batch = getAdminDb().batch();
+    duplicados.forEach((id) => batch.delete(tenantCol(tenantId, "pushTokens").doc(id)));
     await batch.commit();
   }
 
-  const enviados = await enviarPara(envio, payload);
+  const enviados = await enviarPara(tenantId, envio, payload);
   return { enviados };
 }
 
@@ -194,17 +193,17 @@ export async function sendPushToAll(payload: SalePushPayload): Promise<{ enviado
  * notifications), nunca a do outro.
  */
 export async function sendSalePushToAll(
+  tenantId: string,
   payload: SalePushPayload,
   type: NotificationEventType,
   isSummary = false,
 ): Promise<{ enviados: number; elegiveis: number; bloqueadosPorPreferencia: number }> {
-  const db = getAdminDb();
-  const snap = await db.collection("pushTokens").get();
+  const snap = await tenantCol(tenantId, "pushTokens").get();
   const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
 
   if (duplicados.length > 0) {
-    const batch = db.batch();
-    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    const batch = getAdminDb().batch();
+    duplicados.forEach((id) => batch.delete(tenantCol(tenantId, "pushTokens").doc(id)));
     await batch.commit();
   }
 
@@ -221,7 +220,7 @@ export async function sendSalePushToAll(
   const elegiveis = envio.filter((r) => permitidoPorEmail.get(r.email) !== false);
   const bloqueadosPorPreferencia = envio.length - elegiveis.length;
 
-  const enviados = await enviarPara(elegiveis, payload);
+  const enviados = await enviarPara(tenantId, elegiveis, payload);
   return { enviados, elegiveis: elegiveis.length, bloqueadosPorPreferencia };
 }
 
@@ -232,18 +231,17 @@ export async function sendSalePushToAll(
  * resto do time. Retorna quantos dispositivos desse usuário receberam, pra
  * UI poder dizer "nenhum dispositivo seu está registrado" quando for 0.
  */
-export async function sendPushToUser(email: string, payload: SalePushPayload): Promise<{ enviados: number }> {
-  const db = getAdminDb();
-  const snap = await db.collection("pushTokens").where("email", "==", email).get();
+export async function sendPushToUser(tenantId: string, email: string, payload: SalePushPayload): Promise<{ enviados: number }> {
+  const snap = await tenantCol(tenantId, "pushTokens").where("email", "==", email).get();
   const { envio, duplicados } = deduplicarPorDispositivo(snap.docs);
 
   if (duplicados.length > 0) {
-    const batch = db.batch();
-    duplicados.forEach((id) => batch.delete(db.collection("pushTokens").doc(id)));
+    const batch = getAdminDb().batch();
+    duplicados.forEach((id) => batch.delete(tenantCol(tenantId, "pushTokens").doc(id)));
     await batch.commit();
   }
 
-  const enviados = await enviarPara(envio, payload);
+  const enviados = await enviarPara(tenantId, envio, payload);
   return { enviados };
 }
 
@@ -255,6 +253,7 @@ export async function sendPushToUser(email: string, payload: SalePushPayload): P
  * (`sendSalePushToAll`, que varre o time inteiro).
  */
 export async function sendPushToUserIfAllowed(
+  tenantId: string,
   email: string,
   payload: SalePushPayload,
   type: NotificationEventType,
@@ -262,6 +261,6 @@ export async function sendPushToUserIfAllowed(
   const prefs = await getNotificationPreferencesByEmail(email);
   const permitido = isPushAllowedForRecipient(type, prefs, agoraBR());
   if (!permitido) return { enviados: 0, bloqueadoPorPreferencia: true };
-  const { enviados } = await sendPushToUser(email, payload);
+  const { enviados } = await sendPushToUser(tenantId, email, payload);
   return { enviados, bloqueadoPorPreferencia: false };
 }

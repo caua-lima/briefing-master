@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getMlAccessToken } from "../token";
 import { isCronRequest } from "@/lib/api-auth";
 import { currentMonthRangeBR, previousMonthRangeBR, syncOrdersRange, syncReturnsRange, syncClaimsRange } from "@/lib/ml/sync";
 import { enviarLembretesDeTarefa } from "@/lib/task-reminders-run";
 import { ehDomingoBR, fazerBackupSemanal } from "@/lib/backup-run";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao } from "@/lib/tenant";
 
 export const maxDuration = 60;
 
@@ -30,11 +30,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Cron identifica-se como uid "cron" (ver lib/api-auth.ts) — sem sessão de
+  // usuário, resolverTenantDaRequisicao usa o único tenant existente, e passa
+  // a RECUSAR sozinha quando existir um segundo (ver o comentário em
+  // lib/tenant.ts). É a trava que força a Fase 4 antes do segundo cliente.
+  const tenant = await resolverTenantDaRequisicao({ uid: "cron", email: "cron@system" });
+  if (!tenant) {
+    return NextResponse.json({ error: "tenant_nao_resolvido" }, { status: 409 });
+  }
+
   try {
-    const accessToken = await getMlAccessToken();
+    const accessToken = await getMlAccessToken(tenant.tenantId);
     if (!accessToken) {
       return NextResponse.json({ error: "Token ML não encontrado" }, { status: 400 });
     }
+    const sellerId = await getSellerId(tenant.tenantId);
 
     /**
      * Mes corrente + MES ANTERIOR.
@@ -49,15 +59,15 @@ export async function GET(req: Request) {
     const anterior = previousMonthRangeBR();
 
     const resultados = await Promise.all([
-      syncOrdersRange(accessToken, atual),
-      syncReturnsRange(accessToken, atual),
+      syncOrdersRange(tenant.tenantId, accessToken, sellerId, atual),
+      syncReturnsRange(tenant.tenantId, accessToken, sellerId, atual),
       // Reclamacoes/devolucoes ja rodavam no sync-all (botao manual) mas NAO
       // no cron: sem alguem abrir o app, devolucao nunca era atualizada
       // sozinha. Best-effort, igual la — nao pode derrubar o resto.
-      syncClaimsRange(accessToken, atual).catch(() => 0),
-      syncOrdersRange(accessToken, anterior),
-      syncReturnsRange(accessToken, anterior),
-      syncClaimsRange(accessToken, anterior).catch(() => 0),
+      syncClaimsRange(tenant.tenantId, accessToken, atual).catch(() => 0),
+      syncOrdersRange(tenant.tenantId, accessToken, sellerId, anterior),
+      syncReturnsRange(tenant.tenantId, accessToken, sellerId, anterior),
+      syncClaimsRange(tenant.tenantId, accessToken, anterior).catch(() => 0),
     ]);
     const [ordensAtual, devAtual, claimsAtual, ordensAnterior, devAnterior, claimsAnterior] = resultados;
 
@@ -65,7 +75,7 @@ export async function GET(req: Request) {
     // de virar um cron próprio (ver o aviso do Hobby acima). Best-effort: um
     // erro aqui não pode derrubar a sincronização de pedidos, que é o que
     // realmente importa neste endpoint.
-    const lembretes = await enviarLembretesDeTarefa().catch((err: unknown) => {
+    const lembretes = await enviarLembretesDeTarefa(tenant.tenantId).catch((err: unknown) => {
       console.error("[cron] lembrete de tarefa falhou", err);
       return null;
     });
@@ -74,7 +84,7 @@ export async function GET(req: Request) {
     // nesta execução diária em vez de virar cron próprio, e só faz algo aos
     // domingos. Best-effort: nunca pode derrubar a sincronização de pedidos.
     const backup = ehDomingoBR()
-      ? await fazerBackupSemanal().catch((err: unknown) => {
+      ? await fazerBackupSemanal(tenant.tenantId).catch((err: unknown) => {
           console.error("[cron] backup semanal falhou", err);
           return null;
         })

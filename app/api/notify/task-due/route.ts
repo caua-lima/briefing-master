@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
 import { enviarLembretesDeTarefa } from "@/lib/task-reminders-run";
+import { resolverTenantDaRequisicao } from "@/lib/tenant";
 
 /**
  * Disparo MANUAL da varredura de prazo das tarefas.
@@ -21,11 +22,14 @@ export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   const body = await req.json().catch(() => null) as { dia?: string } | null;
   const dia = typeof body?.dia === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.dia) ? body.dia : undefined;
 
   try {
-    const r = await enviarLembretesDeTarefa(dia);
+    const r = await enviarLembretesDeTarefa(tenant.tenantId, dia);
     return NextResponse.json({ ok: true, ...r });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

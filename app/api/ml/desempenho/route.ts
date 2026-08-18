@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { fetchMlUserProfileFresh } from "@/lib/ml/account";
+import { resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { calcularCompradoresPeriodo } from "@/lib/domain/repurchase";
 import { calcularConcentracaoVendas } from "@/lib/domain/sales-heatmap";
 import { calcularEntregasNoPrazo } from "@/lib/domain/shipping-performance";
@@ -43,6 +43,9 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
     const url = new URL(req.url);
     const monthsParam = Number(url.searchParams.get("months") ?? "12");
@@ -56,7 +59,10 @@ export async function GET(req: Request) {
     const diasParam = Number(url.searchParams.get("dias") ?? "");
     const dias = Number.isFinite(diasParam) && diasParam > 0 ? Math.floor(diasParam) : null;
 
-    const cacheKey = dias != null ? `d${dias}` : String(months);
+    // Prefixado por tenant: cache é módulo-level (compartilhado por todas as
+    // requisições da lambda), sem o tenantId a resposta de um cliente vazaria
+    // pro outro na próxima chamada com a mesma janela.
+    const cacheKey = `${tenant.tenantId}:${dias != null ? `d${dias}` : String(months)}`;
     const bust = url.searchParams.get("fresh") === "1";
     if (!bust) {
       const cached = cache.get(cacheKey);
@@ -65,7 +71,6 @@ export async function GET(req: Request) {
       }
     }
 
-    const db = getAdminDb();
     const toStr = brDayISO();
     const periodoInicio = dias != null ? brDayISO(-(dias - 1)) : monthsAgoISO(months);
     const historicoInicio = monthsAgoISO(months + HISTORICO_EXTRA_MESES);
@@ -75,12 +80,14 @@ export async function GET(req: Request) {
     const startBR = `${historicoInicio}T00:00:00.000-03:00`;
     const endBR = `${toStr}T23:59:59.999-03:00`;
 
+    const colOrders = tenantCol(tenant.tenantId, "ml_orders");
+    const colReturns = tenantCol(tenant.tenantId, "ml_returns");
     const [snapUTC, snapBR, retUTC, retBR, perfil] = await Promise.all([
-      db.collection("ml_orders").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_orders").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
-      db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
-      db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
-      fetchMlUserProfileFresh(),
+      colOrders.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      colOrders.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      colReturns.where("date_created", ">=", start).where("date_created", "<=", end).get(),
+      colReturns.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
+      fetchMlUserProfileFresh(tenant.tenantId),
     ]);
 
     const ordersMap = new Map<string, FirebaseFirestore.DocumentData>();

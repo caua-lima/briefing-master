@@ -1,10 +1,9 @@
 import "server-only";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/tenant";
 
 const JANELA_MS = 90 * 1000;
 const LIMIAR_AGRUPAMENTO = 4; // a partir da 4ª venda na janela, vira resumo
-const DOC = "pushRateWindow/vendas";
 
 /**
  * Contador de vendas empurradas (via push individual) numa janela deslizante
@@ -32,12 +31,14 @@ export type DecisaoAgrupamento =
  * cancelamento ou devolução, que o chamador já filtra antes de chegar aqui
  * (esses continuam sempre individuais, ver app/api/ml/webhook/route.ts).
  */
-export async function registrarVendaNaJanela(grossAmount: number): Promise<DecisaoAgrupamento> {
-  const db = getAdminDb();
-  const ref = db.doc(DOC);
+export async function registrarVendaNaJanela(tenantId: string, grossAmount: number): Promise<DecisaoAgrupamento> {
+  // Um doc por TENANT (não um global): sem isso, a venda de um cliente
+  // contaria na janela de agrupamento de outro — o resumo de um poderia
+  // somar o faturamento do outro dentro de "grossAcumulado".
+  const ref = tenantCol(tenantId, "pushRateWindow").doc("vendas");
   const now = Date.now();
 
-  return db.runTransaction(async (tx) => {
+  return ref.firestore.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const data = snap.exists ? snap.data()! : null;
     const windowStart = data?.windowStart instanceof Timestamp ? data.windowStart.toMillis() : 0;

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -16,13 +15,15 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
     if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
-    const db = getAdminDb();
 
     // Coleta todos os MLBs cadastrados
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     const ids = new Set<string>();
     for (const doc of prodSnap.docs) {
       const d = doc.data();

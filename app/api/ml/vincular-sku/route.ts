@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
-import { SELLER_ID } from "@/lib/ml/orders";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
 export const maxDuration = 60;
@@ -56,14 +54,17 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
     if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
-    const db = getAdminDb();
+    const SELLER_ID = await getSellerId(tenant.tenantId);
 
     // Produtos cadastrados, com o SKU e os anúncios que já têm.
-    const prodSnap = await db.collection("estoque").get();
+    const prodSnap = await tenantCol(tenant.tenantId, "estoque").get();
     type Prod = { id: string; name: string; sku: string; mlbs: Set<string> };
     const produtos: Prod[] = [];
     for (const doc of prodSnap.docs) {

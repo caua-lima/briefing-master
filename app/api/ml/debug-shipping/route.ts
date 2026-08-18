@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
-import { getMlAccessToken } from "../token";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao } from "@/lib/tenant";
 
 const ML_API = "https://api.mercadolibre.com";
-const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
 
 /**
  * Diagnóstico de frete. Para os últimos pedidos, mostra o shipping.id e as
@@ -14,9 +13,13 @@ export async function GET(req: Request) {
   const gate = await requireAccess(req, { adminOnly: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const token = await getMlAccessToken();
+    const token = await getMlAccessToken(tenant.tenantId);
     if (!token) return NextResponse.json({ error: "sem token" }, { status: 400 });
+    const SELLER_ID = await getSellerId(tenant.tenantId);
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
 
     const now = new Date(Date.now() - 3 * 3600 * 1000);

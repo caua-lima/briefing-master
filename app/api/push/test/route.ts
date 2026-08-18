@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
 import { sendPushToUser } from "@/lib/push-send";
 import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered, markPushError } from "@/lib/notification-events";
+import { resolverTenantDaRequisicao } from "@/lib/tenant";
 import {
   buildCancelContent,
   buildGroupedSalesContent,
@@ -85,6 +86,9 @@ export async function POST(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ ok: false, error: "sem_tenant" }, { status: 403 });
+
   const body = await req.json().catch(() => ({}));
   const scenarioRaw = String(body?.scenario ?? "sale_paid");
   const scenario = (SCENARIOS as string[]).includes(scenarioRaw) ? (scenarioRaw as TestScenario) : "sale_paid";
@@ -95,7 +99,7 @@ export async function POST(req: Request) {
 
   const horario = new Date().toISOString();
 
-  const { eventId } = await createNotificationEventIdempotent({
+  const { eventId } = await createNotificationEventIdempotent(tenant.tenantId, {
     type: cenario.type, severity: cenario.severity, entityType: "order", entityId: orderId, dedupeKey,
     title: cenario.content.title, body: cenario.content.body,
     orderId, orderExternalId: orderId,
@@ -116,10 +120,10 @@ export async function POST(req: Request) {
     timestamp: horario,
   };
 
-  await markPushAttempted(eventId);
+  await markPushAttempted(tenant.tenantId, eventId);
   try {
-    const { enviados } = await sendPushToUser(gate.email, payload);
-    if (enviados > 0) await markPushDelivered(eventId);
+    const { enviados } = await sendPushToUser(tenant.tenantId, gate.email, payload);
+    if (enviados > 0) await markPushDelivered(tenant.tenantId, eventId);
     return NextResponse.json({
       ok: true, scenario, eventId, orderId,
       title: cenario.content.title, body: cenario.content.body,
@@ -128,7 +132,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await markPushError(eventId, msg.slice(0, 160));
+    await markPushError(tenant.tenantId, eventId, msg.slice(0, 160));
     return NextResponse.json({ ok: false, error: msg, scenario, eventId, orderId, horario }, { status: 500 });
   }
 }

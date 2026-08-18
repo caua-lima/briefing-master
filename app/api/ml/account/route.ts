@@ -1,41 +1,32 @@
 import { NextResponse } from "next/server";
-import { getMlTokenStatus, getMlAccessToken, getMlTokenData } from "../token";
 import { requireAccess } from "@/lib/api-auth";
+import { getMlAccessToken, getMlConexao, resolverTenantDaRequisicao } from "@/lib/tenant";
 
 export async function GET(req: Request) {
   const gate = await requireAccess(req);
   if (gate instanceof NextResponse) return gate;
 
-  const status = await getMlTokenStatus();
-  if (!status.connected) return NextResponse.json(status);
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
 
-  // if we already have a cached profile, return it immediately
-  const tokenData = await getMlTokenData();
-  if (tokenData?.user_profile) return NextResponse.json({ ...status, user: tokenData.user_profile });
+  const conexao = await getMlConexao(tenant.tenantId);
+  if (!conexao?.refresh_token && !conexao?.access_token) {
+    return NextResponse.json({ connected: false });
+  }
 
-  const access = await getMlAccessToken();
+  const access = await getMlAccessToken(tenant.tenantId);
   if (!access) return NextResponse.json({ connected: false });
+
+  const status = { connected: true, user_id: conexao.seller_id ?? null, nickname: conexao.nickname ?? null };
 
   try {
     const res = await fetch(`https://api.mercadolibre.com/users/me`, {
       headers: { Authorization: `Bearer ${access}` },
       cache: "no-store",
     });
-
     if (!res.ok) return NextResponse.json({ ...status, user: null });
-
-    const user = await res.json();
-
-    // persist profile for faster responses
-    try {
-      const db = (await import("@/lib/firebase/admin")).getAdminDb();
-      await db.collection("ml_tokens").doc("main").set({ user_profile: user, updated_at: new Date().toISOString() }, { merge: true });
-    } catch (e) {
-      // ignore persistence errors
-    }
-
-    return NextResponse.json({ ...status, user });
-  } catch (err) {
+    return NextResponse.json({ ...status, user: await res.json() });
+  } catch {
     return NextResponse.json({ ...status, user: null });
   }
 }

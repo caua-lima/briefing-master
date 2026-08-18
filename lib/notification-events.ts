@@ -1,9 +1,16 @@
 import "server-only";
 import { FieldValue } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { tenantCol } from "@/lib/tenant";
 import type { NotificationEvent } from "@/lib/domain/notifications";
 
 const COL = "notification_events";
+
+/**
+ * Todas as funções abaixo recebem `tenantId` como primeiro argumento e
+ * escrevem em `tenants/{tenantId}/notification_events`, via `tenantCol`
+ * (lib/tenant.ts) — nunca na coleção global. É o que impede o evento de
+ * venda de um cliente aparecer na Central de Notificações de outro.
+ */
 
 /**
  * O Admin SDK, ao contrário do client SDK usado em lib/firebase/data.ts,
@@ -36,10 +43,10 @@ export type NewNotificationEvent = Omit<NotificationEvent, "id" | "createdAt" | 
  * pular o envio de push nesse caso, mas o evento em si já está lá, intacto.
  */
 export async function createNotificationEventIdempotent(
+  tenantId: string,
   input: NewNotificationEvent,
 ): Promise<{ created: boolean; eventId: string }> {
-  const db = getAdminDb();
-  const ref = db.collection(COL).doc(input.dedupeKey);
+  const ref = tenantCol(tenantId, COL).doc(input.dedupeKey);
   try {
     await ref.create(sanitizeUndefined({
       ...input,
@@ -57,15 +64,15 @@ export async function createNotificationEventIdempotent(
 }
 
 /** Registra a tentativa de push — chamado ANTES de enviar, pra existir rastro mesmo se o envio falhar no meio do caminho. */
-export async function markPushAttempted(eventId: string): Promise<void> {
-  await getAdminDb().collection(COL).doc(eventId).update({
+export async function markPushAttempted(tenantId: string, eventId: string): Promise<void> {
+  await tenantCol(tenantId, COL).doc(eventId).update({
     "delivery.pushAttemptedAt": FieldValue.serverTimestamp(),
   }).catch(() => {});
 }
 
 /** Sucesso: pelo menos um dispositivo recebeu. */
-export async function markPushDelivered(eventId: string): Promise<void> {
-  await getAdminDb().collection(COL).doc(eventId).update({
+export async function markPushDelivered(tenantId: string, eventId: string): Promise<void> {
+  await tenantCol(tenantId, COL).doc(eventId).update({
     "delivery.pushDeliveredAt": FieldValue.serverTimestamp(),
   }).catch(() => {});
 }
@@ -75,8 +82,8 @@ export async function markPushDelivered(eventId: string): Promise<void> {
  * inválidos") — nunca o token FCM nem qualquer payload completo, pra não
  * vazar dado sensível num campo que fica lido por qualquer autorizado.
  */
-export async function markPushError(eventId: string, resumoErro: string): Promise<void> {
-  await getAdminDb().collection(COL).doc(eventId).update({
+export async function markPushError(tenantId: string, eventId: string, resumoErro: string): Promise<void> {
+  await tenantCol(tenantId, COL).doc(eventId).update({
     "delivery.pushError": resumoErro.slice(0, 200),
   }).catch(() => {});
 }

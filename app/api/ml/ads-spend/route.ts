@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsSpendByItem } from "@/lib/ml/ads";
+import { resolverTenantDaRequisicao } from "@/lib/tenant";
 
 export async function GET(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
+
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
 
   try {
     const url = new URL(req.url);
@@ -14,7 +18,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "from e to são obrigatórios" }, { status: 400 });
     }
 
-    const adsByItem = await getAdsSpendByItem(from, to);
+    const adsByItem = await getAdsSpendByItem(tenant.tenantId, from, to);
     return NextResponse.json({ adsByItem, from, to });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

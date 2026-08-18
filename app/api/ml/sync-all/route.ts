@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getMlAccessToken } from "../token";
 import { requireAccess } from "@/lib/api-auth";
+import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao } from "@/lib/tenant";
 import {
   currentMonthRangeBR,
   lastNDaysRangeBR,
@@ -32,17 +32,21 @@ export async function POST(req: Request) {
   const gate = await requireAccess(req, { allowCron: true });
   if (gate instanceof NextResponse) return gate;
 
+  const tenant = await resolverTenantDaRequisicao(gate);
+  if (!tenant) return NextResponse.json({ error: "sem_tenant" }, { status: 403 });
+
   try {
-    const accessToken = await getMlAccessToken();
+    const accessToken = await getMlAccessToken(tenant.tenantId);
     if (!accessToken) {
       return NextResponse.json({ error: "Token não encontrado" }, { status: 400 });
     }
+    const sellerId = await getSellerId(tenant.tenantId);
 
     const range = rangeFromRequest(req);
     const [savedOrders, savedReturns, savedClaims] = await Promise.all([
-      syncOrdersRange(accessToken, range),
-      syncReturnsRange(accessToken, range),
-      syncClaimsRange(accessToken, range).catch(() => 0), // best-effort
+      syncOrdersRange(tenant.tenantId, accessToken, sellerId, range),
+      syncReturnsRange(tenant.tenantId, accessToken, sellerId, range),
+      syncClaimsRange(tenant.tenantId, accessToken, range).catch(() => 0), // best-effort
     ]);
 
     return NextResponse.json({ ok: true, savedOrders, savedReturns, savedClaims, range });
