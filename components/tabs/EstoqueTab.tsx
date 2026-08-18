@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
+import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, TIPO_MOVIMENTO_LABEL, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
 import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, consolidarEstoqueAnuncios, ehFullLogistic, estoqueForaDoFull, type CoverageStatus } from "@/lib/domain/estoque";
@@ -463,13 +463,6 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   );
 }
 
-const TIPO_LABEL: Record<MovimentoTipo, string> = {
-  entrada: "Entrada",
-  saldo_inicial: "Custo do Full",
-  saida_full: "Envio Full",
-  ajuste: "Ajuste",
-};
-
 function ProductRow({
   product, estoqueML, expanded, onToggle, onEdit, onMov, onAgencias,
 }: {
@@ -651,7 +644,7 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
                 return (
                   <tr key={m.id}>
                     <td style={{ color: "var(--muted)" }}>{m.data}</td>
-                    <td data-label="Tipo" style={{ textAlign: "left" }}><span style={{ color: cor, fontWeight: 700 }}>{TIPO_LABEL[m.tipo]}</span></td>
+                    <td data-label="Tipo" style={{ textAlign: "left" }}><span style={{ color: cor, fontWeight: 700 }}>{TIPO_MOVIMENTO_LABEL[m.tipo]}</span></td>
                     <td data-label="Qtd" style={{ color: cor, fontWeight: 700 }}>{sign}{Math.abs(m.quantidade)}</td>
                     <td data-label="Custo un.">{(m.tipo === "entrada" || m.tipo === "saldo_inicial") && m.custoUnit != null ? fmtBRL(m.custoUnit) : "—"}</td>
                     <td data-label="Obs" style={{ textAlign: "left", color: "var(--muted)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.obs || "—"}</td>
@@ -661,7 +654,7 @@ function MovimentosHistorico({ product, movs, onMov }: { product: Product; movs:
                         deleteMovimento(m.id, product.id).catch(() => {});
                         logAudit({
                           acao: "excluir", entidade: "movimento", entidadeId: m.id,
-                          entidadeLabel: `${product.name || "(sem nome)"} · ${TIPO_LABEL[m.tipo]}`,
+                          entidadeLabel: `${product.name || "(sem nome)"} · ${TIPO_MOVIMENTO_LABEL[m.tipo]}`,
                           detalhe: `${m.quantidade} un em ${m.data}`,
                         }).catch(() => {});
                       }}>Excluir</button>

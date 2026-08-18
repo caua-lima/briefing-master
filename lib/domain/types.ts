@@ -209,6 +209,13 @@ export type Product = {
 // ajuste        = correção/perda/quebra (quantidade com sinal: + ou −)
 export type MovimentoTipo = "entrada" | "saldo_inicial" | "saida_full" | "ajuste";
 
+export const TIPO_MOVIMENTO_LABEL: Record<MovimentoTipo, string> = {
+  entrada: "Entrada",
+  saldo_inicial: "Custo do Full",
+  saida_full: "Envio Full",
+  ajuste: "Ajuste",
+};
+
 export type EstoqueMovimento = {
   id: string;
   productId: string;
@@ -219,6 +226,9 @@ export type EstoqueMovimento = {
   obs?: string;
   createdBy?: string;
   createdAt?: number;
+  /** Presentes só quando a movimentação foi CORRIGIDA depois de criada (ver updateMovimento em lib/firebase/data.ts) — createdBy/createdAt originais nunca são sobrescritos. */
+  updatedBy?: string;
+  updatedAt?: number;
 };
 
 // Tipo do que foi alterado — estruturado (Fase 6 da reforma de Ads) pra dar

@@ -383,6 +383,40 @@ export async function addMovimento(
   invalidar(CHAVE_PRODUTOS); // recomputeProduto mexe em qtdLocal/custoMedio
 }
 
+/**
+ * Corrige uma movimentação JÁ existente (data, quantidade, obs) sem apagar e
+ * recriar — `createdBy`/`createdAt` originais ficam intactos; a correção fica
+ * registrada em `updatedBy`/`updatedAt`, separado, pra não parecer que a
+ * movimentação sempre teve o valor novo.
+ *
+ * NÃO aceita mudar `custoUnit` aqui de propósito. `entrada`/`saldo_inicial`
+ * blendam o custo digitado contra o custo médio DO MOMENTO em que foram
+ * criadas (ver MovimentoModal em EstoqueTab.tsx) — mudar o custo depois não
+ * refaz esse blend, só sobrescreveria o número sem recalcular o que já foi
+ * apurado a partir dele (faixas de vigência inclusive). Corrigir custo errado
+ * continua sendo excluir e lançar de novo, que É a forma correta: gera um
+ * blend novo, na data certa.
+ */
+export async function updateMovimento(
+  id: string,
+  productId: string,
+  patch: { data?: string; quantidade?: number; obs?: string },
+): Promise<void> {
+  const email = getCurrentUserEmail();
+  const snap = await getDoc(sDoc(MOV_COL, id));
+  if (!snap.exists()) throw new Error("Movimentação não encontrada — pode já ter sido excluída.");
+  const atual = snap.data() as EstoqueMovimento;
+  const proxima: EstoqueMovimento = {
+    ...atual, ...patch,
+    updatedBy: email, updatedAt: Date.now(),
+  };
+  await setDoc(sDoc(MOV_COL, id), sanitizeUndefined(proxima));
+  await recomputeProduto(productId, undefined, proxima.data);
+  invalidar(CHAVE_MOV);
+  invalidar("estoque_movimentos:recentes");
+  invalidar(CHAVE_PRODUTOS);
+}
+
 export async function deleteMovimento(id: string, productId: string): Promise<void> {
   await deleteDoc(sDoc(MOV_COL, id));
   await recomputeProduto(productId);

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EstoqueMovimento } from "@/lib/domain/types";
+import type { EstoqueMovimento, Product } from "@/lib/domain/types";
 import { watchMovimentos } from "@/lib/firebase/data";
 import RemessasFull from "@/components/tabs/full/RemessasFull";
+import HistoricoMovimentos from "@/components/tabs/full/HistoricoMovimentos";
 
 /**
  * Aba exclusiva do Full — baixa de estoque a partir do que o Mercado Livre
@@ -11,7 +12,7 @@ import RemessasFull from "@/components/tabs/full/RemessasFull";
  * manual, removido: a API do ML não expõe agendamento/trânsito, então era
  * um formulário 100% manual sem automação nenhuma — só dava trabalho.
  */
-export default function FullTab() {
+export default function FullTab({ products }: { products: Product[] }) {
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
   useEffect(() => watchMovimentos(setMovimentos), []);
 
@@ -27,6 +28,7 @@ export default function FullTab() {
       </div>
 
       <RemessasFull movimentos={movimentos} />
+      <HistoricoMovimentos movimentos={movimentos} products={products} />
     </div>
   );
 }
