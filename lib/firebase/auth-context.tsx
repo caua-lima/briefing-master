@@ -10,6 +10,7 @@ import {
 import { createContext, useContext, useEffect, useState } from "react";
 import { getFirebase, googleProvider, getGoogleProviderWithAccountSelection } from "./client";
 import { limparCache } from "./cache";
+import { limparTenant } from "./tenant-client";
 
 type AuthState = {
   user: User | null;
@@ -57,6 +58,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // limpar, dado da conta anterior continuaria visível pra quem logasse
     // em seguida no mesmo navegador (ver lib/firebase/cache.ts).
     limparCache();
+    // Mesmo motivo, consequência pior: o tenantId também é cache de módulo, e
+    // é ele que monta o CAMINHO de leitura e ESCRITA. Sem limpar, quem
+    // logasse em seguida na mesma aba gravaria dentro do tenant do usuário
+    // anterior — vazamento que não dá erro nenhum, só parece que funcionou.
+    limparTenant();
   }
 
   return (

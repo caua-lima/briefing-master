@@ -34,6 +34,7 @@ import {
 import type { NotificationEvent } from "@/lib/domain/notifications";
 import { getFirebase } from "./client";
 import { assinarComCache, invalidar } from "./cache";
+import { getTenantIdAtual } from "./tenant-client";
 
 function sanitizeUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(
@@ -48,15 +49,24 @@ function getCurrentUserEmail(): string {
   return email;
 }
 
-// ─── path helpers (apenas coleções globais compartilhadas) ─────
+// ─── path helpers: dados SEMPRE dentro de tenants/{tenantId}/… ─────
+//
+// Único ponto de escopo do lado do cliente — as 51 chamadas passam por aqui.
+// O tenant vem de tenant-client.ts, que resolve uma vez no login; sem tenant
+// resolvido isto LANÇA, nunca cai num caminho padrão (ver o porquê lá).
+//
+// Tem que casar exatamente com tenantCol() de lib/tenant.ts (servidor) e com
+// os match de firestore.rules.saas. Se os três divergirem, o servidor grava
+// num lugar que o cliente não lê — ou, no pior caso, um cliente enxerga o
+// dado do outro.
 function sCol(name: string) {
   const { db } = getFirebase();
-  return collection(db, name);
+  return collection(db, "tenants", getTenantIdAtual(), name);
 }
 
 function sDoc(name: string, id: string) {
   const { db } = getFirebase();
-  return doc(db, name, id);
+  return doc(db, "tenants", getTenantIdAtual(), name, id);
 }
 
 function aDoc(email: string) {

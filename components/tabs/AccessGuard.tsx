@@ -9,6 +9,7 @@ import {
   getAccessBootstrap,
 } from "@/lib/firebase/data";
 import type { AccessEntry, PermissionTab } from "@/lib/domain/types";
+import { carregarMembro } from "@/lib/firebase/tenant-client";
 
 type AccessInfo = {
   role: AccessEntry["role"];
@@ -121,6 +122,24 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
           }
           return;
         }
+
+        /**
+         * Resolve o TENANT antes de qualquer leitura de dado.
+         *
+         * sCol/sDoc (lib/firebase/data.ts) montam o caminho a partir do
+         * tenantId e lançam sem ele — então isto precisa acontecer antes de
+         * qualquer aba tentar ler. É a primeira coisa depois de saber quem é
+         * o usuário, de propósito.
+         *
+         * ESTADO INTERMEDIÁRIO, e é intencional: o tenantId já vem de
+         * `tenant_membros`, mas o PAPEL (owner/colaborador, permissoesEdicao)
+         * abaixo ainda vem de `controleAcesso`. São duas fontes para a mesma
+         * pergunta durante o porte. A unificação é o próximo commit — foi
+         * separada porque trocar caminho de dado e trocar modelo de permissão
+         * ao mesmo tempo esconderia qual dos dois quebrou, se quebrasse.
+         */
+        await carregarMembro(u.uid);
+        if (cancelled) return;
 
         const bootstrap = await getAccessBootstrap();
         if (cancelled) return;
