@@ -245,10 +245,17 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
               extra ao Mercado Livre. */}
           {dados && (
             <div className="kpi-grid" style={{ marginBottom: 14 }}>
+              {/* Rótulo diz "da conta inteira" de propósito: esta rota varre
+                  TODOS os anúncios do vendedor (/users/{id}/items/search),
+                  enquanto o card do Estoque conta só os MLBs cadastrados lá.
+                  Os dois números são certos e diferentes — chamar os dois de
+                  "Disponível no Full" fazia parecer divergência de dado. */}
               <div className="kpi k-pos">
-                <div className="k-lbl">Disponível no Full</div>
+                <div className="k-lbl">No Full · conta inteira</div>
                 <div className="k-val" style={{ color: "var(--green)" }}>{dados.totalDisponivel ?? 0} un</div>
-                <div className="k-sub">ao vivo do Mercado Livre</div>
+                <div className="k-sub" title="Inclui anúncios que não estão cadastrados na aba Estoque. Lá o total considera só os produtos cadastrados, por isso costuma ser menor.">
+                  todos os anúncios · ao vivo do ML
+                </div>
               </div>
               <div className="kpi k-acc">
                 <div className="k-lbl">Recebido no período</div>

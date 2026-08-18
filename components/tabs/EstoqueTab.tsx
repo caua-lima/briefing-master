@@ -282,10 +282,16 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
           <div className="k-val" style={{ color: "var(--green)" }}>{fmtBRL(valorEstoque)}</div>
           <div className="k-sub">(casa + Full) × custo médio</div>
         </div>
+        {/* "produtos cadastrados" explícito: a aba Full mostra o Full da CONTA
+            INTEIRA (inclui anúncio sem cadastro aqui), então o número de lá é
+            maior. Os dois estão certos — o rótulo é que precisa dizer qual é
+            qual, senão parece divergência. */}
         <div className="kpi k-acc">
           <div className="k-lbl">Unidades</div>
           <div className="k-val">{unCasa + unFull}</div>
-          <div className="k-sub">{unCasa} em casa · {unFull} no Full</div>
+          <div className="k-sub" title="Conta apenas os produtos cadastrados nesta aba. A aba Full mostra o total da conta no Mercado Livre, incluindo anúncios ainda não cadastrados aqui.">
+            {unCasa} em casa · {unFull} no Full · só cadastrados
+          </div>
         </div>
         <div className="kpi k-acc">
           <div className="k-lbl">Venda potencial</div>

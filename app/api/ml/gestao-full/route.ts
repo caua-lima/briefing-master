@@ -3,6 +3,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getMlAccessToken } from "../token";
 import { SELLER_ID } from "@/lib/ml/orders";
+import { consolidarEstoqueAnuncios } from "@/lib/domain/estoque";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -463,7 +464,29 @@ export async function GET(req: Request) {
     // continuam sem NENHUM custo (nem da API, nem digitado).
     custoRemessaIndisponivel = remessasComCusto.filter((r) => r.custo == null && !r.ehTransferencia).length;
 
-    const totalDisponivel = itens.reduce((s, it) => s + it.available, 0);
+    /**
+     * Disponível no Full com cada POOL contado uma vez.
+     *
+     * `itens` tem uma entrada por par (anúncio, inventory_id) — e o Mercado
+     * Livre permite dois anúncios dividirem o MESMO pool no centro de
+     * distribuição, cada um respondendo `available_quantity` com o pool
+     * inteiro. Somar direto dobrava o número: era o mesmo bug já corrigido do
+     * lado do Estoque em adacd6d, que passou batido aqui.
+     *
+     * Reusa consolidarEstoqueAnuncios (lib/domain/estoque.ts, com testes) em
+     * vez de repetir a regra — foi justamente ter duas cópias da mesma conta
+     * que deixou uma delas para trás. Todo item aqui já passou pelo filtro de
+     * Full lá em cima, daí o logistic fixo.
+     */
+    const { full: totalDisponivel } = consolidarEstoqueAnuncios(
+      itens.map((it) => ({ available: it.available, logistic: "fulfillment", inventoryId: it.inventory_id })),
+    );
+    /**
+     * `sold` NÃO deduplica, de propósito: quantidade vendida é do ANÚNCIO, não
+     * do pool. Dois anúncios sobre o mesmo estoque têm vendas próprias e
+     * somá-las é o correto — ao contrário do disponível, que é o mesmo monte
+     * de caixas visto de duas vitrines.
+     */
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
     const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas: remessasComCusto, custoTotalRemessas, custoRemessaIndisponivel, truncado, linhasBrutas: recebimentos.length, duplicadasIgnoradas, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
