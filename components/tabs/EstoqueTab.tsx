@@ -4,20 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
 import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
-import { getCoverageStatus, COVERAGE_STATUS_LABEL, type CoverageStatus } from "@/lib/domain/estoque";
+import { getCoverageStatus, COVERAGE_STATUS_LABEL, consolidarEstoqueAnuncios, ehFullLogistic, estoqueForaDoFull, type CoverageStatus } from "@/lib/domain/estoque";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { useAccess } from "@/components/tabs/AccessGuard";
 import { gravarChaveApp, lerChaveApp } from "@/lib/storage";
 
-type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string };
+type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string; inventoryId?: string };
 type EstoqueML = Record<string, MlItem>;
 type Forecast = { vendas: Record<string, number>; dias: number };
-
-function ehFullLogistic(l: string) {
-  return l === "fulfillment";
-}
 
 // dias-alvo de cobertura pra sugestão de reposição
 const DIAS_ALVO = 30;
@@ -57,39 +53,18 @@ function anunciosDe(p: Product, estoqueML: EstoqueML): AnuncioML[] {
   return mlbsDe(p).map((m) => ({ mlb: normMlb(m), item: estoqueML[normMlb(m)] ?? null }));
 }
 
-// Estoque do ML por logística: qtd = Full (fulfillment); proprio = anúncio
-// próprio (não-Full). ehFull = tem anúncio no Full. temDado = ML já respondeu.
-function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean } {
-  let qtd = 0, proprio = 0, ehFull = false, temDado = false;
-  for (const { item } of anunciosDe(p, estoqueML)) {
-    if (!item) continue;
-    temDado = true;
-    if (ehFullLogistic(item.logistic)) { ehFull = true; qtd += item.available; }
-    else proprio += item.available;
-  }
-  return { qtd, proprio, ehFull, temDado };
-}
-
 /**
- * Estoque físico FORA do Full. Depende de o produto ter ou não anúncio no
- * Full:
- *
- * - SEM Full (100% agência/próprio): "em casa" (livro de movimentações) e o
- *   que o anúncio mostra são o MESMO estoque físico — o vendedor não manda
- *   nada pra um centro do ML, o produto fica com ele o tempo todo. Somar os
- *   dois contava a mesma unidade duas vezes, e piorava com o tempo: o livro
- *   de movimentações só SOBE com cada ＋Entrada e nunca desce sozinho quando
- *   uma venda acontece (venda não é uma movimentação registrada aqui) — só o
- *   anúncio, atualizado ao vivo pelo ML, reflete o saldo real. Corrigido a
- *   pedido do dono: "o número em Agências deve ser o mesmo que em estoque".
- *   A entrada continua servindo pra apurar o custo médio; só a QUANTIDADE usa
- *   o valor do anúncio.
- * - COM Full: "em casa" é estoque físico esperando envio — pool separado de
- *   verdade do que já está no centro do Full, então soma com o que estiver
- *   num anúncio próprio (se houver).
+ * Estoque do ML por logística, com cada pool físico contado UMA vez —
+ * a regra e o porquê de cada armadilha estão em lib/domain/estoque.ts
+ * (consolidarEstoqueAnuncios), que é puro e tem os testes.
  */
-function foraDoFullDe(casa: number, proprio: number, ehFull: boolean): number {
-  return ehFull ? casa + proprio : proprio;
+function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean; fullCompartilhado: boolean } {
+  const c = consolidarEstoqueAnuncios(
+    anunciosDe(p, estoqueML)
+      .filter(({ item }) => item)
+      .map(({ item }) => ({ available: item!.available, logistic: item!.logistic, inventoryId: item!.inventoryId })),
+  );
+  return { qtd: c.full, proprio: c.proprio, ehFull: c.ehFull, temDado: c.temDado, fullCompartilhado: c.fullCompartilhado };
 }
 
 // Full considerado "baixo" sugere reabastecer com o estoque de casa.
@@ -125,20 +100,22 @@ type PrevisaoProduto = {
 function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): PrevisaoProduto {
   const casa = Math.max(p.qtdLocal ?? 0, 0);
   const { qtd: full, proprio, ehFull } = fullDe(p, estoqueML);
-  const foraFull = foraDoFullDe(casa, proprio, ehFull);
+  const foraFull = estoqueForaDoFull(casa, proprio, ehFull);
   const total = full + foraFull;
   const { min: precoMin, max: precoMax } = precosDe(p, estoqueML);
-  // Venda potencial: o Full pelo preço de cada anúncio (estoque separado); o
-  // que está fora do Full uma vez só, pelo melhor preço (é o mesmo estoque
-  // exposto no anúncio próprio, não soma de novo).
-  let potencialFull = 0;
+  // Venda potencial: `full` já vem deduplicado por pool (fullDe) — precifica
+  // pelo MELHOR preço entre os anúncios Full, em vez de somar available×price
+  // de CADA anúncio (isso multiplicava o mesmo pool compartilhado pelo preço
+  // de cada listagem, dobrando o valor exatamente como dobrava a unidade).
+  // Fora do Full: mesma ideia, uma vez só, pelo melhor preço entre os próprios.
+  let precoFullMax = 0;
   let precoProprioMax = 0;
   for (const { item } of anunciosDe(p, estoqueML)) {
     if (!item) continue;
-    if (ehFullLogistic(item.logistic)) potencialFull += item.available * item.price;
+    if (ehFullLogistic(item.logistic)) precoFullMax = Math.max(precoFullMax, item.price);
     else precoProprioMax = Math.max(precoProprioMax, item.price);
   }
-  const valorPotencial = potencialFull + foraFull * (precoProprioMax || precoMax || precoMin);
+  const valorPotencial = full * (precoFullMax || precoMax || precoMin) + foraFull * (precoProprioMax || precoMax || precoMin);
   const mediaDiaria = forecast.dias > 0 ? (forecast.vendas[p.id] ?? 0) / forecast.dias : 0;
   const cobertura = mediaDiaria > 0 && total > 0 ? total / mediaDiaria : Infinity;
   // Reposição só faz sentido pra quem está no Full.
@@ -204,20 +181,23 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 
   const total = data.products.length;
   const ativos = data.products.filter((p) => p.ativo).length;
-  // Sem Full, "em casa" é o mesmo estoque do anúncio (ver foraDoFullDe) — soma
+  // Sem Full, "em casa" é o mesmo estoque do anúncio (ver estoqueForaDoFull) — soma
   // o valor exibido de cada produto, não o livro de movimentações cru.
   const unCasa = data.products.reduce((s, p) => {
     const { proprio, ehFull } = fullDe(p, estoqueML);
     return s + (ehFull ? Math.max(p.qtdLocal ?? 0, 0) : proprio);
   }, 0);
-  // Só conta como Full o que é realmente fulfillment.
-  const unFull = Object.values(estoqueML).reduce((s, v) => s + (ehFullLogistic(v.logistic) ? v.available : 0), 0);
+  // Soma o Full JÁ deduplicado por produto (fullDe/consolidarEstoqueAnuncios)
+  // — somar direto do mapa bruto do ML (Object.values(estoqueML)) reproduziria
+  // o mesmo bug do pool compartilhado aqui no card do topo, mesmo com a linha
+  // da tabela já certa.
+  const unFull = data.products.reduce((s, p) => s + fullDe(p, estoqueML).qtd, 0);
   // Valor parado = (Full + estoque fora do Full) × custo médio. O próprio não
   // soma com casa: é o mesmo estoque exposto no anúncio.
   const valorEstoque = data.products.reduce((s, p) => {
     const casa = Math.max(p.qtdLocal ?? 0, 0);
     const { qtd: full, proprio, ehFull } = fullDe(p, estoqueML);
-    return s + (full + foraDoFullDe(casa, proprio, ehFull)) * custoMedioDe(p);
+    return s + (full + estoqueForaDoFull(casa, proprio, ehFull)) * custoMedioDe(p);
   }, 0);
   // Produto ativo sem nenhum MLB ligado: a venda dele nunca casa com o
   // cadastro, então entra no lucro com CMV zero (ver metrics/route.ts).
@@ -504,15 +484,15 @@ function ProductRow({
 }) {
   const imposto = parseNum(product.imposto ?? "0");
   const anuncios = anunciosDe(product, estoqueML);
-  const { qtd: full, proprio, ehFull } = fullDe(product, estoqueML);
+  const { qtd: full, proprio, ehFull, fullCompartilhado } = fullDe(product, estoqueML);
   const casa = product.qtdLocal ?? 0;
   // Sem Full, "em casa" e "no anúncio" são o mesmo estoque físico (ver
-  // foraDoFullDe) — mostra o valor do anúncio, que é o que reflete vendas de
-  // verdade, em vez do livro de movimentações (que só sobe, nunca desce
+  // estoqueForaDoFull) — mostra o valor do anúncio, que é o que reflete vendas
+  // de verdade, em vez do livro de movimentações (que só sobe, nunca desce
   // sozinho quando vende).
   const casaExibida = ehFull ? casa : proprio;
   const custoMedio = custoMedioDe(product);
-  const totalUn = full + foraDoFullDe(casa, proprio, ehFull);
+  const totalUn = full + estoqueForaDoFull(casa, proprio, ehFull);
   const fullBaixo = ehFull && full <= FULL_BAIXO;
   const { min: precoMin, max: precoMax, temPromo } = precosDe(product, estoqueML);
 
@@ -544,7 +524,8 @@ function ProductRow({
         <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "var(--warning)" }}>reabastecer</span>}
-          {proprio > 0 && <span title="Disponível no(s) anúncio(s) próprio(s) (envio por conta do vendedor/agência) — soma no Total ao lado, junto com o que está em casa" style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
+          {fullCompartilhado && <span title="Mais de um anúncio compartilha o mesmo estoque no Full. As unidades são contadas UMA vez — cada anúncio sozinho mostra o pool inteiro, e somá-los dobraria o número." style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>pool compartilhado</span>}
+          {proprio > 0 && <span title="Unidades expostas no(s) anúncio(s) fora do Full (envio por sua conta/agência). Saem do MESMO estoque de casa, então NÃO somam no Total — já estão contadas em 'Em casa'." style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400 }}>{proprio} no anúncio</span>}
         </td>
         <td data-label="Total" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{totalUn} un</td>
         <td data-label="Custo médio" style={{ textAlign: "right", whiteSpace: "nowrap", color: custoMedio > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>
@@ -720,18 +701,19 @@ function MovimentoModal({ product, tipo, estoqueML, onClose, onSaved }: { produc
   const cNum = parseNum(custo);
 
   // ENTRADA: blenda a compra nova contra tudo que você tem (Full + fora do
-  // Full, onde fora do Full já é casa + anúncio próprio somados).
-  const estoqueAtual = full + foraDoFullDe(casa, proprio, ehFull);
+  // Full — ver estoqueForaDoFull pra como "fora do Full" é contado sem
+  // duplicar casa e anúncio próprio).
+  const estoqueAtual = full + estoqueForaDoFull(casa, proprio, ehFull);
   const novoAvgEntrada = qNum > 0 && estoqueAtual + qNum > 0
     ? (estoqueAtual * avgAtual + qNum * cNum) / (estoqueAtual + qNum)
     : avgAtual;
 
   // SALDO INICIAL (Full): as unidades do Full ainda não têm custo. Blenda elas,
-  // ao custo informado, contra o que está FORA do Full (casa + próprio), que já
-  // reflete o custo médio atual. Sem estoque fora do Full, o custo do Full vira
-  // o próprio custo médio. Antes o saldo SOBRESCREVIA o custo médio — errado
-  // quando já havia estoque em casa com custo.
-  const foraDoFull = foraDoFullDe(casa, proprio, ehFull);
+  // ao custo informado, contra o que está FORA do Full, que já reflete o custo
+  // médio atual. Sem estoque fora do Full, o custo do Full vira o próprio
+  // custo médio. Antes o saldo SOBRESCREVIA o custo médio — errado quando já
+  // havia estoque em casa com custo.
+  const foraDoFull = estoqueForaDoFull(casa, proprio, ehFull);
   const novoAvgSaldo = qNum > 0
     ? (avgAtual > 0 && foraDoFull > 0
         ? (foraDoFull * avgAtual + qNum * cNum) / (foraDoFull + qNum)

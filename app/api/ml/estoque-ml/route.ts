@@ -30,13 +30,19 @@ export async function GET(req: Request) {
       for (const m of list) { const n = normId(m); if (n) ids.add(n); }
     }
     const arr = Array.from(ids);
-    const estoque: Record<string, { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string }> = {};
+    const estoque: Record<string, { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string; inventoryId: string }> = {};
 
     // Multi-get de 20 em 20 (preço de lista + original + logística p/ saber se é Full)
+    //
+    // `inventory_id` é o que identifica o POOL de estoque no Full. Dois
+    // anúncios podem compartilhar o mesmo pool e cada um responde
+    // available_quantity com o total do pool, não com uma fatia — sem este
+    // campo não há como saber que são o mesmo estoque, e somar os dois dobra
+    // o número (ver consolidarEstoqueAnuncios em lib/domain/estoque.ts).
     for (let i = 0; i < arr.length; i += 20) {
       const chunk = arr.slice(i, i + 20);
       const res = await fetch(
-        `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,available_quantity,sold_quantity,status,price,original_price,shipping`,
+        `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,available_quantity,sold_quantity,status,price,original_price,shipping,inventory_id`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" },
       );
       if (!res.ok) continue;
@@ -57,6 +63,9 @@ export async function GET(req: Request) {
           regularPrice: orig > base ? orig : base,
           hasPromo: orig > base,
           logistic, // "fulfillment" = Full; outros = anúncio próprio
+          // Vazio quando o ML não informa — nesse caso NÃO se deduplica nada
+          // (melhor inflar visivelmente do que sumir com estoque em silêncio).
+          inventoryId: String(b.inventory_id ?? ""),
         };
       }
     }

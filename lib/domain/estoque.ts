@@ -51,6 +51,99 @@ export const COVERAGE_STATUS_LABEL: Record<CoverageStatus, string> = {
   "sem-giro": "Sem giro suficiente",
 };
 
+// ── Consolidação de estoque entre anúncios ───────────────────────
+//
+// Um produto costuma ter VÁRIOS anúncios (MLB) apontando pro mesmo estoque
+// físico. Contar cada anúncio como se fosse um pool separado infla o total —
+// já aconteceu duas vezes aqui, por dois caminhos diferentes, e é o motivo
+// desta parte ser pura e testada em vez de solta no componente.
+//
+// As duas armadilhas, ambas reportadas com número na mão:
+//
+// 1. DOIS ANÚNCIOS FULL, UM ESTOQUE SÓ. O Mercado Livre permite mais de um
+//    anúncio compartilhando o MESMO pool no centro de distribuição — os dois
+//    respondem `available_quantity` com o valor do pool inteiro, não com uma
+//    fatia. Somar dava exatamente o dobro: 148 un reais viravam 296 no painel;
+//    93 viravam 186. O que separa um pool do outro é o `inventory_id`, então é
+//    por ele que se deduplica (e não pelo MLB, que é o anúncio, não o estoque).
+//
+// 2. "EM CASA" E "AGÊNCIA" SÃO O MESMO ESTOQUE. O anúncio próprio (fora do
+//    Full) vende do que está no galpão — o que ele mostra como disponível é
+//    uma FATIA do que o livro de movimentações já contabiliza, não um estoque
+//    adicional. Somar contava a mesma unidade duas vezes.
+//
+// A regra que sai disso: cada pool físico entra no total UMA vez.
+
+export type AnuncioEstoque = {
+  /** Disponível que o anúncio reporta. */
+  available: number;
+  /** `shipping.logistic_type` do ML — "fulfillment" é Full. */
+  logistic: string;
+  /**
+   * Pool de estoque no Full. Dois anúncios com o mesmo `inventoryId`
+   * dividem as MESMAS unidades. Ausente/vazio = sem como saber, e aí cada
+   * anúncio conta por si (não deduplica no escuro).
+   */
+  inventoryId?: string;
+};
+
+export type EstoqueConsolidado = {
+  /** Unidades no Full, cada pool contado uma vez. */
+  full: number;
+  /** Disponível somado dos anúncios FORA do Full. */
+  proprio: number;
+  ehFull: boolean;
+  /** O ML já respondeu sobre pelo menos um anúncio. */
+  temDado: boolean;
+  /** true quando 2+ anúncios Full dividiam um pool — serve pra explicar o número na tela. */
+  fullCompartilhado: boolean;
+};
+
+export function ehFullLogistic(logistic: string): boolean {
+  return logistic === "fulfillment";
+}
+
+export function consolidarEstoqueAnuncios(anuncios: AnuncioEstoque[]): EstoqueConsolidado {
+  let full = 0;
+  let proprio = 0;
+  let ehFull = false;
+  let temDado = false;
+  let fullCompartilhado = false;
+  const poolsContados = new Set<string>();
+
+  for (const a of anuncios) {
+    temDado = true;
+    if (!ehFullLogistic(a.logistic)) {
+      proprio += a.available;
+      continue;
+    }
+    ehFull = true;
+    const pool = String(a.inventoryId ?? "").trim();
+    if (pool) {
+      // Mesmo pool já somado: este anúncio é outra vitrine do mesmo estoque.
+      if (poolsContados.has(pool)) { fullCompartilhado = true; continue; }
+      poolsContados.add(pool);
+    }
+    full += a.available;
+  }
+
+  return { full, proprio, ehFull, temDado, fullCompartilhado };
+}
+
+/**
+ * Estoque físico FORA do Full, contado uma vez só.
+ *
+ * COM Full: o livro (`casa`) é a fonte — ele registra entrada e saída pro
+ * Full. O anúncio próprio expõe parte desse mesmo galpão, então NÃO soma.
+ *
+ * SEM Full: o livro não serve, porque venda não é movimentação registrada —
+ * ele só sobe e nunca desce sozinho. Aí o número do anúncio, que o ML
+ * atualiza a cada venda, é o único que reflete o saldo real.
+ */
+export function estoqueForaDoFull(casa: number, proprio: number, ehFull: boolean): number {
+  return ehFull ? Math.max(casa, 0) : proprio;
+}
+
 /**
  * Sugestão de quantidade a comprar pra cobrir `diasAlvo` de venda, dado o
  * que já está disponível. Transparente por design: quem chama pode mostrar
