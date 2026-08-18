@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:critical": "vitest run lib/domain",
-    "test:rules": "firebase emulators:exec --only firestore --project zxp-rules-test \"vitest run --config vitest.rules.config.ts\""
+    "test:rules": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project zxp-rules-test \"vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

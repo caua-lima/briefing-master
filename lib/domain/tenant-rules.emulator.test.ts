@@ -23,7 +23,7 @@ import {
   assertFails, assertSucceeds, initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 
 const T_A = "tenant-alfa";
 const T_B = "tenant-beta";
@@ -178,7 +178,33 @@ describe("escalada de privilégio — o cliente não reescreve as próprias cred
   });
 
   it("não lê o vínculo de um membro de OUTRO tenant", async () => {
+    // Regressão: a 1ª versão da regra usava só `souOwner()`, que pergunta "sou
+    // owner de alguma coisa?" e não "deste tenant". Vazava e-mail, papel e
+    // tenantId do time do concorrente.
     await assertFails(getDoc(doc(como(OWNER_A), "tenant_membros", OWNER_B.uid)));
+  });
+
+  it("owner LÊ o vínculo de quem é do próprio tenant", async () => {
+    // O contrapeso do teste acima: fechar demais quebraria a tela de time.
+    await assertSucceeds(getDoc(doc(como(OWNER_A), "tenant_membros", COLAB_A.uid)));
+  });
+
+  it("não LISTA vínculos sem filtrar pelo próprio tenant", async () => {
+    // Busca sem filtro alcançaria membros de todos os clientes. O Firestore só
+    // aceita a query se toda linha do resultado satisfizer a regra.
+    await assertFails(getDocs(collection(como(OWNER_A), "tenant_membros")));
+  });
+
+  it("lista vínculos do PRÓPRIO tenant quando a query é filtrada", async () => {
+    await assertSucceeds(getDocs(
+      query(collection(como(OWNER_A), "tenant_membros"), where("tenantId", "==", T_A)),
+    ));
+  });
+
+  it("não lista vínculos filtrando pelo tenant do vizinho", async () => {
+    await assertFails(getDocs(
+      query(collection(como(OWNER_A), "tenant_membros"), where("tenantId", "==", T_B)),
+    ));
   });
 });
 

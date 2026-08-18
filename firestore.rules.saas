@@ -180,12 +180,27 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // O usuário lê o PRÓPRIO vínculo (a interface precisa saber o papel);
-    // escrever é sempre servidor — se o cliente pudesse, trocaria o próprio
-    // papel pra owner, ou o tenantId pra ler o de outro cliente.
+    // O usuário lê o PRÓPRIO vínculo (a interface precisa saber o papel), e o
+    // owner lê os do time — mas SÓ do próprio tenant.
+    //
+    // A primeira versão daqui era `request.auth.uid == uid || souOwner()`, e o
+    // teste de emulador derrubou: `souOwner()` só pergunta "sou owner de
+    // alguma coisa?", não "deste tenant". Um owner qualquer lia o vínculo de
+    // membros de outros clientes — e-mail, papel e tenantId do concorrente.
+    // Passava em todo teste de TypeScript, porque o furo era da regra, não da
+    // nossa lógica. É exatamente o motivo deste arquivo ter teste próprio.
+    //
+    // A checagem por documento também é o que torna a LISTAGEM segura: o
+    // Firestore só aceita a query se toda linha do resultado satisfizer a
+    // regra, então uma busca sem filtro de tenant falha inteira em vez de
+    // vazar. Por isso não há `allow list` separado — `read` cobre os dois.
     match /tenant_membros/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || souOwner());
-      allow list: if souOwner();
+      allow read: if signedIn() && (
+        request.auth.uid == uid
+        || (souOwner() && resource.data.tenantId == meuTenant())
+      );
+      // Escrita é sempre servidor — se o cliente pudesse, trocaria o próprio
+      // papel pra owner, ou o tenantId pra ler o de outro cliente.
       allow write: if false;
     }
 

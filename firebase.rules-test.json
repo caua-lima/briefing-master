@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "Config do Firebase usada SÓ pelos testes de Security Rules (npm run test:rules).",
+    "Separada do firebase.json de propósito: aquele tem o bloco `hosting` com",
+    "`frameworks`, que faz o CLI exigir o experimento `webframeworks` mesmo",
+    "quando se pede só o emulador do Firestore — e habilitar experimento do CLI",
+    "é estado global da máquina, não do repositório. Aqui só existe o que o teste",
+    "precisa.",
+    "Aponta para firestore.rules.saas (as regras multi-tenant), não para",
+    "firestore.rules (as de produção, single-tenant)."
+  ],
+  "firestore": {
+    "rules": "firestore.rules.saas"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  }
+}

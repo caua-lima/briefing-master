@@ -45,3 +45,6 @@ next-env.d.ts
 /firebase/
 
 serviceAccountKey.json
+# Log do emulador do Firestore (npm run test:rules)
+firestore-debug.log
+firebase-debug.log
