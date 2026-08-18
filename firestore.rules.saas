@@ -1,0 +1,218 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Regras MULTI-TENANT (SaaS). Convivem com firestore.rules (single-tenant,
+// o que está em produção hoje) até a virada — por isso arquivo separado, e
+// não edição do atual: publicar isto por engano hoje derrubaria o dashboard
+// em uso, porque nada lá está em tenants/{id}/… ainda.
+//
+// O modelo e o PORQUÊ de cada escolha estão em lib/domain/tenant.ts. Em
+// resumo: o dono do dado é o TENANT, não o uid — é o que permite Owner e
+// Colaborador (uids diferentes) enxergarem a mesma operação, coisa que o
+// `users/{uid}` do branch saas impedia por construção.
+// ─────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function emailAuth() {
+      return request.auth.token.email;
+    }
+
+    // ── Vínculo do usuário: tenant_membros/{uid} ──────────────────────
+    // Um doc por uid (não subcoleção) porque isto é lido em TODA regra —
+    // get() por id é 1 leitura; collection-group query seria muito mais caro,
+    // e este app já esgotou cota de leitura duas vezes.
+    function membroPath() {
+      return /databases/$(database)/documents/tenant_membros/$(request.auth.uid);
+    }
+    function temVinculo() {
+      return signedIn() && exists(membroPath());
+    }
+    function membro() {
+      return get(membroPath()).data;
+    }
+    function meuTenant() {
+      return membro().tenantId;
+    }
+    function souOwner() {
+      return temVinculo() && membro().papel == "owner";
+    }
+
+    // ── Licença: licencas/{email} ─────────────────────────────────────
+    // Separada do vínculo de propósito (ver a colisão descrita em
+    // lib/domain/tenant.ts): licença é o comercial, vínculo é o operacional.
+    function licencaPath() {
+      return /databases/$(database)/documents/licencas/$(emailAuth());
+    }
+    function licencaAtiva() {
+      return exists(licencaPath())
+        && get(licencaPath()).data.get("status", "ativo") != "suspenso"
+        && (get(licencaPath()).data.get("expiresAt", null) == null
+            || get(licencaPath()).data.expiresAt > request.time);
+    }
+
+    // Espelha podeAcessarTenant() de lib/domain/tenant.ts. Se um dia
+    // divergirem, o TypeScript é a UX e ISTO é a segurança — aqui manda.
+    function acessaTenant(tid) {
+      return temVinculo() && meuTenant() == tid && licencaAtiva();
+    }
+
+    // Espelha podeEditarAba(): owner edita tudo; colaborador só a aba liberada.
+    function podeEditarAba(tid, aba) {
+      return acessaTenant(tid)
+        && (membro().papel == "owner" || aba in membro().get("permissoesEdicao", []));
+    }
+
+    // ── Admin master do SaaS ──────────────────────────────────────────
+    // NÃO é o "owner" de um tenant — é o dono do negócio. Fica numa coleção
+    // própria justamente pra não repetir a colisão que existia em
+    // controleAcesso, onde role=="owner" queria dizer as duas coisas.
+    function souMaster() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/saas_admins/$(emailAuth()));
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // DADOS DO CLIENTE
+    // ═════════════════════════════════════════════════════════════════
+
+    // Coleções de leitura livre dentro do tenant (todo membro lê), com
+    // escrita granular por aba. Espelha PermissionTab de lib/domain/types.ts.
+    match /tenants/{tid}/estoque/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'estoque');
+    }
+    match /tenants/{tid}/estoque_movimentos/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'estoque');
+    }
+    match /tenants/{tid}/full_remessas/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'estoque');
+    }
+    match /tenants/{tid}/custos/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'custos');
+    }
+    match /tenants/{tid}/metas/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'metas');
+    }
+    match /tenants/{tid}/metasHistorico/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'metas');
+    }
+    match /tenants/{tid}/ads_alteracoes/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if podeEditarAba(tid, 'ads');
+    }
+
+    // Kanban: todo membro escreve — é o ponto do quadro, um atribui pro
+    // outro. Mesma decisão do single-tenant de hoje.
+    match /tenants/{tid}/tarefas/{doc} {
+      allow read, write: if acessaTenant(tid);
+    }
+
+    // Dados vindos do Mercado Livre: SÓ o Admin SDK escreve (sync/webhook).
+    // O cliente lê e nunca escreve — número de venda não se digita.
+    match /tenants/{tid}/ml_orders/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if false;
+    }
+    match /tenants/{tid}/ml_returns/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if false;
+    }
+    match /tenants/{tid}/snapshots_diarios/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if false;
+    }
+
+    // Notificações: criadas pelo servidor; o cliente só marca lido/dispensado.
+    match /tenants/{tid}/notification_events/{doc} {
+      allow read: if acessaTenant(tid);
+      allow create, delete: if false;
+      allow update: if acessaTenant(tid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy', 'dismissedBy']);
+    }
+
+    // Por-usuário DENTRO do tenant: cada um só mexe no que é seu.
+    match /tenants/{tid}/pushTokens/{doc} {
+      allow read: if acessaTenant(tid) && resource.data.email == emailAuth();
+      allow create, update: if acessaTenant(tid) && request.resource.data.email == emailAuth();
+      allow delete: if acessaTenant(tid) && resource.data.email == emailAuth();
+    }
+    match /tenants/{tid}/alertasDispensados/{doc} {
+      allow read: if acessaTenant(tid) && resource.data.email == emailAuth();
+      allow create, update: if acessaTenant(tid) && request.resource.data.email == emailAuth();
+      allow delete: if acessaTenant(tid) && resource.data.email == emailAuth();
+    }
+
+    // Auditoria: imutável. Nem o owner altera ou apaga log já gravado.
+    match /tenants/{tid}/auditLog/{doc} {
+      allow read, list: if acessaTenant(tid) && membro().papel == "owner";
+      allow create: if acessaTenant(tid) && request.resource.data.por == emailAuth();
+      allow update, delete: if false;
+    }
+
+    // Rede: qualquer coleção do tenant que ainda não tenha regra própria
+    // continua isolada por tenant, em vez de cair no "negado por omissão" e
+    // quebrar em produção sem ninguém entender. Escrita permanece fechada —
+    // coleção nova entra somente-leitura até ganhar sua regra explícita.
+    match /tenants/{tid}/{colecao}/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if false;
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // METADADOS
+    // ═════════════════════════════════════════════════════════════════
+
+    match /tenants/{tid} {
+      allow read: if acessaTenant(tid);
+      // Criar/renomear tenant passa pelo servidor (onboarding) — nunca
+      // direto do cliente, senão dá pra forjar tenant e vínculo.
+      allow write: if false;
+    }
+
+    // O usuário lê o PRÓPRIO vínculo (a interface precisa saber o papel);
+    // escrever é sempre servidor — se o cliente pudesse, trocaria o próprio
+    // papel pra owner, ou o tenantId pra ler o de outro cliente.
+    match /tenant_membros/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || souOwner());
+      allow list: if souOwner();
+      allow write: if false;
+    }
+
+    // Cada um vê a própria licença (pra saber a validade); o master vê todas.
+    // Escrita só pelo servidor/master — licença é o que controla a cobrança.
+    match /licencas/{email} {
+      allow read: if signedIn() && (emailAuth() == email || souMaster());
+      allow list: if souMaster();
+      allow write: if false;
+    }
+
+    // Quem é admin master: só leitura, e só pelo próprio. Escrita nunca pelo
+    // cliente — este é o documento que define quem manda no SaaS inteiro.
+    match /saas_admins/{email} {
+      allow read: if signedIn() && emailAuth() == email;
+      allow write: if false;
+    }
+
+    // Preferência de notificação é da PESSOA, não da operação: segue a
+    // pessoa entre tenants, então fica fora de tenants/{tid}/.
+    match /usuarios/{uid}/preferences/{doc} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Conexão do ML (ml_conexoes) e states de OAuth NÃO têm match aqui, de
+    // propósito: sem regra, o Firestore nega tudo que vem do cliente e só o
+    // Admin SDK enxerga. É onde mora o refresh_token — se fosse legível pelo
+    // cliente, um vazamento de token daria acesso à conta ML do vendedor.
+  }
+}

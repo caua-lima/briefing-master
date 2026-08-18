@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:critical": "vitest run lib/domain"
+    "test:critical": "vitest run lib/domain",
+    "test:rules": "firebase emulators:exec --only firestore --project zxp-rules-test \"vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -22,12 +23,14 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "firebase-tools": "^15.27.0",
     "server-only": "^0.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
