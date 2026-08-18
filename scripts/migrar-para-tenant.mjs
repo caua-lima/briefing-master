@@ -107,6 +107,39 @@ if (!/^[a-z0-9][a-z0-9-]{1,48}$/.test(tenantId)) {
   process.exit(1);
 }
 
+/**
+ * Placeholder não substituído é o erro mais fácil de cometer aqui — copiar o
+ * comando do README e trocar só o e-mail, esquecendo o uid. E é dos piores:
+ * cria o vínculo num uid que não existe, o login real não resolve tenant
+ * nenhum, e o app falha em TODA leitura sem dizer por quê. A primeira versão
+ * deste script aceitava `SEU_UID` calado.
+ */
+const PLACEHOLDERS = ["seu_uid", "seu-uid", "uid", "<uid>", "meu_uid", "xxx", "todo", "changeme"];
+if (PLACEHOLDERS.includes(ownerUid.toLowerCase())) {
+  console.error(`
+--owner ainda está com o texto de exemplo: "${ownerUid}"
+
+Troque pelo SEU uid do Firebase Auth:
+  Firebase Console → Authentication → coluna "Identificador do usuário"
+
+É o uid, não o e-mail — é por ele que o app descobre o tenant no login.
+`);
+  process.exit(1);
+}
+
+// uid do Firebase tem 28 caracteres alfanuméricos. Não travo no 28 exato
+// (contas federadas variam), mas algo com espaço ou 6 caracteres não é uid.
+if (!/^[A-Za-z0-9_-]{16,128}$/.test(ownerUid)) {
+  console.error(`--owner não parece um uid do Firebase: "${ownerUid}"`);
+  console.error(`Esperado: 16+ caracteres alfanuméricos, sem espaço. Veja em Authentication → "Identificador do usuário".`);
+  process.exit(1);
+}
+
+if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
+  console.error(`--email inválido: "${ownerEmail}"`);
+  process.exit(1);
+}
+
 const serviceAccount = JSON.parse(readFileSync(join(__dirname, "../serviceAccountKey.json"), "utf8"));
 if (!admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
