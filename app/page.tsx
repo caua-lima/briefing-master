@@ -18,6 +18,7 @@ import FullTab from "@/components/tabs/FullTab";
 import DesempenhoTab from "@/components/tabs/DesempenhoTab";
 import AccessControlTab from "@/components/tabs/AccessControlTab";
 import DreTab from "@/components/tabs/DreTab";
+import PrecoTab from "@/components/tabs/PrecoTab";
 import TarefasTab from "@/components/tabs/TarefasTab";
 import Dashboard from "@/components/dashboard/Dashboard";
 import { MlAccountStatus } from "@/components/MlAccountStatus";
@@ -27,7 +28,7 @@ import MyProfileModal from "@/components/MyProfileModal";
 import CommandPalette from "@/components/CommandPalette";
 import { SaleNotificationProvider } from "@/components/SaleNotificationProvider";
 
-type Tab = "dashboard" | "pedidos" | "ads" | "metas" | "custos" | "estoque" | "full" | "desempenho" | "dre" | "tarefas" | "acesso";
+type Tab = "dashboard" | "pedidos" | "ads" | "preco" | "metas" | "custos" | "estoque" | "full" | "desempenho" | "dre" | "tarefas" | "acesso";
 
 // Owner e colaborador veem tudo, exceto Acesso — essa é só do owner (a aba
 // nem aparece na navegação pra colaborador). Tarefas é a única aba em que o
@@ -37,6 +38,7 @@ const NAV_ITEMS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "pedidos", label: "Pedidos" },
   { id: "ads", label: "Ads" },
+  { id: "preco", label: "Preço" },
   { id: "metas", label: "Metas" },
   { id: "custos", label: "Custos" },
   { id: "estoque", label: "Estoque" },
@@ -52,6 +54,7 @@ const ICON_PATHS: Record<Tab, React.ReactNode> = {
   dashboard: (<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>),
   pedidos: (<><path d="M6 8h12l-1 12H7L6 8z" /><path d="M9 8V6.5a3 3 0 0 1 6 0V8" /></>),
   ads: (<><path d="M4 10v4a1 1 0 0 0 1 1h2l5 3.5V6.5L7 10H5a1 1 0 0 0-1 1z" /><path d="M16 9a4.5 4.5 0 0 1 0 6" /></>),
+  preco: (<><path d="M3.5 12.5l8-8H20v8.5l-8 8-8.5-8.5z" /><circle cx="16" cy="8" r="1.4" /></>),
   metas: (<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>),
   custos: (<><path d="M6 3h12v18l-2-1.3L14 21l-2-1.3L10 21l-2-1.3L6 21z" /><path d="M9 8.5h6M9 12h6" /></>),
   estoque: (<><path d="M3 8l9-4 9 4-9 4-9-4z" /><path d="M3 8v8l9 4 9-4V8" /><path d="M12 12v8" /></>),
@@ -105,7 +108,7 @@ export default function Page() {
   );
 }
 
-const VALID_TABS: readonly Tab[] = ["dashboard", "pedidos", "ads", "metas", "custos", "estoque", "full", "desempenho", "dre", "tarefas", "acesso"];
+const VALID_TABS: readonly Tab[] = ["dashboard", "pedidos", "ads", "preco", "metas", "custos", "estoque", "full", "desempenho", "dre", "tarefas", "acesso"];
 
 function AppShell() {
   const { user, signOut, signInWithAccountSelection } = useAuth();
@@ -504,6 +507,7 @@ function AppShell() {
                 )}
                 {activeTab === "pedidos" && <PedidosTab metaMargem={data.goals?.metaMargem ?? undefined} openOrderId={openOrderId} />}
                 {activeTab === "ads" && <AdsTab metaMargem={data.goals?.metaMargem ?? undefined} products={data.products} />}
+                {activeTab === "preco" && <PrecoTab products={data.products} />}
                 {activeTab === "metas" && <MetasTab uid={user.uid} data={data} />}
                 {activeTab === "custos" && <CustosTab uid={user.uid} data={data} />}
                 {activeTab === "estoque" && <EstoqueTab uid={user.uid} data={data} />}
