@@ -226,3 +226,126 @@ describe("conexão do ML é invisível pro cliente (onde mora o refresh_token)",
     await assertFails(getDoc(doc(como(OWNER_A), "ml_conexoes", T_A)));
   });
 });
+
+describe("rascunho — achado faltando na varredura de cobertura das coleções", () => {
+  // saveDraft/clearDraft (lib/firebase/data.ts) escrevem aqui todo dia. Sem
+  // regra própria, isto caía no catch-all (write: false) e a função quebrava
+  // em silêncio — só na hora de salvar, não no código nem no tsc.
+  it("owner escreve o rascunho do próprio tenant", async () => {
+    await assertSucceeds(setDoc(doc(como(OWNER_A), "tenants", T_A, "rascunho", "hoje"), { faturamento: 100 }));
+  });
+
+  it("colaborador LÊ o rascunho, mas não escreve — mesma regra do single-tenant hoje", async () => {
+    await assertSucceeds(getDoc(doc(como(COLAB_A), "tenants", T_A, "rascunho", "hoje")));
+    await assertFails(setDoc(doc(como(COLAB_A), "tenants", T_A, "rascunho", "hoje"), { faturamento: 999 }));
+  });
+
+  it("owner do B não escreve no rascunho do A", async () => {
+    await assertFails(setDoc(doc(como(OWNER_B), "tenants", T_A, "rascunho", "hoje"), { faturamento: 1 }));
+  });
+});
+
+describe("notification_events — cliente só marca lido/dispensado, nunca o conteúdo", () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "tenants", T_A, "notification_events", "e1"), {
+        title: "Venda confirmada", grossAmount: 100, readBy: {},
+      });
+    });
+  });
+
+  it("cliente NÃO cria evento — só o servidor (Admin SDK, que ignora as regras)", async () => {
+    await assertFails(setDoc(doc(como(OWNER_A), "tenants", T_A, "notification_events", "e2"), { title: "forjado" }));
+  });
+
+  it("membro marca como lido (só toca readBy)", async () => {
+    await assertSucceeds(setDoc(
+      doc(como(OWNER_A), "tenants", T_A, "notification_events", "e1"),
+      { title: "Venda confirmada", grossAmount: 100, readBy: { [OWNER_A.email]: Date.now() } },
+    ));
+  });
+
+  it("cliente NÃO altera o valor da venda escondido atrás de marcar como lido", async () => {
+    await assertFails(setDoc(
+      doc(como(OWNER_A), "tenants", T_A, "notification_events", "e1"),
+      { title: "Venda confirmada", grossAmount: 999999, readBy: { [OWNER_A.email]: Date.now() } },
+    ));
+  });
+});
+
+describe("auditLog — imutável, nem o owner apaga", () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "tenants", T_A, "auditLog", "log1"), { por: OWNER_A.email, acao: "excluir" });
+    });
+  });
+
+  it("colaborador não lê o log de auditoria — só owner", async () => {
+    await assertFails(getDoc(doc(como(COLAB_A), "tenants", T_A, "auditLog", "log1")));
+  });
+
+  it("owner cria log assinando com o PRÓPRIO e-mail", async () => {
+    await assertSucceeds(setDoc(doc(como(OWNER_A), "tenants", T_A, "auditLog", "log2"), { por: OWNER_A.email, acao: "criar" }));
+  });
+
+  it("não cria log assinado em nome de outra pessoa", async () => {
+    await assertFails(setDoc(doc(como(OWNER_A), "tenants", T_A, "auditLog", "log3"), { por: COLAB_A.email, acao: "criar" }));
+  });
+
+  it("nem o owner altera um log já gravado", async () => {
+    await assertFails(setDoc(doc(como(OWNER_A), "tenants", T_A, "auditLog", "log1"), { por: OWNER_A.email, acao: "editado" }));
+  });
+});
+
+describe("pushTokens/alertasDispensados — só o dono, mesmo dentro do mesmo tenant", () => {
+  // As mesmas duas que o auditLog: exclusas do catch-all de propósito (ver o
+  // comentário em firestore.rules.saas), porque a leitura delas é MAIS
+  // restrita que "qualquer membro do tenant lê" — sem a exclusão, o
+  // catch-all vazaria por cima, igual vazava no auditLog.
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "tenants", T_A, "pushTokens", "tok1"), { email: OWNER_A.email, token: "abc" });
+      await setDoc(doc(db, "tenants", T_A, "alertasDispensados", "al1"), { email: OWNER_A.email, chave: "x" });
+    });
+  });
+
+  it("dono lê o próprio token de push", async () => {
+    await assertSucceeds(getDoc(doc(como(OWNER_A), "tenants", T_A, "pushTokens", "tok1")));
+  });
+
+  it("colaborador do MESMO tenant NÃO lê o token do owner", async () => {
+    await assertFails(getDoc(doc(como(COLAB_A), "tenants", T_A, "pushTokens", "tok1")));
+  });
+
+  it("dono lê o próprio alerta dispensado", async () => {
+    await assertSucceeds(getDoc(doc(como(OWNER_A), "tenants", T_A, "alertasDispensados", "al1")));
+  });
+
+  it("colaborador do MESMO tenant NÃO lê o alerta dispensado do owner", async () => {
+    await assertFails(getDoc(doc(como(COLAB_A), "tenants", T_A, "alertasDispensados", "al1")));
+  });
+});
+
+describe("coleção sem regra própria — o catch-all isola por tenant mesmo assim", () => {
+  // Prova que a rede de segurança (match /tenants/{tid}/{colecao}/{doc}) usa
+  // a MESMA checagem de tenant que as coleções com regra explícita — não é
+  // um caminho separado que alguém possa esquecer de testar.
+  it("lê uma coleção qualquer do próprio tenant, sem regra dedicada", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "tenants", T_A, "colecaoNovaSemRegra", "x"), { v: 1 });
+    });
+    await assertSucceeds(getDoc(doc(como(OWNER_A), "tenants", T_A, "colecaoNovaSemRegra", "x")));
+  });
+
+  it("NÃO lê a mesma coleção genérica de outro tenant", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "tenants", T_B, "colecaoNovaSemRegra", "x"), { v: 1 });
+    });
+    await assertFails(getDoc(doc(como(OWNER_A), "tenants", T_B, "colecaoNovaSemRegra", "x")));
+  });
+
+  it("nunca escreve numa coleção sem regra própria — nem o owner", async () => {
+    await assertFails(setDoc(doc(como(OWNER_A), "tenants", T_A, "colecaoNovaSemRegra", "y"), { v: 1 }));
+  });
+});

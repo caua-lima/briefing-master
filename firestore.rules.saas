@@ -118,6 +118,15 @@ service cloud.firestore {
       allow read, write: if acessaTenant(tid);
     }
 
+    // Rascunho do dia (saveDraft/clearDraft em lib/firebase/data.ts) — achado
+    // faltando na varredura de cobertura: sem esta regra, caía no catch-all
+    // (write: false) e a função quebraria em silêncio, só na hora de salvar.
+    // Owner-only pra escrever, igual ao single-tenant de hoje (firestore.rules).
+    match /tenants/{tid}/rascunho/{doc} {
+      allow read: if acessaTenant(tid);
+      allow write: if souOwner() && meuTenant() == tid;
+    }
+
     // Dados vindos do Mercado Livre: SÓ o Admin SDK escreve (sync/webhook).
     // O cliente lê e nunca escreve — número de venda não se digita.
     match /tenants/{tid}/ml_orders/{doc} {
@@ -160,12 +169,41 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── A ARMADILHA QUE ISTO EXISTE PRA EVITAR ────────────────────────
+    //
+    // O Firestore NÃO escolhe "a regra mais específica" quando dois `match`
+    // casam o mesmo caminho — ele faz OR entre todos os blocos que casam, e
+    // libera se QUALQUER UM permitir. `tenants/{tid}/auditLog/{doc}` casa
+    // TANTO o bloco explícito de auditLog QUANTO este catch-all genérico —
+    // então um catch-all que lê com só `acessaTenant(tid)` VAZA por cima de
+    // qualquer regra mais restritiva (owner-only, dono-do-documento) que uma
+    // coleção específica tenha escrito. Foi pego pelo teste de emulador:
+    // colaborador lia auditLog, que deveria ser só-owner.
+    //
+    // A correção é excluir do catch-all as poucas coleções cuja leitura é
+    // MAIS restritiva que "qualquer membro do tenant lê" — senão o catch-all
+    // sozinho já concede o suficiente pra furar a regra delas.
+    //   pushTokens          só o dono do token (própria assinatura)
+    //   alertasDispensados  só quem dispensou (próprio e-mail)
+    //   auditLog            só o owner
+    // As demais (estoque, tarefas, ml_orders, notification_events…) têm
+    // leitura igual à do catch-all — não há o que vazar, coexistir é seguro.
+    //
     // Rede: qualquer coleção do tenant que ainda não tenha regra própria
     // continua isolada por tenant, em vez de cair no "negado por omissão" e
     // quebrar em produção sem ninguém entender. Escrita permanece fechada —
     // coleção nova entra somente-leitura até ganhar sua regra explícita.
+    //
+    // Conferido contra todo `tenantCol(...)`/`sCol(...)` do código (server e
+    // client) na hora de escrever este arquivo — quem cai aqui hoje, e por quê:
+    //   pushRateWindow    server-only (Admin SDK, contador de janela de push)
+    //   backups_semanais  server-only (Admin SDK, backup semanal)
+    //   dias              sem escritor no código atual — legado morto
+    // `financeiro_manual` NÃO é uma coleção: é um DOCUMENTO dentro de `metas`
+    // (sDoc("metas", "financeiro_manual")) — já coberto pela regra de `metas`.
     match /tenants/{tid}/{colecao}/{doc} {
-      allow read: if acessaTenant(tid);
+      allow read: if acessaTenant(tid)
+        && !(colecao in ['pushTokens', 'alertasDispensados', 'auditLog']);
       allow write: if false;
     }
 
