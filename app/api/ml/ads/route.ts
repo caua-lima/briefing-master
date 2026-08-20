@@ -21,6 +21,7 @@ function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pau
 }
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
+import { classificarVenda } from "@/lib/domain/venda-status";
 
 export const maxDuration = 30;
 
@@ -33,10 +34,6 @@ function todayISO(offsetDays = 0): string {
 }
 const normSku = (s: string) => s.trim().toLowerCase();
 const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
-const isNaoVenda = (s: unknown) => {
-  const v = String(s ?? "").toLowerCase();
-  return v === "cancelled" || v === "invalid";
-};
 
 type VendaItem = { receita: number; unidades: number; cmv: number; imposto: number; taxaML: number; envio: number };
 
@@ -53,7 +50,17 @@ function vendasPorItem(
   const map = new Map<string, VendaItem>();
   for (const o of orders) {
     const oid = String(o.order_id ?? "");
-    if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
+    /**
+     * MESMA regra do Dashboard (lib/domain/venda-status.ts): o status ao vivo
+     * manda sobre o cache de `ml_returns`. Antes esta rota repetia a condição
+     * à mão, então uma venda "resgatada" contava no Dashboard e continuava
+     * fora daqui — e o ROAS saía calculado sobre uma receita menor.
+     */
+    if (classificarVenda({
+      status: o.status,
+      noCacheDeCancelados: cancelIds.has(oid),
+      temDevolucaoConcluida: devolIds.has(oid),
+    }).classe !== "valida") continue;
     const items = (o.items as OrderItem[]) ?? [];
     const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
     const envioPerUnit = totalUnits > 0 ? Number(o.shipping_cost ?? 0) / totalUnits : 0;

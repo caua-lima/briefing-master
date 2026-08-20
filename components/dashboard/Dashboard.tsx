@@ -113,6 +113,7 @@ type Conciliacao = {
   canceladasQuantidade:  number;
   canceladasValor:       number;
   descartadosForaDaJanela: number;
+  resgatadosDoCache?:    number;
 };
 
 type Devolucao = {
@@ -602,6 +603,14 @@ function ConferenciaML({ c, periodo }: { c: Conciliacao; periodo: string }) {
                 {" "}· <b style={{ color: "var(--yellow)" }}>{c.descartadosForaDaJanela} pedido(s)</b> vieram
                 do ML com data fora do período e foram descartados — é a borda de fuso
                 horário, e sem esse corte eles inflariam o faturamento.
+              </>
+            )}
+            {(c.resgatadosDoCache ?? 0) > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--green)" }}>{c.resgatadosDoCache} pedido(s)</b> estavam
+                marcados como cancelados no nosso histórico, mas o Mercado Livre os confirma
+                como venda — voltaram a contar. Cancelamento revertido fica gravado aqui e
+                antes seguia descontado pra sempre.
               </>
             )}
           </div>

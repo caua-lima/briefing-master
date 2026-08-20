@@ -6,6 +6,7 @@ import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders"
 import { getMlAccessToken } from "../token";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
 import { diaBRDe, recortarPorDiaBR } from "@/lib/domain/periodo-br";
+import { classificarVenda } from "@/lib/domain/venda-status";
 
 export const maxDuration = 30;
 
@@ -67,6 +68,8 @@ type Aggregates = {
   unidadesVendidas: number;
   /** Quantidade de pedidos cancelados (não o valor) — o Seller Center mostra a contagem. */
   canceladasCount: number;
+  /** Pedidos que o cache `ml_returns` dizia cancelados mas o ML confirma como venda. */
+  resgatadosDoCache: number;
   reconc: { count: number; nosso: number; real: number };
 };
 
@@ -76,13 +79,6 @@ function parseDateParam(p: string | null) {
 
 function normalizeSku(s: string) {
   return s.trim().toLowerCase();
-}
-
-// Pedido que NÃO é venda de verdade (cancelado antes de enviar / inválido).
-// Sai do faturamento e do lucro — não é prejuízo, é "não venda".
-function isNaoVenda(status: unknown): boolean {
-  const s = String(status ?? "").toLowerCase();
-  return s === "cancelled" || s === "invalid";
 }
 
 /**
@@ -163,6 +159,8 @@ function computeAggregates(
   let pedidosSemVinculo = 0;
   let unidadesVendidas = 0;
   let canceladasCount = 0;
+  /** Pedidos que o cache dizia cancelados e o ML confirma como venda boa. */
+  let resgatadosDoCache = 0;
 
   /**
    * Conferência contra o dinheiro real do Mercado Pago. Para cada pedido com
@@ -186,11 +184,23 @@ function computeAggregates(
     // Faturamento BRUTO inclui tudo (inclusive cancelado/devolvido).
     faturamentoBruto += totalAmt;
 
+    /**
+     * Cancelada x devolvida x válida. O STATUS AO VIVO manda sobre o cache de
+     * `ml_returns` — ver lib/domain/venda-status.ts. Confiar no cache tirava
+     * do faturamento pedidos que o ML ainda conta como venda boa (R$ 360,28
+     * medidos contra o Seller Center).
+     */
+    const classe = classificarVenda({
+      status: o.status,
+      noCacheDeCancelados: cancelIds.has(oid),
+      temDevolucaoConcluida: devolIds.has(oid),
+    });
+    if (classe.resgatadoDoCache) resgatadosDoCache++;
     // Cancelado = "não venda" (estoque nem saiu). Fica só no bruto; sai do
-    // faturamento líquido e do lucro. Status vem do próprio pedido (robusto).
-    if (isNaoVenda(o.status) || cancelIds.has(oid)) { vendasCanceladas += totalAmt; canceladasCount++; continue; }
+    // faturamento líquido e do lucro.
+    if (classe.classe === "cancelada") { vendasCanceladas += totalAmt; canceladasCount++; continue; }
     // Devolvido = venda revertida, produto volta ao estoque → 0 a 0. Idem: só no bruto.
-    if (devolIds.has(oid)) { vendasDevolvidas += totalAmt; continue; }
+    if (classe.classe === "devolvida") { vendasDevolvidas += totalAmt; continue; }
 
     ordersCount++;
     unidadesVendidas += ((o.items as OrderItem[]) ?? []).reduce((s, it) => s + Number(it.quantity ?? 1), 0);
@@ -324,6 +334,7 @@ function computeAggregates(
     ordersCount,
     unidadesVendidas,
     canceladasCount,
+    resgatadosDoCache,
     reconc: { count: reconcCount, nosso: reconcNosso, real: reconcReal },
   };
 }
@@ -479,7 +490,13 @@ export async function GET(req: Request) {
     const serieMap = new Map<string, number>();
     for (const o of orders) {
       const oid = String(o.order_id ?? "");
-      if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
+      // MESMA regra do agregado (classificarVenda) — duplicar a condição aqui
+      // era o que fazia o gráfico e os KPIs discordarem quando uma delas mudava.
+      if (classificarVenda({
+        status: o.status,
+        noCacheDeCancelados: cancelIds.has(oid),
+        temDevolucaoConcluida: devolIds.has(oid),
+      }).classe !== "valida") continue;
       const dia = diaBRDe(String(o.date_created ?? ""));
       if (dia) serieMap.set(dia, (serieMap.get(dia) ?? 0) + Number(o.total_amount ?? 0));
     }
@@ -656,6 +673,14 @@ export async function GET(req: Request) {
          * borda de fuso agindo: sem o recorte eles inflariam o faturamento.
          */
         descartadosForaDaJanela: recorte.foraDaJanela,
+        /**
+         * Pedidos que a coleção `ml_returns` dava como cancelados mas o ML
+         * confirma como venda boa — cancelamento revertido que ficou gravado,
+         * já que aquele sync só escreve e nunca remove. Antes eram descontados
+         * pra sempre; agora contam como venda e aparecem aqui, pra a correção
+         * ser visível em vez de silenciosa.
+         */
+        resgatadosDoCache: agg.resgatadosDoCache,
       },
       serieDiaria,
       adsDiag,
