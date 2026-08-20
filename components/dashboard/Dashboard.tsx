@@ -483,6 +483,8 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   const stats: { label: string; icon: string; value: number; color: string }[] = [
     { label: "Faturamento bruto", icon: "", value: h.faturamentoBruto, color: "var(--green)" },
     { label: "CMV (produto)",     icon: "", value: h.totalCMV,         color: "var(--red)" },
+    { label: "Frete/Full",        icon: "", value: h.totalEnvio,       color: "var(--red)" },
+    { label: "Taxas ML",          icon: "", value: h.totalTaxasML,     color: "var(--red)" },
     { label: "Imposto",           icon: "", value: h.totalImposto,     color: "var(--red)" },
     { label: "Gasto com ADS",     icon: "", value: h.totalAds,         color: "var(--red)" },
     { label: "Lucro líquido",     icon: "", value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
