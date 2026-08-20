@@ -9,14 +9,26 @@ type Densidade = "confortavel" | "compacta";
 
 function StatusTag({ l }: { l: LinhaAds }) {
   const m = STATUS_META[l.i.status];
+  // Anúncio que rodou em mais de uma campanha no período: o gasto de cada uma
+  // aparece separado na "Performance por campanha", mas a linha da tabela é do
+  // ANÚNCIO e soma todas — dizer isso evita a leitura de que um dos dois está
+  // errado (ver AdItemFull.campanhas em lib/ml/ads.ts).
+  const varias = (l.i.campanhas?.length ?? 0) > 1;
+  const detalheCampanhas = varias
+    ? ` Este anúncio rodou em ${l.i.campanhas.length} campanhas no período: `
+      + l.i.campanhas.map((c) => `${c.campaignName || c.campaignId || "sem campanha"} (${fmtBRL(c.cost)})`).join(", ")
+      + ". O investimento desta linha é a soma das duas; a lista por campanha mostra cada uma separada."
+    : "";
+
   const tooltip = l.i.status === "config_indisponivel"
-    ? `Este anúncio está na campanha ${l.i.campaignId}, mas o Mercado Ads não devolveu a configuração dela. Orçamento/ROAS alvo ficam vazios por isso — o gasto e as vendas continuam corretos.`
+    ? `A campanha ${l.i.campaignId} deste anúncio existe e gastou, mas não apareceu na lista de campanhas do Mercado Ads — normalmente porque ela foi EXCLUÍDA ou arquivada depois de ter gasto no período. Por isso orçamento e ROAS alvo ficam vazios. Investimento, cliques e vendas continuam corretos.${detalheCampanhas}`
     : l.i.campaignId
-      ? `Campanha: ${l.i.campaignName || l.i.campaignId}${l.i.mlStatus ? ` · catálogo: ${l.i.mlStatus}` : ""}`
-      : "Não achamos a campanha deste anúncio na busca do Mercado Ads.";
+      ? `Campanha: ${l.i.campaignName || l.i.campaignId}${l.i.mlStatus ? ` · catálogo: ${l.i.mlStatus}` : ""}${detalheCampanhas}`
+      : `Não achamos a campanha deste anúncio na busca do Mercado Ads.${detalheCampanhas}`;
+
   return (
     <span title={tooltip} style={{ fontSize: ".62rem", fontWeight: 700, color: m.cor, background: m.bg, padding: "1px 7px", borderRadius: 5, whiteSpace: "nowrap", cursor: "help" }}>
-      {m.label}
+      {m.label}{varias ? " ⧉" : ""}
     </span>
   );
 }
@@ -125,6 +137,18 @@ export default function AdsTable({
               </th>
               <th
                 style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}
+                title="Quanto sobraria se este anúncio atingisse o ROAS ideal, mantendo a receita de hoje. É o teto daquele ROAS — cortar verba costuma derrubar a receita junto, então serve pra comparar anúncios, não pra prometer resultado."
+              >
+                Lucro no ideal
+              </th>
+              <th
+                style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}
+                title="Unidades que o Mercado Ads credita a este anúncio (venda direta do clique). É a mesma coluna 'Vendas atribuídas' do painel do ML."
+              >
+                Vendas atribuídas
+              </th>
+              <th
+                style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}
                 title="Quanto da receita DESTE anúncio o Mercado Ads credita à campanha (clique direto + venda assistida). Alto = a venda deste item depende da verba."
               >
                 % via Ads
@@ -155,7 +179,24 @@ export default function AdsTable({
                 <td data-label="Margem" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.margemAtual != null ? corMargem(l.margemAtual) : "var(--muted)", fontWeight: 700 }}>
                   {l.margemAtual != null ? `${num(l.margemAtual, 1)}%` : "—"}
                 </td>
-                <td data-label="ROAS" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: corRoas(l.r), fontWeight: 700 }}>{l.i.cost > 0 ? `${num(l.r, 2)}x` : "—"}</td>
+                {/* ROAS do modo escolhido + o do painel do Mercado Ads.
+                    Os dois existem e medem coisas diferentes: o ML divide pela
+                    receita atribuída TOTAL (clique direto + venda assistida),
+                    e o modo "Publicidade direta" usa só a direta. Sem mostrar
+                    os dois, o número daqui parece quebrado — foi exatamente a
+                    leitura que gerou "o ROAS está errado" (4,71x aqui contra
+                    10,77x no ML, mesmo anúncio, mesmo período). */}
+                <td data-label="ROAS" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: corRoas(l.r), fontWeight: 700 }}>
+                  {l.i.cost > 0 ? `${num(l.r, 2)}x` : "—"}
+                  {l.roasMlAds != null && Math.abs(l.roasMlAds - l.r) > 0.01 && (
+                    <span
+                      style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}
+                      title={`No painel do Mercado Ads este anúncio aparece com ROAS ${num(l.roasMlAds, 2)}x, porque lá a conta usa a receita atribuída TOTAL (${fmtBRL(l.i.adSales)}: clique direto + venda assistida). Aqui o modo "${pub ? "Publicidade direta" : "Geral"}" usa ${fmtBRL(l.v)}. Os dois estão certos e respondem perguntas diferentes.`}
+                    >
+                      ML: {num(l.roasMlAds, 2)}x
+                    </span>
+                  )}
+                </td>
                 <td data-label="Break-even" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.abaixoDoBreakEven ? "var(--red)" : "var(--muted)", fontWeight: l.abaixoDoBreakEven ? 700 : 400 }}>
                   {l.breakEven != null ? `${num(l.breakEven, 2)}x` : "—"}{l.abaixoDoBreakEven ? " ⚠" : ""}
                 </td>
@@ -166,7 +207,10 @@ export default function AdsTable({
                 <td
                   data-label="ROAS ideal"
                   title={l.roasIdeal == null
-                    ? "Este produto não alcança a margem alvo nem gastando zero em Ads — não existe ROAS que resolva."
+                    // O motivo é específico por caso (falta venda × produto não
+                    // fecha conta × meta inalcançável) e cada um pede uma ação
+                    // diferente — ver motivoSemRoasIdeal.
+                    ? (l.motivoSemIdeal ?? "Sem ROAS ideal calculável para este anúncio.")
                     : l.abaixoDoIdeal
                       ? "Abaixo do ROAS que entrega a sua margem alvo."
                       : "Acima do ROAS que entrega a sua margem alvo."}
@@ -176,7 +220,41 @@ export default function AdsTable({
                     fontWeight: l.abaixoDoIdeal ? 700 : 400,
                   }}
                 >
-                  {l.roasIdeal != null ? `${num(l.roasIdeal, 2)}x` : "—"}
+                  {l.roasIdeal != null ? `${num(l.roasIdeal, 2)}x` : <span style={{ cursor: "help" }}>— ⓘ</span>}
+                </td>
+                {/* O ROAS ideal em dinheiro. "62,75x" é abstrato; "+R$ 38" decide. */}
+                <td
+                  data-label="Lucro no ideal"
+                  title={l.lucroNoIdeal == null
+                    ? (l.motivoSemIdeal ?? "Sem ROAS ideal calculável — não há lucro alvo pra projetar.")
+                    : l.ganhoNoIdeal != null
+                      ? `Hoje ${fmtBRL(l.lucroAtual ?? 0)} → ${fmtBRL(l.lucroNoIdeal)} no ROAS ideal (${l.ganhoNoIdeal >= 0 ? "+" : ""}${fmtBRL(l.ganhoNoIdeal)}), mantendo a receita atual.`
+                      : "Lucro se o ROAS ideal fosse atingido, mantendo a receita atual."}
+                  style={{
+                    textAlign: "right", whiteSpace: "nowrap", padding: padCel, fontWeight: 700,
+                    color: l.lucroNoIdeal == null ? "var(--muted)" : l.lucroNoIdeal >= 0 ? "var(--green)" : "var(--red)",
+                  }}
+                >
+                  {l.lucroNoIdeal != null ? fmtBRL(l.lucroNoIdeal) : "—"}
+                  {l.ganhoNoIdeal != null && l.ganhoNoIdeal > 0 && (
+                    <span style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}>
+                      +{fmtBRL(l.ganhoNoIdeal)} vs hoje
+                    </span>
+                  )}
+                </td>
+                {/* Mesma coluna "Vendas atribuídas" do painel do Mercado Ads:
+                    unidades creditadas ao clique, não a venda total do item. */}
+                <td
+                  data-label="Vendas atribuídas"
+                  title={`${num(l.i.adUnits)} unidade(s) atribuída(s) pelo Mercado Ads (${fmtBRL(l.i.adSales)}) — é o mesmo número da coluna "Vendas atribuídas" do painel do ML. Dessas, ${num(l.i.directUnits)} vieram de clique direto (${fmtBRL(l.i.directSales)}); o resto é venda assistida.`}
+                  style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.i.adUnits > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}
+                >
+                  {num(l.i.adUnits)}
+                  {l.i.adUnits !== l.i.directUnits && (
+                    <span style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}>
+                      {num(l.i.directUnits)} direta(s)
+                    </span>
+                  )}
                 </td>
                 {/* pctAds ja era calculado em AdsTab desde sempre, mas nunca
                     chegou a ser exibido — e a pergunta "quanto deste item

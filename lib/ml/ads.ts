@@ -340,6 +340,32 @@ export type AdItemFull = {
   /** campaign_id, quando a própria linha de métricas já trouxe — evita uma
    *  chamada extra por item em getAdsSettingsByItem. */
   campaignId: string;
+  /**
+   * O MESMO gasto, quebrado por campanha.
+   *
+   * O total acima responde "quanto este ANÚNCIO custou"; isto responde
+   * "quanto cada CAMPANHA gastou nele" — e só o segundo bate com o painel do
+   * Mercado Ads, que é organizado por campanha.
+   *
+   * Existe por causa de um erro real: um anúncio que rodou em duas campanhas
+   * (a antiga foi excluída no meio do período) tinha o gasto das duas somado
+   * numa linha só, e a linha inteira era carimbada com a PRIMEIRA campanha
+   * vista. A campanha sobrevivente aparecia com o dobro do que o ML mostrava
+   * — 206 cliques e R$ 47,59 contra 104 cliques e R$ 16,91 reais.
+   */
+  campanhas: AdItemCampanha[];
+};
+
+/** Fatia do investimento de um anúncio dentro de UMA campanha. */
+export type AdItemCampanha = {
+  campaignId: string;
+  clicks: number;
+  prints: number;
+  cost: number;
+  sales: number;
+  units: number;
+  directSales: number;
+  directUnits: number;
 };
 
 const AD_METRICS = "clicks,prints,ctr,cost,cpc,acos,cvr,total_amount,direct_amount,indirect_amount,direct_items_quantity,advertising_items_quantity";
@@ -371,6 +397,8 @@ export async function getAdsFullByItem(
     itemId: string; title: string; status: string; campaignId: string;
     clicks: number; prints: number; cost: number; sales: number; units: number;
     directSales: number; directUnits: number; indirectSales: number;
+    /** Mesmas métricas fatiadas por campanha — ver AdItemFull.campanhas. */
+    porCampanha: Map<string, AdItemCampanha>;
   };
   const porItem = new Map<string, Acc>();
   for (const row of rows) {
@@ -380,18 +408,45 @@ export async function getAdsFullByItem(
       itemId, title: "", status: "", campaignId: "",
       clicks: 0, prints: 0, cost: 0, sales: 0, units: 0,
       directSales: 0, directUnits: 0, indirectSales: 0,
+      porCampanha: new Map<string, AdItemCampanha>(),
     };
     if (!cur.title) cur.title = String(row.title ?? row.name ?? row.campaign_name ?? "");
     if (!cur.status) cur.status = String(row.status ?? "");
-    if (!cur.campaignId) cur.campaignId = String(row.campaign_id ?? row.campaignId ?? "");
+
+    const linhaCampanha = String(row.campaign_id ?? row.campaignId ?? "");
+    const custoLinha = metrica(row, "cost");
+    /**
+     * A campanha "principal" do anúncio é a que MAIS gastou no período, não a
+     * primeira linha que apareceu. Com duas campanhas no mesmo anúncio, a
+     * ordem das linhas é do ML e não significa nada — carimbar pela primeira
+     * atribuía o total à campanha errada com frequência.
+     */
+    if (linhaCampanha && custoLinha > (cur.porCampanha.get(cur.campaignId)?.cost ?? -1)) {
+      cur.campaignId = linhaCampanha;
+    }
+
     cur.clicks += metrica(row, "clicks");
     cur.prints += metrica(row, "prints");
-    cur.cost += metrica(row, "cost");
+    cur.cost += custoLinha;
     cur.sales += metrica(row, "total_amount");
     cur.units += metrica(row, "advertising_items_quantity");
     cur.directSales += metrica(row, "direct_amount");
     cur.directUnits += metrica(row, "direct_items_quantity");
     cur.indirectSales += metrica(row, "indirect_amount");
+
+    const fatia: AdItemCampanha = cur.porCampanha.get(linhaCampanha) ?? {
+      campaignId: linhaCampanha,
+      clicks: 0, prints: 0, cost: 0, sales: 0, units: 0, directSales: 0, directUnits: 0,
+    };
+    fatia.clicks += metrica(row, "clicks");
+    fatia.prints += metrica(row, "prints");
+    fatia.cost += custoLinha;
+    fatia.sales += metrica(row, "total_amount");
+    fatia.units += metrica(row, "advertising_items_quantity");
+    fatia.directSales += metrica(row, "direct_amount");
+    fatia.directUnits += metrica(row, "direct_items_quantity");
+    cur.porCampanha.set(linhaCampanha, fatia);
+
     porItem.set(itemId, cur);
   }
 
@@ -412,6 +467,7 @@ export async function getAdsFullByItem(
     directSales: a.directSales,
     directUnits: a.directUnits,
     indirectSales: a.indirectSales,
+    campanhas: Array.from(a.porCampanha.values()).sort((x, y) => y.cost - x.cost),
   }));
 }
 

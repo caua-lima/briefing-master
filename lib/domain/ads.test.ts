@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation } from "./ads";
+import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation, lucroNoRoas, motivoSemRoasIdeal } from "./ads";
 
 describe("calculateBreakEvenRoas", () => {
   it("lucroAntesAds <= 0 nunca tem ROAS que salve — retorna null, nao 0/Infinity", () => {
@@ -82,5 +82,59 @@ describe("calculateTargetRoas", () => {
   it("meta negativa e tratada como zero, nunca afrouxa abaixo do break-even", () => {
     const be = calculateBreakEvenRoas(1000, 250)!;
     expect(calculateTargetRoas(1000, 250, -30)).toBeCloseTo(be, 10);
+  });
+});
+
+describe("lucroNoRoas — o ROAS ideal traduzido em dinheiro", () => {
+  it("bate com a conta feita a mao", () => {
+    // Receita 1000, lucro antes do ads 200. Pra ROAS 10x o ad pode custar
+    // 1000/10 = 100 → sobra 200 − 100 = 100.
+    expect(lucroNoRoas(1000, 200, 10)).toBeCloseTo(100, 2);
+  });
+
+  it("no proprio break-even o lucro e exatamente zero", () => {
+    const be = calculateBreakEvenRoas(1000, 200)!;
+    expect(lucroNoRoas(1000, 200, be)).toBeCloseTo(0, 6);
+  });
+
+  it("no ROAS ideal o lucro entrega a margem alvo", () => {
+    const alvo = calculateTargetRoas(1000, 200, 10)!;
+    // margem alvo 10% sobre receita de 1000 = 100 de lucro
+    expect(lucroNoRoas(1000, 200, alvo)).toBeCloseTo(100, 2);
+  });
+
+  it("ROAS maior sobra mais — a curva anda pro lado certo", () => {
+    expect(lucroNoRoas(1000, 200, 20)!).toBeGreaterThan(lucroNoRoas(1000, 200, 10)!);
+  });
+
+  it("sem alvo ou sem receita devolve null, nao zero", () => {
+    expect(lucroNoRoas(1000, 200, null)).toBeNull();
+    expect(lucroNoRoas(1000, 200, 0)).toBeNull();
+    expect(lucroNoRoas(0, 200, 10)).toBeNull();
+  });
+
+  it("produto no prejuizo antes do ads segue negativo em qualquer ROAS", () => {
+    expect(lucroNoRoas(1000, -50, 30)).toBeLessThan(0);
+  });
+});
+
+describe("motivoSemRoasIdeal — explica o traco em vez de so mostrar '—'", () => {
+  it("quando HA ROAS ideal, nao ha motivo", () => {
+    expect(motivoSemRoasIdeal(1000, 200, 10)).toBeNull();
+  });
+
+  it("sem venda atribuida, diz que falta receita", () => {
+    expect(motivoSemRoasIdeal(0, 200, 10)).toMatch(/Sem venda atribuída/);
+  });
+
+  it("produto que nao cobre o proprio custo tem texto proprio", () => {
+    expect(motivoSemRoasIdeal(1000, -10, 10)).toMatch(/não cobre o próprio custo/);
+  });
+
+  it("margem real abaixo da meta aponta preco/custo, nao campanha", () => {
+    // Rende 5% antes do ads; meta 10% → nenhum ROAS resolve.
+    const m = motivoSemRoasIdeal(1000, 50, 10)!;
+    expect(m).toMatch(/5\.0%/);
+    expect(m).toMatch(/preço ou no custo/);
   });
 });

@@ -181,6 +181,11 @@ export async function GET(req: Request) {
     // vira só um dado extra no tooltip agora; a etiqueta principal é da campanha.
     const statusPorItem = await getItemStatusByItem(mlbsAds).catch(() => ({} as Record<string, string>));
 
+    // id → nome de TODAS as campanhas da conta, pra nomear também as fatias de
+    // campanhas que não são a principal do anúncio.
+    const nomePorCampanha = new Map<string, string>();
+    for (const c of cfg.campanhasResumo) if (c.id) nomePorCampanha.set(String(c.id), c.name);
+
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
       const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
@@ -206,6 +211,23 @@ export async function GET(req: Request) {
 
       const c = cfg.porItem[a.itemId.toUpperCase()];
       const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? ""; // status do catálogo — só informativo
+
+      /**
+       * Nome de CADA campanha em que este anúncio rodou. `cfg.porItem` só
+       * conhece a campanha principal, então as demais (ex.: uma campanha
+       * antiga que gastou no começo do período) sairiam sem nome. O resumo de
+       * campanhas da conta cobre esse caso.
+       */
+      const campanhas = a.campanhas.map((f) => ({
+        ...f,
+        // Nome resolvido abaixo; `sales`/`units` já vêm da fatia e são a base
+        // do ROAS que o painel do Mercado Ads mostra.
+        campaignName:
+          nomePorCampanha.get(f.campaignId)
+          ?? (f.campaignId === (c?.campaignId ?? "") ? c?.campaignName ?? "" : "")
+          ?? "",
+      }));
+
       return {
         itemId: a.itemId, title: a.title,
         status: statusLabel(c?.campaignId ?? "", c?.status ?? ""),
@@ -220,6 +242,7 @@ export async function GET(req: Request) {
         dailyBudget: c?.dailyBudget ?? 0,
         roasTarget: c?.roasTarget ?? 0,
         acosTarget: c?.acosTarget ?? 0,
+        campanhas,
       };
       // Sem campanha vai pro fim da lista, não importa o investimento — é
       // ruído pra quem quer olhar o que está rodando de verdade primeiro.

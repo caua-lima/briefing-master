@@ -21,6 +21,22 @@ export type AdItem = {
    *  — não é prejuízo real, é falta de dado (ver route.ts). */
   diretoDisponivel: boolean;
   dailyBudget: number; roasTarget: number; acosTarget: number;
+  /**
+   * O investimento deste anúncio fatiado por campanha. Um anúncio pode rodar
+   * em mais de uma campanha no mesmo período (inclusive uma já excluída), e
+   * só esta fatia bate com o painel do Mercado Ads — ver AdItemFull.campanhas
+   * em lib/ml/ads.ts.
+   */
+  campanhas: AdItemCampanhaUI[];
+};
+
+export type AdItemCampanhaUI = {
+  campaignId: string;
+  campaignName: string;
+  clicks: number; prints: number; cost: number;
+  /** Receita/unidades atribuídas TOTAIS (direta + assistida) — base do ROAS do painel do ML. */
+  sales: number; units: number;
+  directSales: number; directUnits: number;
 };
 
 export const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {
@@ -43,6 +59,24 @@ export type LinhaAds = {
    * gastando zero em ads — não existe alvo possível.
    */
   roasIdeal: number | null; abaixoDoIdeal: boolean;
+  /**
+   * Quanto sobraria se o anúncio atingisse o ROAS ideal, mantendo a receita
+   * de hoje (ver lucroNoRoas). É o ROAS ideal traduzido em dinheiro — "62,75x"
+   * não move ninguém até virar "+R$ 38".
+   */
+  lucroNoIdeal: number | null;
+  /** Ganho sobre o lucro de hoje se o ideal fosse atingido. null = sem base. */
+  ganhoNoIdeal: number | null;
+  /** Por que não há ROAS ideal — texto pro tooltip no lugar do "—" mudo. */
+  motivoSemIdeal: string | null;
+  /**
+   * ROAS como o painel do Mercado Ads calcula: receita atribuída TOTAL
+   * (clique direto + venda assistida) ÷ investido. Difere do `r` acima, que
+   * segue o modo escolhido na tela — e é justamente essa diferença de
+   * definição que faz o número daqui parecer errado ao lado do ML.
+   * null quando não houve investimento.
+   */
+  roasMlAds: number | null;
   lucroAtual: number | null; margemAtual: number | null;
   reco: AdRecommendation;
 };

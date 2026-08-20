@@ -51,8 +51,20 @@ export default function AdsCampaignList({ itens, modo }: { itens: ItemParaCampan
                 </td>
                 <td data-label="Investido" style={{ color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(c.cost)}</td>
                 <td data-label="Receita" style={{ color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(c.receita)}</td>
+                {/* Dois ROAS de propósito: o do modo escolhido e o do painel do
+                    Mercado Ads (receita atribuída total). Sem o segundo, o
+                    número daqui parece quebrado ao lado do ML — foi o que gerou
+                    "o ROAS está errado" (4,71x aqui × 10,77x lá, mesma campanha). */}
                 <td data-label="ROAS" style={{ fontWeight: 700, whiteSpace: "nowrap", color: c.roas != null ? corRoas(c.roas) : "var(--muted)" }}>
                   {c.roas != null ? `${num(c.roas, 2)}x` : "—"}
+                  {c.roasMlAds != null && c.roas != null && Math.abs(c.roasMlAds - c.roas) > 0.01 && (
+                    <span
+                      style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}
+                      title={`No Mercado Ads esta campanha aparece com ROAS ${num(c.roasMlAds, 2)}x, porque lá a conta usa a receita atribuída TOTAL (${fmtBRL(c.receitaAtribuida)}: clique direto + venda assistida). Aqui a base é ${fmtBRL(c.receita)}. Os dois estão certos e respondem perguntas diferentes.`}
+                    >
+                      ML: {num(c.roasMlAds, 2)}x
+                    </span>
+                  )}
                 </td>
                 <td
                   data-label="Lucro após Ads"

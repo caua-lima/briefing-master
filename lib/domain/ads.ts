@@ -47,6 +47,57 @@ export function calculateTargetRoas(
   return vendas / folga;
 }
 
+/**
+ * Lucro que sobraria se o anúncio atingisse um ROAS alvo, mantendo a MESMA
+ * receita de hoje.
+ *
+ * A pergunta que isto responde é "vale perseguir esse ROAS?". O ROAS ideal
+ * sozinho é uma meta abstrata — R$ 62,75x não diz nada até virar dinheiro.
+ *
+ * Como o ROAS alvo é atingido cortando investimento (R fixo, C menor):
+ *     C_alvo = R / ROAS_alvo
+ *     lucro  = L0 − C_alvo
+ *
+ * Vale dizer o que isto NÃO é: uma previsão. Cortar investimento pela metade
+ * costuma derrubar a receita junto, e aí o resultado real fica abaixo daqui.
+ * É o teto do que aquele ROAS entregaria — bom pra comparar anúncios entre si,
+ * não pra prometer resultado.
+ *
+ * Devolve null sem receita ou sem ROAS alvo: seria divisão por zero.
+ */
+export function lucroNoRoas(
+  vendas: number,
+  lucroAntesAds: number,
+  roasAlvo: number | null,
+): number | null {
+  if (roasAlvo == null || roasAlvo <= 0 || vendas <= 0) return null;
+  return lucroAntesAds - vendas / roasAlvo;
+}
+
+/**
+ * Por que não há ROAS ideal pra este anúncio — o texto que substitui o "—" mudo.
+ *
+ * Um traço na coluna faz parecer defeito da tela. Na verdade são três
+ * situações bem diferentes, e cada uma pede uma ação diferente de quem lê:
+ * faltar venda é esperar/investir, o produto não fechar conta é mexer em
+ * preço ou custo, e a meta ser inalcançável é rever a meta.
+ */
+export function motivoSemRoasIdeal(
+  vendas: number,
+  lucroAntesAds: number,
+  metaMargemPct: number,
+): string | null {
+  if (vendas > 0 && lucroAntesAds > 0) {
+    const m = Math.max(metaMargemPct, 0) / 100;
+    if (lucroAntesAds - m * vendas > 0) return null; // tem ROAS ideal
+    return `Este produto rende ${((lucroAntesAds / vendas) * 100).toFixed(1)}% antes do ads — abaixo da meta de ${metaMargemPct}%. Nenhum ROAS alcança essa margem: o ajuste é no preço ou no custo, não na campanha.`;
+  }
+  if (vendas <= 0) {
+    return "Sem venda atribuída no período — sem receita não dá pra calcular o ROAS que cobre a meta.";
+  }
+  return "O produto não cobre o próprio custo antes do ads (lucro antes do ads é zero ou negativo). Não existe ROAS que torne este anúncio lucrativo.";
+}
+
 export type AdRecommendation = {
   acao: "pausar" | "reduzir" | "escalar" | "sem-dados";
   label: string;
