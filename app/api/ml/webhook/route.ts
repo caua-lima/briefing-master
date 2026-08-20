@@ -60,6 +60,41 @@ async function metaMargemAtual(db: FirebaseFirestore.Firestore): Promise<number 
   }
 }
 
+/**
+ * Idade máxima de um pedido para ainda valer push de "venda confirmada".
+ *
+ * O ML dispara o webhook a cada mudança do pedido — inclusive de ENVIO, dias
+ * depois da venda. Sem este teto, um pedido antigo que nunca gerou evento
+ * (app fora do ar na hora, webhook cadastrado depois) viraria "venda
+ * confirmada" agora, notificando algo que já foi.
+ *
+ * 12h cobre com folga o atraso/retry real do ML sem ressuscitar venda velha.
+ */
+const IDADE_MAX_VENDA_MS = 12 * 3600 * 1000;
+
+/**
+ * A venda é recente o bastante pra valer push?
+ *
+ * Substitui o antigo `!jaEstavaPago` (status anterior gravado em ml_orders),
+ * que era uma FONTE ERRADA de "já notifiquei": o sync (cron diário e o
+ * automático do Dashboard a cada 15 min, ver components/dashboard/Dashboard.tsx)
+ * grava `status: "paid"` no MESMO doc sem criar evento nenhum. Quando o sync
+ * chegava antes do webhook — corrida pura, decidida por segundos — o webhook
+ * via "paid" e concluía que já havia notificado. A venda entrava no
+ * Dashboard normalmente e o push simplesmente nunca saía: exatamente o
+ * "algumas vendas chegam, outras não".
+ *
+ * Quem garante "só um push por pedido" é o `dedupeKey` sale_paid:{orderId}
+ * em notification_events, via DocumentReference.create() — atômico no
+ * Firestore, imune a corrida (ver lib/notification-events.ts). Este teto de
+ * idade cuida só do outro risco: notificar venda antiga.
+ */
+function vendaRecente(dateCreated: string): boolean {
+  const t = Date.parse(dateCreated);
+  if (!Number.isFinite(t)) return true; // sem data confiável, não silencia
+  return Date.now() - t <= IDADE_MAX_VENDA_MS;
+}
+
 function tipoParaSeveridade(type: NotificationEventType): NotificationEventSeverity {
   switch (type) {
     case "sale_high_value": case "sale_paid": return "success";
@@ -165,7 +200,13 @@ export async function POST(req: Request) {
     const db = getAdminDb();
     const ref = db.collection("ml_orders").doc(orderId);
     const antes = await ref.get();
-    const jaEstavaPago = antes.exists && antes.data()?.status === "paid";
+    const dataCriacao = String(order.date_created ?? "");
+    /**
+     * "Já era paga ANTES de nós existirmos como registro" — só serve pro
+     * cancelamento, que precisa saber se a venda chegou a valer. Para a venda
+     * em si NÃO se usa mais este sinal: ver vendaRecente() acima.
+     */
+    const jaConheciaComoPago = antes.exists && antes.data()?.status === "paid";
 
     // Mantém o dashboard atualizado mesmo em chamadas que não geram evento
     // (troca de status de envio, etc.) — sincronização completa (frete,
@@ -196,8 +237,10 @@ export async function POST(req: Request) {
       updatedAt: new Date().toISOString(),
     }, { merge: true });
 
-    // ── Venda confirmada (transição pra "paid") ──────────────────
-    if (status === "paid" && !jaEstavaPago) {
+    // ── Venda confirmada ─────────────────────────────────────────
+    // A dedupe por `sale_paid:{orderId}` é que garante um push só; aqui só
+    // filtramos venda antiga (ver vendaRecente).
+    if (status === "paid" && vendaRecente(dataCriacao)) {
       const [{ porMlb, porSku }, metaMargem] = await Promise.all([
         carregarProdutos(db),
         metaMargemAtual(db),
@@ -267,8 +310,21 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── Cancelamento (só conta se já tínhamos marcado como paga antes) ──
-    if (status === "cancelled" && jaEstavaPago) {
+    /**
+     * ── Cancelamento ──
+     * Só avisa se a venda chegou a ser ANUNCIADA como venda. A pergunta certa
+     * é "existe evento sale_paid deste pedido?", não "o doc do pedido estava
+     * com status paid?": o sync sobrescreve esse status direto pra
+     * "cancelled" (mesma corrida descrita em vendaRecente), e aí o
+     * cancelamento de uma venda que o usuário JÁ tinha visto passava batido.
+     * `jaConheciaComoPago` fica como atalho — se o doc ainda diz "paid", não
+     * precisa nem ler notification_events.
+     */
+    const anunciamosAVenda = status !== "cancelled"
+      ? false // nem chega a ler: só o ramo de cancelamento usa este sinal
+      : jaConheciaComoPago ||
+        (await db.collection("notification_events").doc(`sale_paid:${orderId}`).get()).exists;
+    if (status === "cancelled" && anunciamosAVenda) {
       const dedupeKey = `sale_cancelled:${orderId}`;
       const valorImpacto = Number(order.total_amount ?? antes.data()?.total_amount ?? 0);
       const content = buildCancelContent(primeiro, items.length, valorImpacto);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getMlAccessToken } from "../token";
+import { readShippingCosts } from "@/lib/ml/orders";
 
 const ML_API = "https://api.mercadolibre.com";
 const SELLER_ID = process.env.ML_SELLER_ID || "2420261535";
@@ -58,6 +59,30 @@ export async function GET(req: Request) {
     const fromISO = iso(from);
     const toISO = iso(to, true);
 
+    /**
+     * ── Taxas REAIS por produto, medidas nas vendas que já aconteceram ──
+     *
+     * O lucro projetado de um produto parado no estoque precisa de comissão e
+     * frete, e nenhum dos dois é dedutível do cadastro: a alíquota do ML muda
+     * com o preço e por categoria (medido: 14% a R$78,99 e 11% a R$250 no
+     * MESMO anúncio — ver lib/domain/preco-simulacao.ts), e o frete depende de
+     * quem paga. Estimar por fórmula erraria justamente onde a decisão pesa.
+     *
+     * Em vez de consultar listing_prices produto a produto (dezenas de
+     * chamadas, e o ML aplica rate limit), medimos o que a conta de fato
+     * pagou: `sale_fee` vem em cada order_item e o frete sai do cache que o
+     * sync já grava. Produto SEM venda no período fica de fora do mapa — a
+     * tela mostra "—", nunca um lucro inventado.
+     */
+    const financeiro: Record<string, { receita: number; taxaML: number; frete: number; unidades: number }> = {};
+    const acumular = (pid: string, campo: "receita" | "taxaML" | "frete" | "unidades", v: number) => {
+      const atual = financeiro[pid] ?? { receita: 0, taxaML: 0, frete: 0, unidades: 0 };
+      atual[campo] += v;
+      financeiro[pid] = atual;
+    };
+    /** order_id → produtos e unidades daquele pedido, pra ratear o frete depois. */
+    const rateioFrete: { orderId: string; porProduto: Map<string, number>; totalUnidades: number }[] = [];
+
     // Pedidos do período (paginado). Cancelados/inválidos não contam como venda.
     const vendas: Record<string, number> = {};
     let offset = 0;
@@ -75,13 +100,25 @@ export async function GET(req: Request) {
         const status = String(o.status ?? "").toLowerCase();
         if (status === "cancelled" || status === "invalid") continue;
         const items = (o.order_items as Record<string, unknown>[]) ?? [];
+        const porProduto = new Map<string, number>();
+        let totalUnidades = 0;
         for (const it of items) {
           const item = (it.item as Record<string, unknown>) ?? {};
           const mlbNum = normalizeItemId(String(item.id ?? ""));
           const sku = normalizeSku(String(item.seller_sku ?? ""));
+          const qty = Number(it.quantity ?? 0) || 0;
+          totalUnidades += qty;
           const pid = porMlb.get(mlbNum) ?? porSku.get(sku);
           if (!pid) continue;
-          vendas[pid] = (vendas[pid] ?? 0) + (Number(it.quantity ?? 0) || 0);
+          vendas[pid] = (vendas[pid] ?? 0) + qty;
+          // sale_fee é POR UNIDADE (mesma leitura de app/api/ml/metrics/route.ts).
+          acumular(pid, "receita", Number(it.unit_price ?? 0) * qty);
+          acumular(pid, "taxaML", Number(it.sale_fee ?? 0) * qty);
+          acumular(pid, "unidades", qty);
+          porProduto.set(pid, (porProduto.get(pid) ?? 0) + qty);
+        }
+        if (porProduto.size > 0) {
+          rateioFrete.push({ orderId: String(o.id ?? ""), porProduto, totalUnidades });
         }
       }
       const totalPag = data.paging?.total ?? 0;
@@ -89,7 +126,21 @@ export async function GET(req: Request) {
       if (offset >= totalPag || results.length === 0) break;
     }
 
-    const body = { vendas, dias, from: fromISO.slice(0, 10), to: toISO.slice(0, 10) };
+    /**
+     * Frete por produto: `shipping_cost` é do PEDIDO, então rateia por unidade
+     * (mesma regra de metrics/route.ts, pra simulação e realizado não
+     * divergirem). Vem do cache que o sync grava — a busca de pedidos não
+     * traz o custo de envio.
+     */
+    const custosFrete = await readShippingCosts(db, rateioFrete.map((r) => r.orderId));
+    for (const { orderId, porProduto, totalUnidades } of rateioFrete) {
+      const frete = custosFrete.get(orderId) ?? 0;
+      if (frete <= 0 || totalUnidades <= 0) continue;
+      const porUnidade = frete / totalUnidades;
+      for (const [pid, qty] of porProduto) acumular(pid, "frete", porUnidade * qty);
+    }
+
+    const body = { vendas, financeiro, dias, from: fromISO.slice(0, 10), to: toISO.slice(0, 10) };
     cache = { at: Date.now(), dias, body };
     return NextResponse.json(body);
   } catch (err: unknown) {

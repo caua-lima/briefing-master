@@ -98,8 +98,21 @@ type MlMetrics = {
   devolucoesDetalhe?: Devolucao[];
   adsDiag?:           unknown;
   adsFalhou?:         boolean;
+  conciliacao?:       Conciliacao;
   from:               string;
   to:                 string;
+};
+
+/** Espelho das métricas do Seller Center — ver o bloco `conciliacao` em app/api/ml/metrics/route.ts. */
+type Conciliacao = {
+  vendasBrutas:          number;
+  quantidadeVendas:      number;
+  unidadesVendidas:      number;
+  precoMedioPorVenda:    number;
+  precoMedioPorUnidade:  number;
+  canceladasQuantidade:  number;
+  canceladasValor:       number;
+  descartadosForaDaJanela: number;
 };
 
 type Devolucao = {
@@ -507,6 +520,93 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
         ))}
       </div>
       <div className="hero-foot">Lucro líquido = retorno − CMV − ADS − Full − taxas ML − imposto</div>
+    </section>
+  );
+}
+
+/**
+ * ── Conferência com o Mercado Livre ──
+ *
+ * Painel de conciliação: as mesmas métricas do "Resumo de desempenho" do
+ * Seller Center, calculadas aqui. Existe porque "o número não bate" é
+ * impossível de investigar comparando um total contra outro — a divergência
+ * quase sempre está numa DEFINIÇÃO, não num erro de soma.
+ *
+ * A confusão mais comum, e o motivo deste painel: o "Vendas brutas" do
+ * Seller Center NÃO conta pedido cancelado; o "Faturamento bruto" do card
+ * acima conta de propósito, pra o cancelamento aparecer como linha própria.
+ * Comparar os dois direto sempre vai dar diferença — o número comparável é o
+ * "Vendas brutas" daqui.
+ */
+function ConferenciaML({ c, periodo }: { c: Conciliacao; periodo: string }) {
+  const [aberto, setAberto] = useState(false);
+
+  const linhas: { rotulo: string; valor: string; noML: string }[] = [
+    { rotulo: "Vendas brutas", valor: fmtBRL(c.vendasBrutas), noML: "Vendas brutas" },
+    { rotulo: "Quantidade de vendas", valor: String(c.quantidadeVendas), noML: "Quantidade de vendas" },
+    { rotulo: "Unidades vendidas", valor: String(c.unidadesVendidas), noML: "Unidades vendidas" },
+    { rotulo: "Preço médio por venda", valor: fmtBRL(c.precoMedioPorVenda), noML: "Preço médio por venda" },
+    { rotulo: "Preço médio por unidade", valor: fmtBRL(c.precoMedioPorUnidade), noML: "Preço médio por unidade" },
+    { rotulo: "Vendas canceladas", valor: `${c.canceladasQuantidade} · ${fmtBRL(c.canceladasValor)}`, noML: "Quantidade de vendas canceladas" },
+  ];
+
+  return (
+    <section className="panel">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+          width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer",
+          color: "inherit", textAlign: "left",
+        }}
+      >
+        <span>
+          <span className="panel-title">Conferência com o Mercado Livre</span>
+          <span className="panel-sub" style={{ display: "block" }}>
+            compare com “Resumo de desempenho” do Seller Center · {periodo}
+          </span>
+        </span>
+        <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>{aberto ? "▲" : "▼"}</span>
+      </button>
+
+      {aberto && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {linhas.map((l) => (
+              <div
+                key={l.rotulo}
+                style={{
+                  display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10,
+                  padding: "8px 10px", borderRadius: 8, background: "var(--surface-raised,var(--surface2))",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: ".82rem", fontWeight: 600 }}>
+                  {l.rotulo}
+                  <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}>
+                    no ML: “{l.noML}”
+                  </span>
+                </span>
+                <span className="money" style={{ fontWeight: 700, fontSize: ".95rem" }}>{l.valor}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.6 }}>
+            <b>Se “Vendas brutas” bater e o card acima não</b>, está tudo certo: o
+            “Faturamento bruto” do card inclui os cancelados de propósito, e o ML não.
+            {c.descartadosForaDaJanela > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--yellow)" }}>{c.descartadosForaDaJanela} pedido(s)</b> vieram
+                do ML com data fora do período e foram descartados — é a borda de fuso
+                horário, e sem esse corte eles inflariam o faturamento.
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1346,6 +1446,13 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               <Kpi label="Devoluções" value={mlMetrics?.vendasDevolvidas ?? 0} tone="neg" sub="0 a 0 (produto volta ao estoque)" />
             </div>
           </section>
+
+          {mlMetrics?.conciliacao && (
+            <ConferenciaML
+              c={mlMetrics.conciliacao}
+              periodo={`${formatDateBR(mlMetrics.from)} a ${formatDateBR(mlMetrics.to)}`}
+            />
+          )}
 
           {/* Central de Atenção — abaixo dos KPIs, acima das tabelas secundárias */}
           {mlMetrics && (

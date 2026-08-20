@@ -5,6 +5,7 @@ import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, TIPO_MOVIMENTO_LABEL
 import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, consolidarEstoqueAnuncios, ehFullLogistic, estoqueForaDoFull, type CoverageStatus } from "@/lib/domain/estoque";
+import { calcularLucroEstoque, medirTaxas, type FinanceiroProduto, type LucroEstoque } from "@/lib/domain/estoque-lucro";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -13,7 +14,12 @@ import { gravarChaveApp, lerChaveApp } from "@/lib/storage";
 
 type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string; inventoryId?: string };
 type EstoqueML = Record<string, MlItem>;
-type Forecast = { vendas: Record<string, number>; dias: number };
+type Forecast = {
+  vendas: Record<string, number>;
+  dias: number;
+  /** Realizado por produto — base das taxas medidas (ver lib/domain/estoque-lucro.ts). */
+  financeiro?: Record<string, FinanceiroProduto>;
+};
 
 // dias-alvo de cobertura pra sugestão de reposição
 const DIAS_ALVO = 30;
@@ -95,6 +101,12 @@ type PrevisaoProduto = {
   cobertura: number;    // dias até acabar o total (Infinity = sem vendas ou sem estoque)
   valorPotencial: number;
   reporQtd: number;     // unidades pra levar o Full a cobrir DIAS_ALVO (só produtos no Full)
+  /**
+   * Lucro que este estoque ainda pode render, com comissão e frete MEDIDOS
+   * nas vendas do período. `null` quando não há base (produto sem venda ou
+   * sem preço de anúncio) — a tela mostra "—", nunca R$ 0,00.
+   */
+  lucro: LucroEstoque | null;
 };
 
 function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): PrevisaoProduto {
@@ -120,7 +132,23 @@ function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): Previ
   const cobertura = mediaDiaria > 0 && total > 0 ? total / mediaDiaria : Infinity;
   // Reposição só faz sentido pra quem está no Full.
   const reporQtd = ehFull && mediaDiaria > 0 ? Math.max(0, Math.ceil(mediaDiaria * DIAS_ALVO) - full) : 0;
-  return { precoMin, precoMax, casa, full, proprio, ehFull, total, mediaDiaria, cobertura, valorPotencial, reporQtd };
+
+  /**
+   * Lucro projetado do que está parado. Precifica pelo MENOR preço entre os
+   * anúncios (precoMin), não o maior: o comprador escolhe o mais barato, então
+   * projetar pelo topo prometeria um lucro que a venda real não entrega.
+   * Imposto e custo saem da vigência de HOJE — é a decisão de hoje que está
+   * em jogo, não o histórico.
+   */
+  const lucro = calcularLucroEstoque({
+    preco: precoMin || precoMax,
+    custo: custoMedioDe(p),
+    impostoPct: impostoNaData(p, todayISO()),
+    unidades: total,
+    taxas: medirTaxas(forecast.financeiro?.[p.id]),
+  });
+
+  return { precoMin, precoMax, casa, full, proprio, ehFull, total, mediaDiaria, cobertura, valorPotencial, reporQtd, lucro };
 }
 
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
@@ -152,7 +180,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         authedFetch(`/api/ml/estoque-forecast?dias=${DIAS_ALVO}`, { cache: "no-store" }),
       ]);
       if (rMl.ok) setEstoqueML((await rMl.json()).estoque ?? {});
-      if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO }); }
+      if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO, financeiro: j.financeiro ?? {} }); }
     } catch { /* ignora */ } finally { setLoadingML(false); }
   }, []);
 
@@ -879,7 +907,10 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 6 }}>
         <span className="panel-title">Previsão de vendas e reposição</span>
-        <span className="panel-sub">preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias</span>
+        <span className="panel-sub">
+          preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias ·
+          lucro projetado com comissão e frete MEDIDOS nas vendas do período
+        </span>
       </div>
       {linhas.length === 0 ? (
         <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>Nenhum produto cadastrado ainda.</div>
@@ -897,6 +928,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                 <th style={{ textAlign: "right" }}>Repor (Full)</th>
                 <th style={{ textAlign: "right" }}>Custo estimado</th>
                 <th style={{ textAlign: "right" }}>Venda potencial</th>
+                <th style={{ textAlign: "right" }}>Lucro projetado</th>
                 <th style={{ textAlign: "center" }}>Planejado</th>
               </tr>
             </thead>
@@ -946,6 +978,30 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                       {custoEstimado > 0 ? fmtBRL(custoEstimado) : "—"}
                     </td>
                     <td data-label="Venda potencial" style={{ textAlign: "right", color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(f.valorPotencial)}</td>
+                    {/* Lucro projetado: o que a venda potencial vira DEPOIS de
+                        comissão, frete, custo e imposto. É a coluna que separa
+                        "estoque valioso" de "estoque que dá prejuízo girar". */}
+                    <td
+                      data-label="Lucro projetado"
+                      style={{
+                        textAlign: "right", fontWeight: 700, whiteSpace: "nowrap",
+                        color: f.lucro == null ? "var(--muted)" : f.lucro.lucroTotal >= 0 ? "var(--green)" : "var(--red)",
+                      }}
+                      title={
+                        f.lucro == null
+                          ? "Sem venda no período (ou sem preço no anúncio): não dá pra medir a comissão e o frete reais deste produto."
+                          : `${fmtBRL(f.lucro.lucroUnitario)} por unidade × ${f.total} un · margem ${f.lucro.margem.toFixed(1)}%`
+                      }
+                    >
+                      {f.lucro == null ? "—" : (
+                        <>
+                          {fmtBRL(f.lucro.lucroTotal)}
+                          <span style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}>
+                            {fmtBRL(f.lucro.lucroUnitario)}/un · {f.lucro.margem.toFixed(1)}%
+                          </span>
+                        </>
+                      )}
+                    </td>
                     <td data-label="Planejado" style={{ textAlign: "center" }}>
                       <input type="checkbox" checked={planejado} onChange={() => togglePlanejado(p.id)} aria-label={`Marcar ${p.name || "produto"} como reposição já planejada`} />
                     </td>

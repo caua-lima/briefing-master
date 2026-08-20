@@ -5,6 +5,7 @@ import { getAdsSpendByItem, probeAds } from "@/lib/ml/ads";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 import { getMlAccessToken } from "../token";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
+import { diaBRDe, recortarPorDiaBR } from "@/lib/domain/periodo-br";
 
 export const maxDuration = 30;
 
@@ -62,6 +63,10 @@ type Aggregates = {
   anuncios: AnuncioResult[];
   pedidosSemVinculo: number;
   ordersCount: number;
+  /** Unidades das vendas que valeram — comparável a "Unidades vendidas" do Seller Center. */
+  unidadesVendidas: number;
+  /** Quantidade de pedidos cancelados (não o valor) — o Seller Center mostra a contagem. */
+  canceladasCount: number;
   reconc: { count: number; nosso: number; real: number };
 };
 
@@ -156,6 +161,8 @@ function computeAggregates(
   let totalImposto = 0;
   let totalTaxasML = 0;
   let pedidosSemVinculo = 0;
+  let unidadesVendidas = 0;
+  let canceladasCount = 0;
 
   /**
    * Conferência contra o dinheiro real do Mercado Pago. Para cada pedido com
@@ -181,14 +188,15 @@ function computeAggregates(
 
     // Cancelado = "não venda" (estoque nem saiu). Fica só no bruto; sai do
     // faturamento líquido e do lucro. Status vem do próprio pedido (robusto).
-    if (isNaoVenda(o.status) || cancelIds.has(oid)) { vendasCanceladas += totalAmt; continue; }
+    if (isNaoVenda(o.status) || cancelIds.has(oid)) { vendasCanceladas += totalAmt; canceladasCount++; continue; }
     // Devolvido = venda revertida, produto volta ao estoque → 0 a 0. Idem: só no bruto.
     if (devolIds.has(oid)) { vendasDevolvidas += totalAmt; continue; }
 
     ordersCount++;
+    unidadesVendidas += ((o.items as OrderItem[]) ?? []).reduce((s, it) => s + Number(it.quantity ?? 1), 0);
     // A alíquota é a que valia no dia da venda: mudar o imposto hoje não pode
     // reescrever o lucro de meses já fechados.
-    const diaPedido = String(o.date_created ?? "").slice(0, 10);
+    const diaPedido = diaBRDe(String(o.date_created ?? ""));
     const items = (o.items as OrderItem[]) ?? [];
 
     // Frete Full do pedido distribuído por unidade (envio é por pedido)
@@ -314,6 +322,8 @@ function computeAggregates(
     anuncios,
     pedidosSemVinculo,
     ordersCount,
+    unidadesVendidas,
+    canceladasCount,
     reconc: { count: reconcCount, nosso: reconcNosso, real: reconcReal },
   };
 }
@@ -408,6 +418,15 @@ export async function GET(req: Request) {
     if (!orders) orders = await loadOrders(db, start, end, startBR, endBR);
     if (!ordersHoje) ordersHoje = await loadOrders(db, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, hjFromISO, hjToISO);
 
+    /**
+     * Recorte final pelo dia BR — ver recortarPorDiaBR. É o que faz o
+     * faturamento do app fechar com o "Vendas brutas" do Seller Center em vez
+     * de vir alguns reais acima por causa das vendas da borda.
+     */
+    const recorte = recortarPorDiaBR(orders, fromStr, toStr);
+    orders = recorte.dentro;
+    ordersHoje = recortarPorDiaBR(ordersHoje, hj, hj).dentro;
+
     // enriquece o frete (shipping_cost) a partir do cache do Firestore
     const allIds = [...orders, ...ordersHoje].map((o) => String(o.order_id ?? "")).filter(Boolean);
     const shipMap = await readShippingCosts(db, allIds);
@@ -422,8 +441,21 @@ export async function GET(req: Request) {
       db.collection("ml_returns").where("date_created", ">=", start).where("date_created", "<=", end).get(),
       db.collection("ml_returns").where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
+    /**
+     * A consulta acima UNE uma janela UTC com uma janela BR — união que
+     * arrasta as 3 últimas horas do dia ANTERIOR ao período (ver
+     * recortarPorDiaBR). Para os Ids de cancelamento isso é inofensivo (um
+     * pedido de fora não está em `orders`), mas o total de Devoluções somava
+     * essa sobra e aparecia no KPI como devolução do período. Mesmo recorte
+     * por dia BR aqui, pelo mesmo motivo.
+     */
     const retMap = new Map<string, FirebaseFirestore.DocumentData>();
-    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
+    for (const snap of [retUTC, retBR]) {
+      for (const doc of snap.docs) {
+        const dia = diaBRDe(String(doc.data()?.date_created ?? ""));
+        if (dia >= fromStr && dia <= toStr) retMap.set(doc.id, doc.data());
+      }
+    }
     const cancelIds = new Set<string>();
     const devolIds = new Set<string>();
     const emAndamentoIds = new Set<string>();
@@ -448,7 +480,7 @@ export async function GET(req: Request) {
     for (const o of orders) {
       const oid = String(o.order_id ?? "");
       if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
-      const dia = String(o.date_created ?? "").slice(0, 10);
+      const dia = diaBRDe(String(o.date_created ?? ""));
       if (dia) serieMap.set(dia, (serieMap.get(dia) ?? 0) + Number(o.total_amount ?? 0));
     }
     const serieDiaria = Array.from(serieMap.entries())
@@ -471,7 +503,7 @@ export async function GET(req: Request) {
       .map(([id, r]) => ({
         order_id: String(r.order_id ?? ""),
         valor: Number(r.total_amount ?? 0),
-        data: String(r.date_created ?? "").slice(0, 10),
+        data: diaBRDe(String(r.date_created ?? "")),
         motivo: String(r.reason ?? r.motivo ?? ""),
         produto: String(r.produto ?? r.title ?? ""),
         tipo: String(r.tipo ?? r.status ?? ""),
@@ -589,6 +621,41 @@ export async function GET(req: Request) {
         totalImposto: aggHoje.totalImposto,
         lucroLiquido: lucroLiquidoHoje,
         pedidos: aggHoje.ordersCount,
+      },
+      /**
+       * ── Conciliação com o Seller Center ──
+       *
+       * As MESMAS quatro métricas do painel "Resumo de desempenho" do Mercado
+       * Livre, calculadas pelo nosso lado. Existe porque "o número não bate"
+       * é impossível de investigar comparando um total contra outro: sem
+       * separar venda, unidade e cancelamento, qualquer divergência vira
+       * chute.
+       *
+       * A diferença de DEFINIÇÃO que mais confunde: o "Vendas brutas" do
+       * Seller Center NÃO inclui os pedidos cancelados, enquanto o
+       * "Faturamento bruto" daqui inclui de propósito (para o cancelamento
+       * aparecer como linha própria). O campo comparável ao ML é
+       * `vendasBrutas` abaixo — igual ao faturamento líquido.
+       */
+      conciliacao: {
+        // Compare com "Vendas brutas" do Seller Center.
+        vendasBrutas: faturamentoLiquido,
+        // Compare com "Quantidade de vendas".
+        quantidadeVendas: agg.ordersCount,
+        // Compare com "Unidades vendidas".
+        unidadesVendidas: agg.unidadesVendidas,
+        // Compare com "Preço médio por venda" / "Preço médio por unidade".
+        precoMedioPorVenda: agg.ordersCount > 0 ? faturamentoLiquido / agg.ordersCount : 0,
+        precoMedioPorUnidade: agg.unidadesVendidas > 0 ? faturamentoLiquido / agg.unidadesVendidas : 0,
+        // Compare com "Quantidade de vendas canceladas".
+        canceladasQuantidade: agg.canceladasCount,
+        canceladasValor: agg.vendasCanceladas,
+        /**
+         * Pedidos que o ML devolveu mas cujo dia BR cai FORA do período — já
+         * descartados do cálculo (ver recortarPorDiaBR). Se vier > 0, é a
+         * borda de fuso agindo: sem o recorte eles inflariam o faturamento.
+         */
+        descartadosForaDaJanela: recorte.foraDaJanela,
       },
       serieDiaria,
       adsDiag,
