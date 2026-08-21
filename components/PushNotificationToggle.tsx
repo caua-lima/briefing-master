@@ -48,6 +48,8 @@ export function PushNotificationToggle() {
   const [enviando, setEnviando] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoTeste | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [diagnosticando, setDiagnosticando] = useState(false);
+  const [diagnostico, setDiagnostico] = useState<{ linhas: string[]; bruto: Record<string, unknown> | null } | null>(null);
 
   useEffect(() => {
     getPushStatus().then(setStatus);
@@ -83,6 +85,33 @@ export function PushNotificationToggle() {
    * em tela exatamente o que a Fase 7 pediu: evento criado, quantos
    * dispositivos, se enviou ou por que não.
    */
+  /**
+   * Diagnóstico da cadeia de push.
+   *
+   * "Não chega notificação" tem causas que pedem correções opostas — o ML não
+   * chamar o webhook, nenhum aparelho registrado, preferência bloqueando, ou
+   * o push sair e o aparelho não exibir. A rota mede cada uma; aqui só
+   * mostramos o veredito em texto.
+   */
+  async function rodarDiagnostico() {
+    if (diagnosticando) return;
+    setDiagnosticando(true);
+    setMenuAberto(false);
+    try {
+      const res = await authedFetch("/api/ml/diagnostico-push", { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      setDiagnostico(
+        json?.diagnostico
+          ? { linhas: json.diagnostico as string[], bruto: json as Record<string, unknown> }
+          : { linhas: ["Não consegui ler o diagnóstico agora."], bruto: null },
+      );
+    } catch (err) {
+      setDiagnostico({ linhas: [err instanceof Error ? err.message : "Falha ao consultar."], bruto: null });
+    } finally {
+      setDiagnosticando(false);
+    }
+  }
+
   async function testarCenario(scenario: string) {
     if (enviando) return;
     setEnviando(scenario);
@@ -216,6 +245,18 @@ export function PushNotificationToggle() {
             ))}
 
             <hr className="config-sep" style={{ margin: "4px 0" }} />
+            {/* A rota de diagnóstico exige token de acesso, então abrir a URL
+                direto no navegador devolve "unauthorized" — é daqui que ela
+                precisa ser chamada, com o authedFetch que já manda o token. */}
+            <button
+              type="button"
+              onClick={rodarDiagnostico}
+              disabled={diagnosticando}
+              className="btn btn-ghost"
+              style={{ justifyContent: "flex-start" }}
+            >
+              {diagnosticando ? "Verificando…" : "🩺 Diagnosticar notificações"}
+            </button>
             <button
               type="button"
               onClick={() => { setMenuAberto(false); setSettingsOpen(true); }}
@@ -275,6 +316,42 @@ export function PushNotificationToggle() {
           )}
           <div className="modal-btns">
             <button type="button" className="btn btn-ghost" onClick={() => setResultado(null)}>Fechar</button>
+          </div>
+        </Modal>
+      )}
+
+      {diagnostico && (
+        <Modal open onClose={() => setDiagnostico(null)}>
+          <div className="modal-title">Diagnóstico das notificações</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+            {diagnostico.linhas.map((l, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "10px 12px", borderRadius: 8, fontSize: ".84rem", lineHeight: 1.55,
+                  background: "var(--surface-raised,var(--surface2))",
+                  borderLeft: "3px solid var(--warning)",
+                }}
+              >
+                {l}
+              </div>
+            ))}
+          </div>
+          {diagnostico.bruto != null && (
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: "pointer", color: "var(--muted)", fontSize: ".78rem" }}>
+                Dados completos (pra copiar num relato)
+              </summary>
+              <pre style={{
+                marginTop: 8, maxHeight: 260, overflow: "auto", fontSize: ".68rem",
+                background: "var(--surface)", padding: 10, borderRadius: 8, whiteSpace: "pre-wrap", wordBreak: "break-word",
+              }}>
+                {JSON.stringify(diagnostico.bruto, null, 2)}
+              </pre>
+            </details>
+          )}
+          <div className="modal-btns">
+            <button type="button" className="btn btn-ghost" onClick={() => setDiagnostico(null)}>Fechar</button>
           </div>
         </Modal>
       )}
