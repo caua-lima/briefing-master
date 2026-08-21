@@ -138,3 +138,71 @@ describe("motivoSemRoasIdeal — explica o traco em vez de so mostrar '—'", ()
     expect(m).toMatch(/preço ou no custo/);
   });
 });
+
+describe("getAdRecommendation — nao chamar conclusao de 'sem dados'", () => {
+  const base = {
+    clicks: 30, vendas: 100, cost: 10, lucro: 5, roas: 10,
+    roasTarget: 0, breakEvenRoas: 5, margem: 20, metaMargem: 10,
+    lucroAntesAds: 15,
+  };
+
+  it("produto no vermelho ANTES do ads aponta preco/custo, nao a campanha", () => {
+    // Caso medido: Boldo com ROAS 33x e lucroAntesAds -2,95. Antes isso caia
+    // em "Sem dados suficientes", mandando esperar dado que ja existia.
+    const r = getAdRecommendation({ ...base, clicks: 4, vendas: 39.8, cost: 1.2, lucro: -4.15, roas: 33.17, breakEvenRoas: null, margem: -10.4, lucroAntesAds: -2.95 });
+    expect(r.label).toMatch(/vermelho antes do Ads/);
+    expect(r.tone).toBe("critical");
+  });
+
+  it("vale mesmo com ROAS excelente — o ROAS nao salva produto que nao se paga", () => {
+    const r = getAdRecommendation({ ...base, roas: 99, lucroAntesAds: -1 });
+    expect(r.label).toMatch(/vermelho antes do Ads/);
+  });
+
+  it("gasto relevante sem venda atribuida vira alerta, nao 'sem dados'", () => {
+    const r = getAdRecommendation({ ...base, vendas: 0, cost: 50, lucro: -50, roas: 0, breakEvenRoas: null, margem: null, lucroAntesAds: null });
+    expect(r.acao).toBe("reduzir");
+    expect(r.label).toMatch(/sem venda atribuída/);
+  });
+
+  it("gasto pequeno sem venda diz QUANTO e quantos cliques, nao so 'sem dados'", () => {
+    const r = getAdRecommendation({ ...base, clicks: 10, vendas: 0, cost: 4.79, lucro: -4.79, roas: 0, breakEvenRoas: null, margem: null, lucroAntesAds: null });
+    expect(r.label).toMatch(/10 clique/);
+    expect(r.label).toMatch(/4,79/);
+  });
+
+  it("zero clique e zero venda: nao ha o que concluir mesmo", () => {
+    const r = getAdRecommendation({ ...base, clicks: 0, vendas: 0, cost: 0.68, lucro: null, roas: 0, breakEvenRoas: null, margem: null, lucroAntesAds: null });
+    expect(r.label).toBe("Sem cliques no período");
+  });
+
+  it("volume baixo COM venda diz o que falta pra concluir", () => {
+    const r = getAdRecommendation({ ...base, clicks: 5, margem: 2, roasTarget: 0, breakEvenRoas: 3, roas: 4 });
+    expect(r.label).toMatch(/Volume baixo/);
+    expect(r.label).toMatch(/5 clique/);
+  });
+
+  it("saudavel continua saudavel — a mudanca nao rouba o caso bom", () => {
+    const r = getAdRecommendation(base);
+    expect(r.acao).toBe("escalar");
+  });
+
+  it("prejuizo confirmado com gasto relevante continua critico", () => {
+    const r = getAdRecommendation({ ...base, lucro: -30, cost: 60, margem: -5, lucroAntesAds: 10 });
+    expect(r.acao).toBe("pausar");
+    expect(r.label).toMatch(/prejuízo confirmado/);
+  });
+
+  it("nenhum caminho devolve mais o texto generico antigo", () => {
+    const casos = [
+      { ...base },
+      { ...base, clicks: 0, vendas: 0 },
+      { ...base, vendas: 0, cost: 50 },
+      { ...base, clicks: 5, margem: 2, breakEvenRoas: 3, roas: 4 },
+      { ...base, lucroAntesAds: -1 },
+    ];
+    for (const c of casos) {
+      expect(getAdRecommendation(c).label).not.toBe("Sem dados suficientes");
+    }
+  });
+});

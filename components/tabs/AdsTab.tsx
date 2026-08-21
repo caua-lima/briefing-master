@@ -219,6 +219,9 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
       clicks: i.clicks, vendas: v, cost: i.cost, lucro: lucroAtual, roas: r,
       roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
       metaMargem,
+      // Sem isto, "produto no vermelho antes do ads" era rotulado como falta
+      // de dado — ver getAdRecommendation.
+      lucroAntesAds: lucroAntes,
     });
     const ganhoNoIdeal = lucroNoIdeal != null && lucroAtual != null ? lucroNoIdeal - lucroAtual : null;
     // O mesmo ROAS que aparece no painel do Mercado Ads (receita atribuída total).
