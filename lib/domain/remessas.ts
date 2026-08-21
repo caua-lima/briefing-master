@@ -69,3 +69,42 @@ export function remessasPendentes(
     (r) => !r.ehTransferencia && !ignoradas.has(r.remessa) && !remessaTemBaixa(r, movimentos),
   );
 }
+
+/**
+ * Unidades que estão contadas DUAS vezes: já entraram no Full e ainda não
+ * saíram do livro do galpão.
+ *
+ * ─── POR QUE ISTO EXISTE ────────────────────────────────────────────────
+ *
+ * O `qtdLocal` ("em casa") só desce quando alguém registra a saída pro Full.
+ * Mas a baixa automática roda dentro da aba Full, e só depois de clicar em
+ * "Buscar remessas" — quem não abre aquela aba nunca dispara nada. Enquanto
+ * isso, as unidades já chegaram no centro de distribuição e passam a contar
+ * no Full também.
+ *
+ * O resultado é um total inflado que parece um erro de cálculo: 23 un "em
+ * casa" que já não existem, somadas às 22 que estão no Full, viram 45 — sendo
+ * que existem 22. Foi exatamente assim que apareceu.
+ *
+ * Isto NÃO corrige o número sozinho, de propósito. A baixa é lançamento de
+ * verdade: mexe no livro e no custo médio. Descontar só na tela faria o
+ * painel discordar do livro, trocando um problema por outro mais difícil de
+ * enxergar. O que devolvemos é o tamanho exato da diferença, pra tela poder
+ * dizer quanto está duplicado e mandar a pessoa pro lugar que resolve.
+ */
+export function unidadesPendentesPorProduto(
+  remessas: Remessa[],
+  movimentos: EstoqueMovimento[],
+  ignoradas: Set<string>,
+): Map<string, number> {
+  const porProduto = new Map<string, number>();
+  for (const r of remessasPendentes(remessas, movimentos, ignoradas)) {
+    for (const p of r.produtos) {
+      // Produto sem cadastro não tem de quem descontar — não há duplicação
+      // rastreável, e inventá-la aqui só geraria um alerta impossível de agir.
+      if (!p.productId || p.qtd <= 0) continue;
+      porProduto.set(p.productId, (porProduto.get(p.productId) ?? 0) + p.qtd);
+    }
+  }
+  return porProduto;
+}

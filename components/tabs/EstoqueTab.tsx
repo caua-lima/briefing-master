@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, TIPO_MOVIMENTO_LABEL, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
-import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
+import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
+import { unidadesPendentesPorProduto, type Remessa } from "@/lib/domain/remessas";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, consolidarEstoqueAnuncios, ehFullLogistic, estoqueForaDoFull, type CoverageStatus } from "@/lib/domain/estoque";
 import { calcularLucroEstoque, medirTaxas, type FinanceiroProduto, type LucroEstoque } from "@/lib/domain/estoque-lucro";
@@ -160,6 +161,8 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [forecast, setForecast] = useState<Forecast>({ vendas: {}, dias: DIAS_ALVO });
   const [loadingML, setLoadingML] = useState(false);
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
+  const [remessas, setRemessas] = useState<Remessa[]>([]);
+  const [remessasIgnoradas, setRemessasIgnoradas] = useState<Set<string>>(new Set());
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [agenciasProduct, setAgenciasProduct] = useState<Product | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -175,17 +178,39 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const carregarEstoque = useCallback(async () => {
     setLoadingML(true);
     try {
-      const [rMl, rFc] = await Promise.all([
+      const [rMl, rFc, rFull] = await Promise.all([
         authedFetch("/api/ml/estoque-ml", { cache: "no-store" }),
         authedFetch(`/api/ml/estoque-forecast?dias=${DIAS_ALVO}`, { cache: "no-store" }),
+        /**
+         * Remessas pro Full. Sem isto, um envio que chegou no centro mas
+         * ainda não teve a baixa lançada fica contado NOS DOIS lados — o
+         * livro do galpão não desceu e o Full já subiu — e o total aparece
+         * inflado sem nada explicando. A rota tem cache de 5 min do lado do
+         * servidor, então não é uma chamada cara. Best-effort: sem ela a aba
+         * funciona igual, só sem o aviso.
+         */
+        authedFetch("/api/ml/gestao-full", { cache: "no-store" }).catch(() => null),
       ]);
       if (rMl.ok) setEstoqueML((await rMl.json()).estoque ?? {});
       if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO, financeiro: j.financeiro ?? {} }); }
+      if (rFull?.ok) { const j = await rFull.json(); setRemessas(j.remessas ?? []); }
     } catch { /* ignora */ } finally { setLoadingML(false); }
   }, []);
 
   useEffect(() => { carregarEstoque(); }, [carregarEstoque]);
   useEffect(() => watchMovimentos(setMovimentos), []);
+  useEffect(() => watchRemessasIgnoradas(setRemessasIgnoradas), []);
+
+  /**
+   * Unidades contadas duas vezes: já no Full e ainda no livro do galpão,
+   * porque a baixa da remessa nunca foi lançada (ver
+   * unidadesPendentesPorProduto). É o que fazia o total aparecer inflado sem
+   * explicação — 23 "em casa" que já não existiam somadas às 22 do Full.
+   */
+  const duplicadasPorProduto = useMemo(
+    () => unidadesPendentesPorProduto(remessas, movimentos, remessasIgnoradas),
+    [remessas, movimentos, remessasIgnoradas],
+  );
 
   const movsPorProduto = useMemo(() => {
     const map = new Map<string, EstoqueMovimento[]>();
@@ -363,6 +388,19 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         onChange={(e) => setSearch(e.target.value)} aria-label="Buscar produto"
       />
 
+      {/* Aviso no topo porque a causa do total inflado não está na linha de um
+          produto só — está numa remessa que ninguém baixou. Sem isto, o número
+          errado aparece e a explicação fica escondida num tooltip. */}
+      {duplicadasPorProduto.size > 0 && (
+        <div className="note note-warn">
+          <b>Estoque contado duas vezes</b> em {duplicadasPorProduto.size} produto(s):{" "}
+          {Array.from(duplicadasPorProduto.values()).reduce((s, n) => s + n, 0)} unidade(s) já chegaram
+          no Full mas a saída do galpão nunca foi lançada, então seguem contadas nos dois lugares e o
+          total fica maior do que o real. A baixa mexe no custo médio, por isso não é aplicada sozinha
+          — resolva em <b>Full › Remessas pro Full</b>.
+        </div>
+      )}
+
       {reabastecer.length > 0 && (
         <div className="note note-warn">
           <b>Full baixo</b> em {reabastecer.length} produto(s) — você tem unidades em casa pra enviar:{" "}
@@ -405,6 +443,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                     onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })}
                     onMov={(tipo) => setMovModal({ product: p, tipo })}
                     onAgencias={() => setAgenciasProduct(p)}
+                    duplicadas={duplicadasPorProduto.get(p.id) ?? 0}
                   />
                 ))}
               </tbody>
@@ -498,11 +537,13 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 }
 
 function ProductRow({
-  product, estoqueML, expanded, onToggle, onEdit, onMov, onAgencias,
+  product, estoqueML, expanded, onToggle, onEdit, onMov, onAgencias, duplicadas = 0,
 }: {
   product: Product;
   uid: string;
   estoqueML: EstoqueML;
+  /** Unidades já no Full que ainda não saíram do livro do galpão (0 = nenhuma). */
+  duplicadas?: number;
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -552,6 +593,19 @@ function ProductRow({
           {/* Sem Full, "Em casa" vem do maior anúncio próprio — e com dois
               anúncios sobre o mesmo galpão o número parece "faltar" se ninguém
               explicar de onde ele saiu. */}
+          {/* O livro do galpão só desce quando a saída pro Full é lançada. Até
+              lá as MESMAS unidades contam aqui e no Full — o total infla e
+              parece erro de cálculo. Mostramos o tamanho exato da diferença em
+              vez de descontar na tela: a baixa é lançamento de verdade (mexe no
+              custo médio), e corrigir só aqui faria o painel discordar do livro. */}
+          {duplicadas > 0 && (
+            <span
+              title={`${duplicadas} unidade(s) já chegaram no Full mas a baixa não foi lançada, então continuam contadas aqui TAMBÉM. O total deste produto está inflado nessas unidades. Resolva na aba Full › Remessas pro Full.`}
+              style={{ display: "block", fontSize: ".62rem", color: "var(--warning)", fontWeight: 700, cursor: "help" }}
+            >
+              ⚠ {duplicadas} un já no Full
+            </span>
+          )}
           {proprioCompartilhado && !ehFull && (
             <span
               title="Este produto está em mais de um anúncio fora do Full, e os dois vendem do MESMO estoque de casa. O total usa o maior declarado, não a soma: anunciar 18 e 18 é a mesma pilha de 18 unidades, não 36."
