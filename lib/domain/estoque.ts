@@ -72,6 +72,17 @@ export const COVERAGE_STATUS_LABEL: Record<CoverageStatus, string> = {
 //    uma FATIA do que o livro de movimentações já contabiliza, não um estoque
 //    adicional. Somar contava a mesma unidade duas vezes.
 //
+// 3. DOIS ANÚNCIOS PRÓPRIOS, UM GALPÃO SÓ. Fora do Full não existe
+//    `inventory_id` pra deduplicar: o anúncio não reserva estoque, ele só
+//    DECLARA quantas unidades aceita vender do monte que está em casa. É
+//    prática normal anunciar as mesmas 18 unidades em dois anúncios (18 e 18)
+//    em vez de partir 9 e 9 e perder venda nos dois. Somar dava 36 unidades
+//    que nunca existiram.
+//    Por isso o próprio entra pelo MAIOR declarado, não pela soma: com 18 e
+//    18, o galpão tem 18; com 18 e 10, tem pelo menos 18. É o piso confiável
+//    do monte físico, e errar pra baixo aqui é muito melhor que prometer
+//    estoque inexistente.
+//
 // A regra que sai disso: cada pool físico entra no total UMA vez.
 
 export type AnuncioEstoque = {
@@ -97,6 +108,12 @@ export type EstoqueConsolidado = {
   temDado: boolean;
   /** true quando 2+ anúncios Full dividiam um pool — serve pra explicar o número na tela. */
   fullCompartilhado: boolean;
+  /**
+   * true quando 2+ anúncios FORA do Full declaram estoque — eles vendem do
+   * mesmo galpão, então o total usa o maior em vez da soma. Serve pra tela
+   * explicar por que 18+18 aparece como 18.
+   */
+  proprioCompartilhado: boolean;
 };
 
 export function ehFullLogistic(logistic: string): boolean {
@@ -109,12 +126,18 @@ export function consolidarEstoqueAnuncios(anuncios: AnuncioEstoque[]): EstoqueCo
   let ehFull = false;
   let temDado = false;
   let fullCompartilhado = false;
+  let anunciosProprios = 0;
   const poolsContados = new Set<string>();
 
   for (const a of anuncios) {
     temDado = true;
     if (!ehFullLogistic(a.logistic)) {
-      proprio += a.available;
+      /**
+       * MAIOR, não soma: os anúncios próprios vendem do mesmo galpão e cada um
+       * só declara quanto aceita vender dele (ver armadilha 3 acima).
+       */
+      anunciosProprios += 1;
+      proprio = Math.max(proprio, a.available);
       continue;
     }
     ehFull = true;
@@ -127,7 +150,7 @@ export function consolidarEstoqueAnuncios(anuncios: AnuncioEstoque[]): EstoqueCo
     full += a.available;
   }
 
-  return { full, proprio, ehFull, temDado, fullCompartilhado };
+  return { full, proprio, ehFull, temDado, fullCompartilhado, proprioCompartilhado: anunciosProprios > 1 };
 }
 
 /**

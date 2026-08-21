@@ -40,7 +40,13 @@ describe("consolidarEstoqueAnuncios — Full compartilhado entre anúncios", () 
   it("so anuncio proprio nao marca ehFull", () => {
     const r = consolidarEstoqueAnuncios([proprio(30), proprio(12)]);
     expect(r.ehFull).toBe(false);
-    expect(r.proprio).toBe(42);
+    /**
+     * Este teste esperava 42 (a soma) e cristalizava um BUG: os dois anuncios
+     * proprios vendem do MESMO galpao, entao 30 e 12 nunca foram 42 unidades
+     * fisicas — sao 30, com um anuncio aceitando vender ate 12 delas. Corrigido
+     * junto com a armadilha 3 documentada em estoque.ts.
+     */
+    expect(r.proprio).toBe(30);
     expect(r.full).toBe(0);
   });
 
@@ -72,5 +78,75 @@ describe("total consolidado — o numero que o dono confere", () => {
     const c = consolidarEstoqueAnuncios([full(148, "INV-1"), full(148, "INV-1"), proprio(25)]);
     const total = c.full + estoqueForaDoFull(189, c.proprio, c.ehFull);
     expect(total).toBe(337);
+  });
+});
+
+describe("dois anuncios PROPRIOS dividem o mesmo galpao", () => {
+  /**
+   * Caso real relatado: 18 unidades em casa, anunciadas em DOIS anuncios
+   * proprios com 18 cada — pra nao partir 9 e 9 e perder venda nos dois. O
+   * painel mostrava 36 un, estoque que nunca existiu.
+   */
+  it("18 + 18 em dois anuncios proprios continua 18", () => {
+    const r = consolidarEstoqueAnuncios([
+      { available: 18, logistic: "" },
+      { available: 18, logistic: "" },
+    ]);
+    expect(r.proprio).toBe(18);
+    expect(r.proprioCompartilhado).toBe(true);
+  });
+
+  it("declaracoes diferentes usam a MAIOR — e o piso confiavel do monte", () => {
+    const r = consolidarEstoqueAnuncios([
+      { available: 18, logistic: "" },
+      { available: 10, logistic: "" },
+    ]);
+    expect(r.proprio).toBe(18);
+  });
+
+  it("anuncio proprio unico nao muda nada", () => {
+    const r = consolidarEstoqueAnuncios([{ available: 18, logistic: "" }]);
+    expect(r.proprio).toBe(18);
+    expect(r.proprioCompartilhado).toBe(false);
+  });
+
+  it("nao contamina o Full: pools distintos continuam SOMANDO", () => {
+    // Full e o oposto do proprio — la cada inventory_id e um monte fisico
+    // separado no centro de distribuicao, entao somar e o correto.
+    const r = consolidarEstoqueAnuncios([
+      { available: 40, logistic: "fulfillment", inventoryId: "inv-A" },
+      { available: 25, logistic: "fulfillment", inventoryId: "inv-B" },
+    ]);
+    expect(r.full).toBe(65);
+    expect(r.fullCompartilhado).toBe(false);
+  });
+
+  it("Full e proprio no mesmo produto seguem independentes", () => {
+    const r = consolidarEstoqueAnuncios([
+      { available: 65, logistic: "fulfillment", inventoryId: "inv-A" },
+      { available: 24, logistic: "" },
+      { available: 24, logistic: "" },
+    ]);
+    expect(r.full).toBe(65);
+    expect(r.proprio).toBe(24); // nao 48
+    expect(r.ehFull).toBe(true);
+    expect(r.proprioCompartilhado).toBe(true);
+  });
+
+  it("com Full presente, o proprio nem entra no total (estoqueForaDoFull manda no livro)", () => {
+    // Reforca que a mudanca acima nao altera o caminho COM Full: la o livro
+    // de movimentacoes (casa) e a fonte, e o proprio e so uma fatia dele.
+    const r = consolidarEstoqueAnuncios([
+      { available: 65, logistic: "fulfillment", inventoryId: "inv-A" },
+      { available: 24, logistic: "" },
+    ]);
+    expect(estoqueForaDoFull(36, r.proprio, r.ehFull)).toBe(36);
+  });
+
+  it("sem anuncio nenhum, proprio e zero e nao ha compartilhamento", () => {
+    const r = consolidarEstoqueAnuncios([]);
+    expect(r.proprio).toBe(0);
+    expect(r.proprioCompartilhado).toBe(false);
+    expect(r.temDado).toBe(false);
   });
 });

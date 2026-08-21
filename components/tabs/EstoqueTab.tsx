@@ -64,13 +64,13 @@ function anunciosDe(p: Product, estoqueML: EstoqueML): AnuncioML[] {
  * a regra e o porquê de cada armadilha estão em lib/domain/estoque.ts
  * (consolidarEstoqueAnuncios), que é puro e tem os testes.
  */
-function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean; fullCompartilhado: boolean } {
+function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean; fullCompartilhado: boolean; proprioCompartilhado: boolean } {
   const c = consolidarEstoqueAnuncios(
     anunciosDe(p, estoqueML)
       .filter(({ item }) => item)
       .map(({ item }) => ({ available: item!.available, logistic: item!.logistic, inventoryId: item!.inventoryId })),
   );
-  return { qtd: c.full, proprio: c.proprio, ehFull: c.ehFull, temDado: c.temDado, fullCompartilhado: c.fullCompartilhado };
+  return { qtd: c.full, proprio: c.proprio, ehFull: c.ehFull, temDado: c.temDado, fullCompartilhado: c.fullCompartilhado, proprioCompartilhado: c.proprioCompartilhado };
 }
 
 // Full considerado "baixo" sugere reabastecer com o estoque de casa.
@@ -511,7 +511,7 @@ function ProductRow({
 }) {
   const imposto = parseNum(product.imposto ?? "0");
   const anuncios = anunciosDe(product, estoqueML);
-  const { qtd: full, proprio, ehFull, fullCompartilhado } = fullDe(product, estoqueML);
+  const { qtd: full, proprio, ehFull, fullCompartilhado, proprioCompartilhado } = fullDe(product, estoqueML);
   const casa = product.qtdLocal ?? 0;
   // Sem Full, "em casa" e "no anúncio" são o mesmo estoque físico (ver
   // estoqueForaDoFull) — mostra o valor do anúncio, que é o que reflete vendas
@@ -547,7 +547,20 @@ function ProductRow({
             </div>
           </div>
         </td>
-        <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casaExibida > 0 ? "var(--yellow)" : "var(--muted)" }}>{casaExibida} un</td>
+        <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casaExibida > 0 ? "var(--yellow)" : "var(--muted)" }}>
+          {casaExibida} un
+          {/* Sem Full, "Em casa" vem do maior anúncio próprio — e com dois
+              anúncios sobre o mesmo galpão o número parece "faltar" se ninguém
+              explicar de onde ele saiu. */}
+          {proprioCompartilhado && !ehFull && (
+            <span
+              title="Este produto está em mais de um anúncio fora do Full, e os dois vendem do MESMO estoque de casa. O total usa o maior declarado, não a soma: anunciar 18 e 18 é a mesma pilha de 18 unidades, não 36."
+              style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400, cursor: "help" }}
+            >
+              mesmo estoque em {anuncios.filter(({ item }) => item && !ehFullLogistic(item.logistic)).length} anúncios
+            </span>
+          )}
+        </td>
         <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "var(--warning)" }}>reabastecer</span>}
