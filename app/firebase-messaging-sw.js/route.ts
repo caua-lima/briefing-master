@@ -14,8 +14,52 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+/**
+ * Versão do Service Worker. Precisa MUDAR sempre que este arquivo mudar: o
+ * navegador só considera um Service Worker "novo" se o corpo dele for
+ * diferente byte a byte, e é essa comparação que dispara install/activate.
+ */
+const SW_VERSAO = "2026-08-21-push-nativo";
+
 export function GET() {
   const body = `
+/**
+ * ─── ESTE SERVICE WORKER ASSUME NA HORA, SEM ESPERAR ────────────────────
+ *
+ * Sem skipWaiting/claim, um Service Worker novo baixado num deploy fica em
+ * estado "waiting": o navegador o instala e o deixa PARADO, enquanto o
+ * ANTIGO continua tratando os pushes. Ele só troca quando todas as janelas
+ * do app fecham — e num PWA instalado no celular, que fica vivo em segundo
+ * plano, isso pode não acontecer por dias.
+ *
+ * O efeito prático era o pior possível pra diagnosticar: a correção era
+ * publicada, o app atualizava a tela normalmente (a página é servida pela
+ * rede), e o push continuava passando pelo código velho e quebrado. Parecia
+ * que o conserto não tinha funcionado.
+ *
+ * skipWaiting ativa o novo imediatamente; clients.claim faz ele assumir as
+ * janelas que já estão abertas, sem exigir que o usuário feche o app.
+ */
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+/**
+ * Marca de versão — o diagnóstico pergunta isto ao Service Worker ativo pra
+ * provar QUAL código está tratando os pushes. Sem isso, "já publiquei a
+ * correção" e "a correção está rodando" eram indistinguíveis.
+ */
+const SW_VERSAO = ${JSON.stringify(SW_VERSAO)};
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.tipo === "versao" && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ versao: SW_VERSAO });
+  }
+});
+
 /**
  * ─── A EXIBIÇÃO VEM PRIMEIRO, E SEM DEPENDER DE REDE ────────────────────
  *

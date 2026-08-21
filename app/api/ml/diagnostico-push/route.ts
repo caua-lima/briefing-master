@@ -106,7 +106,19 @@ export async function GET(req: Request) {
     );
   }
   if (diagnostico.length === 0) {
-    diagnostico.push("Cadeia saudável: o ML está chamando, há aparelho registrado e os eventos recentes entregaram.");
+    /**
+     * "Entregue" aqui é só até onde o SERVIDOR enxerga: o FCM aceitou a
+     * mensagem. Aceitar não é exibir — permissão revogada no sistema ou um
+     * Service Worker velho no comando fazem o aparelho descartar em silêncio,
+     * e daqui isso é indistinguível de sucesso. Dizer "cadeia saudável" sem
+     * essa ressalva mandava procurar o problema no lugar errado.
+     */
+    diagnostico.push(
+      "Do lado do servidor está tudo certo: o Mercado Livre está chamando, há aparelho registrado "
+      + "e o Firebase ACEITOU as mensagens recentes. Atenção: aceitar não é o mesmo que exibir — "
+      + "se mesmo assim nada aparece na barra, a causa está no aparelho (permissão do sistema ou "
+      + "Service Worker antigo ainda no comando), e é o que as linhas acima verificam.",
+    );
   }
 
   return NextResponse.json({

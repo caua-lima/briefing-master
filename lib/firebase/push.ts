@@ -53,6 +53,52 @@ type EnableResult = { ok: true } | { ok: false; error: string };
  * do dispositivo e salva no Firestore associado ao e-mail — é essa lista de
  * tokens que o backend usa pra saber pra quem mandar quando sair uma venda.
  */
+/**
+ * Registra o Service Worker e GARANTE que a versão publicada é a que está
+ * tratando os pushes.
+ *
+ * `register()` sozinho não basta. O navegador guarda o Service Worker em
+ * cache e, mesmo quando baixa um novo, o antigo continua no comando até todas
+ * as janelas do app fecharem — num PWA de celular, que vive em segundo plano,
+ * isso pode não acontecer por dias. O resultado é uma correção publicada que
+ * simplesmente não entra em vigor, sem nada indicando o porquê.
+ *
+ * `update()` força a checagem agora; o `skipWaiting`/`clients.claim` do lado
+ * do Service Worker (ver app/firebase-messaging-sw.js/route.ts) faz o novo
+ * assumir na hora. Ativar as notificações passa a ser também o botão de
+ * "aplicar a versão nova", que é o gesto que o usuário já faz quando algo
+ * não chega.
+ */
+async function registrarServiceWorkerAtualizado(): Promise<ServiceWorkerRegistration> {
+  const registration = await navigator.serviceWorker.register(SW_PATH, { updateViaCache: "none" });
+  // Best-effort: falha de rede aqui não pode impedir o registro do token.
+  await registration.update().catch(() => {});
+  return registration;
+}
+
+/** Versão do Service Worker ATIVO — pergunta direto a ele, não ao servidor. */
+export async function versaoServiceWorkerAtivo(): Promise<string | null> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration(SW_PATH);
+    const sw = reg?.active;
+    if (!sw) return null;
+    return await new Promise<string | null>((resolve) => {
+      const canal = new MessageChannel();
+      // Service Worker antigo não conhece esta mensagem e nunca responde —
+      // o timeout é o que transforma esse silêncio em "versão antiga".
+      const timer = setTimeout(() => resolve(null), 1500);
+      canal.port1.onmessage = (e) => {
+        clearTimeout(timer);
+        resolve(e.data?.versao ?? null);
+      };
+      sw.postMessage({ tipo: "versao" }, [canal.port2]);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function enablePushNotifications(email: string): Promise<EnableResult> {
   if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
     return { ok: false, error: "Este navegador não suporta notificações." };
@@ -72,7 +118,7 @@ export async function enablePushNotifications(email: string): Promise<EnableResu
   }
 
   try {
-    const registration = await navigator.serviceWorker.register(SW_PATH);
+    const registration = await registrarServiceWorkerAtualizado();
     const { app, db } = getFirebase();
     const messaging = getMessaging(app);
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });

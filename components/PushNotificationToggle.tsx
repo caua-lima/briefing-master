@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { authedFetch } from "@/lib/api/authed-fetch";
-import { disablePushNotifications, enablePushNotifications, getPushStatus } from "@/lib/firebase/push";
+import { disablePushNotifications, enablePushNotifications, getPushStatus, versaoServiceWorkerAtivo } from "@/lib/firebase/push";
 import NotificationSettings from "@/components/NotificationSettings";
 import Modal from "@/components/Modal";
 
@@ -85,6 +85,59 @@ export function PushNotificationToggle() {
    * em tela exatamente o que a Fase 7 pediu: evento criado, quantos
    * dispositivos, se enviou ou por que não.
    */
+  /** Versão que ESTE build publica — comparada com a que o SW ativo responde. */
+  const SW_VERSAO_ESPERADA = "2026-08-21-push-nativo";
+
+  async function coletarEstadoAparelho() {
+    const versao = await versaoServiceWorkerAtivo();
+    let temSW = false;
+    try {
+      temSW = Boolean(await navigator.serviceWorker?.getRegistration("/firebase-messaging-sw.js"));
+    } catch { /* navegador sem SW */ }
+    return {
+      permissao: typeof Notification !== "undefined" ? Notification.permission : "indisponível",
+      serviceWorkerRegistrado: temSW,
+      serviceWorkerVersao: versao,
+      versaoEsperada: SW_VERSAO_ESPERADA,
+      standalone: typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)").matches,
+    };
+  }
+
+  /**
+   * O que só o APARELHO sabe. O servidor enxerga até o FCM aceitar a
+   * mensagem — daí pra frente (permissão do sistema, qual Service Worker
+   * está no comando) só dá pra perguntar aqui.
+   */
+  async function diagnosticarAparelho(): Promise<string[]> {
+    const e = await coletarEstadoAparelho();
+    const linhas: string[] = [];
+
+    if (e.permissao === "denied") {
+      linhas.push(
+        "PERMISSÃO BLOQUEADA neste aparelho. O servidor manda e o sistema descarta em silêncio — "
+        + "é por isso que o diagnóstico do servidor diz que entregou. Libere as notificações do app "
+        + "nas configurações do celular e ative de novo aqui.",
+      );
+    } else if (e.permissao !== "granted") {
+      linhas.push("As notificações ainda não foram autorizadas neste aparelho. Toque em 📱 para ativar.");
+    }
+
+    if (!e.serviceWorkerRegistrado) {
+      linhas.push("Nenhum Service Worker registrado — sem ele não existe notificação na barra. Toque em 📱 para ativar.");
+    } else if (e.serviceWorkerVersao == null) {
+      linhas.push(
+        "O Service Worker que está tratando os pushes é ANTIGO (anterior à correção) e não respondeu à checagem de versão. "
+        + "É o motivo clássico de 'publiquei a correção e continua igual': o navegador mantém o Service Worker "
+        + "velho no comando até todas as janelas do app fecharem. Toque em 📱 (desativar e ativar de novo) — "
+        + "isso força a troca imediata.",
+      );
+    } else if (e.serviceWorkerVersao !== e.versaoEsperada) {
+      linhas.push(`Service Worker desatualizado (${e.serviceWorkerVersao}; esperado ${e.versaoEsperada}). Desative e ative as notificações em 📱 para trocar.`);
+    }
+
+    return linhas;
+  }
+
   /**
    * Diagnóstico da cadeia de push.
    *
@@ -100,11 +153,20 @@ export function PushNotificationToggle() {
     try {
       const res = await authedFetch("/api/ml/diagnostico-push", { cache: "no-store" });
       const json = await res.json().catch(() => null);
-      setDiagnostico(
-        json?.diagnostico
-          ? { linhas: json.diagnostico as string[], bruto: json as Record<string, unknown> }
-          : { linhas: ["Não consegui ler o diagnóstico agora."], bruto: null },
-      );
+
+      /**
+       * O lado do SERVIDOR só sabe que o FCM aceitou a mensagem — aceitar não
+       * é exibir. Quando o servidor diz "entregou" e o aparelho não mostra
+       * nada, a resposta está aqui: permissão revogada depois de ativada, ou
+       * um Service Worker velho ainda no comando.
+       */
+      const doAparelho = await diagnosticarAparelho();
+      const linhas = [...doAparelho, ...((json?.diagnostico as string[]) ?? [])];
+
+      setDiagnostico({
+        linhas: linhas.length ? linhas : ["Não consegui ler o diagnóstico agora."],
+        bruto: json ? { aparelho: await coletarEstadoAparelho(), servidor: json } : null,
+      });
     } catch (err) {
       setDiagnostico({ linhas: [err instanceof Error ? err.message : "Falha ao consultar."], bruto: null });
     } finally {
