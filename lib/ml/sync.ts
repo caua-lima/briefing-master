@@ -1,5 +1,11 @@
 import "server-only";
 import { getAdminDb } from "@/lib/firebase/admin";
+import {
+  carregarProdutos,
+  metaMargemAtual,
+  notificarVendaConfirmada,
+  vendaRecente,
+} from "@/lib/ml/notificar-venda";
 
 const ML_API = "https://api.mercadolibre.com";
 const MP_API = "https://api.mercadopago.com";
@@ -342,7 +348,59 @@ export async function syncOrdersRange(accessToken: string, range: SyncRange): Pr
     }
     await batch.commit();
   }
+
+  await notificarVendasPendentes(all);
   return all.length;
+}
+
+/**
+ * REDE DE SEGURANÇA das notificações de venda.
+ *
+ * O push dependia inteiramente de o Mercado Livre chamar o nosso webhook.
+ * Quando esse caminho falha — notificação não cadastrada no painel de
+ * Developers, tópico `orders_v2` não assinado, URL apontando pro deploy
+ * antigo, retry estourado, indisponibilidade momentânea — a venda entrava no
+ * Dashboard normalmente e o aviso simplesmente nunca saía, sem nada
+ * registrando a falta.
+ *
+ * Como o sync já passa por todos os pedidos do período, ele é o lugar natural
+ * pra fechar esse buraco: pedido pago e RECENTE que ainda não tem evento
+ * ganha o aviso agora. O webhook segue sendo o caminho rápido (segundos) e
+ * isto é a rede (minutos).
+ *
+ * Não duplica: `notificarVendaConfirmada` usa `dedupeKey` criado com
+ * `create()` atômico, então webhook e sync podem correr juntos que só um
+ * cria o evento. E o teto de 12h de idade impede que um sync de mês inteiro
+ * dispare avisos de vendas antigas.
+ */
+async function notificarVendasPendentes(orders: unknown[]): Promise<void> {
+  const candidatos = orders
+    .map((o) => o as Record<string, unknown>)
+    .filter((o) => String(o.status ?? "") === "paid" && vendaRecente(String(o.date_created ?? "")));
+  if (candidatos.length === 0) return;
+
+  const db = getAdminDb();
+  // Contexto carregado UMA vez pro lote — sem isto seria uma varredura do
+  // estoque por pedido.
+  const [{ porMlb, porSku }, metaMargem] = await Promise.all([
+    carregarProdutos(db),
+    metaMargemAtual(db),
+  ]);
+
+  for (const o of candidatos) {
+    try {
+      await notificarVendaConfirmada({
+        orderId: String(o.id),
+        status: "paid",
+        dateCreated: String(o.date_created ?? ""),
+        items: mapOrderItems(o),
+        shippingCost: typeof o.shipping_cost === "number" ? (o.shipping_cost as number) : null,
+      }, { porMlb, porSku, metaMargem });
+    } catch {
+      // Best-effort por pedido: uma venda que falhe no aviso não pode
+      // derrubar o sync inteiro, que é o que mantém o Dashboard correto.
+    }
+  }
 }
 
 /** Busca pedidos cancelados do período e grava/atualiza em `ml_returns`. */

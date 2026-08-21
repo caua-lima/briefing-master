@@ -2,149 +2,38 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { mapOrderItems } from "@/lib/ml/sync";
-import { estimateOrderFinance, type ProdutoCusto } from "@/lib/ml/order-finance";
-import { sendSalePushToAll } from "@/lib/push-send";
-import { createNotificationEventIdempotent, markPushAttempted, markPushDelivered, markPushError } from "@/lib/notification-events";
-import { registrarVendaNaJanela } from "@/lib/notification-groups";
-import {
-  buildCancelContent,
-  buildGroupedSalesContent,
-  buildOrderDeepLink,
-  buildSaleContent,
-  classifySale,
-  type NotificationEventSeverity,
-  type NotificationEventType,
-  type SalePushPayload,
-} from "@/lib/domain/notifications";
+import { createNotificationEventIdempotent } from "@/lib/notification-events";
+import { buildPayload, enviarEPersistirEntrega, notificarVendaConfirmada } from "@/lib/ml/notificar-venda";
+import { buildCancelContent, buildOrderDeepLink } from "@/lib/domain/notifications";
 
 export const maxDuration = 30;
 
 const ML_API = "https://api.mercadolibre.com";
 
-const normSku = (s: string) => s.trim().toLowerCase();
-const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
-
-/** Custo médio + imposto de cada produto, indexado por MLB e SKU — mesmo padrão de app/api/ml/ads/route.ts. */
-async function carregarProdutos(db: FirebaseFirestore.Firestore) {
-  const snap = await db.collection("estoque").get();
-  const porMlb = new Map<string, ProdutoCusto>();
-  const porSku = new Map<string, ProdutoCusto>();
-  for (const doc of snap.docs) {
-    const d = doc.data();
-    const entry: ProdutoCusto = { custo: Number(d.custoMedio ?? d.custo ?? 0), imposto: d.imposto, impostoFaixas: d.impostoFaixas };
-    const mlbs: string[] = Array.isArray(d.mlbs) && d.mlbs.length ? d.mlbs : d.mlb ? [String(d.mlb)] : [];
-    for (const m of mlbs) { const n = normId(String(m)); if (n) porMlb.set(n, entry); }
-    const sku = String(d.sku ?? "").trim();
-    if (sku) porSku.set(normSku(sku), entry);
-  }
-  return { porMlb, porSku };
-}
-
 /**
- * Meta de margem do mês atual, se configurada — mesma lógica de "meta ativa"
- * do MetasTab (mês corrente, senão a mais recente). Só usada como limiar de
- * "margem em atenção"; sem meta configurada, classifySale já cai no
- * DEFAULT_LOW_MARGIN_THRESHOLD fixo.
+ * Trilha de TODA chamada recebida do Mercado Livre.
+ *
+ * Existe porque "não chega notificação" era impossível de diagnosticar: sem
+ * registro nenhum, não dava pra distinguir "o ML nunca chamou" (webhook não
+ * cadastrado, tópico não assinado, URL apontando pro deploy antigo) de "o ML
+ * chamou e nós falhamos". São problemas opostos e a correção de um não ajuda
+ * em nada no outro.
+ *
+ * Guarda só metadado — id do pedido, status, o que decidimos e o erro
+ * resumido. Nunca token, nunca corpo completo. Consultável em
+ * /api/ml/diagnostico-push.
  */
-async function metaMargemAtual(db: FirebaseFirestore.Firestore): Promise<number | null> {
+async function registrarChamada(dados: Record<string, unknown>) {
   try {
-    const brNow = new Date(Date.now() - 3 * 3600 * 1000);
-    const mesAtual = `${brNow.getUTCFullYear()}-${String(brNow.getUTCMonth() + 1).padStart(2, "0")}`;
-    const snap = await db.collection("metasHistorico").orderBy("createdAt", "desc").get();
-    const doMes = snap.docs.find((d) => d.data()?.mes === mesAtual);
-    const escolhido = doMes ?? snap.docs[0];
-    const v = escolhido?.data()?.metaMargem;
-    return typeof v === "number" ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Idade máxima de um pedido para ainda valer push de "venda confirmada".
- *
- * O ML dispara o webhook a cada mudança do pedido — inclusive de ENVIO, dias
- * depois da venda. Sem este teto, um pedido antigo que nunca gerou evento
- * (app fora do ar na hora, webhook cadastrado depois) viraria "venda
- * confirmada" agora, notificando algo que já foi.
- *
- * 12h cobre com folga o atraso/retry real do ML sem ressuscitar venda velha.
- */
-const IDADE_MAX_VENDA_MS = 12 * 3600 * 1000;
-
-/**
- * A venda é recente o bastante pra valer push?
- *
- * Substitui o antigo `!jaEstavaPago` (status anterior gravado em ml_orders),
- * que era uma FONTE ERRADA de "já notifiquei": o sync (cron diário e o
- * automático do Dashboard a cada 15 min, ver components/dashboard/Dashboard.tsx)
- * grava `status: "paid"` no MESMO doc sem criar evento nenhum. Quando o sync
- * chegava antes do webhook — corrida pura, decidida por segundos — o webhook
- * via "paid" e concluía que já havia notificado. A venda entrava no
- * Dashboard normalmente e o push simplesmente nunca saía: exatamente o
- * "algumas vendas chegam, outras não".
- *
- * Quem garante "só um push por pedido" é o `dedupeKey` sale_paid:{orderId}
- * em notification_events, via DocumentReference.create() — atômico no
- * Firestore, imune a corrida (ver lib/notification-events.ts). Este teto de
- * idade cuida só do outro risco: notificar venda antiga.
- */
-function vendaRecente(dateCreated: string): boolean {
-  const t = Date.parse(dateCreated);
-  if (!Number.isFinite(t)) return true; // sem data confiável, não silencia
-  return Date.now() - t <= IDADE_MAX_VENDA_MS;
-}
-
-function tipoParaSeveridade(type: NotificationEventType): NotificationEventSeverity {
-  switch (type) {
-    case "sale_high_value": case "sale_paid": return "success";
-    case "sale_low_margin": return "warning";
-    case "sale_negative_margin": case "sale_cancelled": case "return_opened": case "return_completed": return "danger";
-    default: return "info";
-  }
-}
-
-/** Máximos defensivos pro payload `data` do FCM (~4KB de teto) — nunca deveria chegar perto disso num pedido normal. */
-const ITENS_PUSH_MAX = 15;
-const ITENS_PUSH_TITULO_MAX = 80;
-
-function buildPayload(eventId: string, type: NotificationEventType, title: string, body: string, opts: {
-  orderId: string; productName?: string; grossAmount?: number; estimatedProfit?: number; estimatedMargin?: number;
-  financialState?: "estimated" | "confirmed" | "unavailable"; tag: string;
-  itens?: { title: string; quantity: number }[];
-}): SalePushPayload {
-  return {
-    eventId, type, title, body, tag: opts.tag,
-    orderId: opts.orderId, deepLink: buildOrderDeepLink(opts.orderId),
-    productName: opts.productName,
-    grossAmount: opts.grossAmount != null ? opts.grossAmount.toFixed(2) : undefined,
-    estimatedProfit: opts.estimatedProfit != null ? opts.estimatedProfit.toFixed(2) : undefined,
-    estimatedMargin: opts.estimatedMargin != null ? opts.estimatedMargin.toFixed(1) : undefined,
-    financialState: opts.financialState,
-    // Só serializa quando há de fato mais de 1 item — pedido comum (a
-    // maioria) não carrega essa string à toa.
-    itensJson: opts.itens && opts.itens.length > 1
-      ? JSON.stringify(opts.itens.slice(0, ITENS_PUSH_MAX).map((i) => ({ title: i.title.slice(0, ITENS_PUSH_TITULO_MAX), quantity: i.quantity })))
-      : undefined,
-    timestamp: new Date().toISOString(),
-  };
-}
-
-/**
- * Envia o push do evento já persistido, registrando tentativa/entrega/erro
- * na trilha do próprio evento (nunca o token ou payload completo — só
- * metadados seguros, ver lib/notification-events.ts).
- */
-async function enviarEPersistirEntrega(eventId: string, type: NotificationEventType, payload: SalePushPayload, isSummary = false) {
-  await markPushAttempted(eventId);
-  try {
-    const { enviados, bloqueadosPorPreferencia } = await sendSalePushToAll(payload, type, isSummary);
-    if (enviados > 0) await markPushDelivered(eventId);
-    else await markPushError(eventId, bloqueadosPorPreferencia > 0 ? "todos os destinatários bloquearam por preferência/horário silencioso" : "nenhum dispositivo registrado");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await markPushError(eventId, msg.slice(0, 160));
-  }
+    await getAdminDb().collection("webhook_log").add({
+      ...dados,
+      at: new Date().toISOString(),
+      // TTL de leitura: a rota de diagnóstico ordena por isto e lê só os
+      // últimos. Não é uma coleção pra crescer sem limite ser problema —
+      // cada doc é minúsculo e o volume é o de vendas.
+      ts: Date.now(),
+    });
+  } catch { /* log nunca pode derrubar o webhook */ }
 }
 
 /**
@@ -176,7 +65,10 @@ export async function POST(req: Request) {
   const match = resource.match(/^\/orders\/(\d+)/);
   if (!match) {
     // outros tópicos (mensagens, reclamações, etc.) — ignora sem erro, não
-    // queremos que o ML pare de mandar os outros por causa disso
+    // queremos que o ML pare de mandar os outros por causa disso. Registra
+    // mesmo assim: saber que o ML chega aqui, ainda que com outro tópico, já
+    // separa "não configurado" de "configurado no tópico errado".
+    await registrarChamada({ topic: body?.topic ?? "", resource: resource.slice(0, 80), ok: true, resultado: "ignorado_outro_topico" });
     return NextResponse.json({ ok: true, ignored: true });
   }
   const orderId = match[1];
@@ -238,77 +130,16 @@ export async function POST(req: Request) {
     }, { merge: true });
 
     // ── Venda confirmada ─────────────────────────────────────────
-    // A dedupe por `sale_paid:{orderId}` é que garante um push só; aqui só
-    // filtramos venda antiga (ver vendaRecente).
-    if (status === "paid" && vendaRecente(dataCriacao)) {
-      const [{ porMlb, porSku }, metaMargem] = await Promise.all([
-        carregarProdutos(db),
-        metaMargemAtual(db),
-      ]);
-      const finance = estimateOrderFinance(
-        items, porMlb, porSku,
-        typeof order.shipping_cost === "number" ? (order.shipping_cost as number) : null,
-        String(order.date_created ?? new Date().toISOString()),
-        metaMargem,
-      );
-      const { type } = classifySale(finance);
-      const content = buildSaleContent({ ...finance, type, itemCount: finance.itemCount, semCadastro: finance.semCadastro });
-      const severity = tipoParaSeveridade(type);
-      const financialState: "estimated" | "unavailable" = finance.estimatedProfit == null ? "unavailable" : "estimated";
-
-      // dedupeKey ESTÁVEL por pedido — sempre "sale_paid:{orderId}", nunca
-      // varia com a classificação (alto valor/margem baixa/etc.): se
-      // variasse, um retry que recalculasse pra um tipo diferente (ex.:
-      // produto ficou vinculado entre uma chamada e outra) criaria um SEGUNDO
-      // evento pro mesmo pedido — exatamente a duplicidade que isto existe
-      // pra evitar.
-      const dedupeKey = `sale_paid:${orderId}`;
-      const { created, eventId } = await createNotificationEventIdempotent({
-        type, severity, entityType: "order", entityId: orderId, dedupeKey,
-        title: content.title, body: content.body,
-        orderId, orderExternalId: orderId,
-        productName: finance.productName, productCount: finance.itemCount, quantity: finance.quantityTotal,
-        // Só grava a lista quando há mais de 1 item — pedido de 1 item não
-        // precisa dela, o productName já basta.
-        itens: finance.itemCount > 1 ? finance.itens : undefined,
-        grossAmount: finance.grossAmount,
-        estimatedProfit: finance.estimatedProfit ?? undefined,
-        estimatedMargin: finance.estimatedMargin ?? undefined,
-        financialState,
-        deepLink: buildOrderDeepLink(orderId),
-      });
-
-      if (created) {
-        const payload = buildPayload(eventId, type, content.title, content.body, {
-          orderId, productName: finance.productName, grossAmount: finance.grossAmount,
-          estimatedProfit: finance.estimatedProfit ?? undefined, estimatedMargin: finance.estimatedMargin ?? undefined,
-          financialState, tag: `sale-${orderId}`, itens: finance.itens,
-        });
-
-        // Prejuízo/margem negativa NUNCA agrupa — precisa continuar
-        // individual mesmo em pico de vendas, é o tipo de aviso que não pode
-        // se perder dentro de um resumo.
-        if (type === "sale_negative_margin") {
-          await enviarEPersistirEntrega(eventId, type, payload);
-        } else {
-          const decisao = await registrarVendaNaJanela(finance.grossAmount);
-          if (decisao.modo === "individual") {
-            await enviarEPersistirEntrega(eventId, type, payload);
-          } else if (decisao.modo === "resumo_dispara") {
-            const resumo = buildGroupedSalesContent(decisao.totalNaJanela, decisao.grossAcumulado, decisao.janelaMinutos);
-            const payloadResumo = buildPayload(eventId, type, resumo.title, resumo.body, {
-              orderId, tag: `sales-summary-${Math.floor(Date.now() / 90000)}`,
-            });
-            // O evento individual desta venda já foi persistido acima (fonte
-            // de verdade da Central) — o push é que vira um resumo pra não
-            // empilhar 4+ notificações nativas em poucos segundos.
-            await enviarEPersistirEntrega(eventId, type, payloadResumo, true);
-          }
-          // "resumo_silencioso": já mandou o resumo na venda que disparou o
-          // agrupamento — esta aqui só soma ao contador, sem push novo.
-        }
-      }
-    }
+    // Toda a regra (idade, classificacao, dedupe, agrupamento, push) vive em
+    // lib/ml/notificar-venda.ts — a MESMA que o sync usa como rede de
+    // seguranca. Duplicar aqui era o que permitia os dois caminhos divergirem.
+    const resultadoVenda = await notificarVendaConfirmada({
+      orderId,
+      status,
+      dateCreated: dataCriacao,
+      items,
+      shippingCost: typeof order.shipping_cost === "number" ? (order.shipping_cost as number) : null,
+    });
 
     /**
      * ── Cancelamento ──
@@ -344,9 +175,18 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true });
+    await registrarChamada({
+      orderId, topic: body?.topic ?? "", status,
+      resultado: resultadoVenda.estado,
+      enviados: "enviados" in resultadoVenda ? resultadoVenda.enviados : null,
+      ok: true,
+    });
+    return NextResponse.json({ ok: true, venda: resultadoVenda.estado });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // Erro TEM que virar registro: sem isso, "o ML chamou e nós quebramos"
+    // era indistinguível de "o ML nunca chamou".
+    await registrarChamada({ orderId, topic: body?.topic ?? "", ok: false, erro: msg.slice(0, 300) });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
