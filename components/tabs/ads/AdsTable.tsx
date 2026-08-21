@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
-import { corMargem, corRoas, num, STATUS_META, type LinhaAds, type Modo } from "./ads-types";
+import { corAcos, corMargem, corRoas, num, STATUS_META, type LinhaAds, type Modo } from "./ads-types";
 
 type ColunaOrdenavel = "investido" | "lucro" | "roas" | "margem" | "decisao";
 type Densidade = "confortavel" | "compacta";
@@ -118,6 +118,20 @@ export default function AdsTable({
               <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)", cursor: "pointer" }} onClick={() => alternarOrdem("investido", -1)} title="Ordenar por investimento">
                 Investimento{ordem.col === "investido" ? (ordem.dir === -1 ? " ↓" : " ↑") : ""}
               </th>
+              {/* Colunas que o painel do Mercado Ads mostra e aqui faltavam —
+                  sem elas era impossível conferir lado a lado, e orçamento e
+                  ROAS objetivo são o que de fato se ajusta lá. */}
+              <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }} title="Orçamento diário configurado na campanha deste anúncio.">Orçamento</th>
+              <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }} title="ROAS objetivo configurado por você na campanha (no ML: 'ROAS Objetivo'). Diferente do ROAS ideal, que é calculado a partir da sua margem alvo.">ROAS obj.</th>
+              <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}>Impressões</th>
+              <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}>Cliques</th>
+              <th
+                style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}
+                title="Receita atribuída pelo Mercado Ads (direta + assistida) — a mesma coluna 'Receita' do painel do ML. Abaixo, a receita do modo escolhido."
+              >
+                Receita atribuída
+              </th>
+              <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }} title="Investido ÷ receita atribuída — a mesma conta do ACOS do painel do ML.">ACOS</th>
               <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)" }}>{pub ? "Receita direta" : "Receita"}</th>
               <th style={{ textAlign: "right", position: "sticky", top: 0, background: "var(--surface)", cursor: "pointer" }} onClick={() => alternarOrdem("lucro", -1)} title="Ordenar por lucratividade — maior lucro primeiro">
                 Lucro após Ads{ordem.col === "lucro" ? (ordem.dir === -1 ? " ↓" : " ↑") : ""}
@@ -172,6 +186,47 @@ export default function AdsTable({
                 </td>
                 <td data-label="Status" style={{ textAlign: "right", padding: padCel }}><StatusTag l={l} /></td>
                 <td data-label="Investimento" style={{ textAlign: "right", color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap", padding: padCel }}>{fmtBRL(l.i.cost)}</td>
+                <td data-label="Orçamento" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.i.dailyBudget > 0 ? "var(--text)" : "var(--muted)" }}>
+                  {l.i.dailyBudget > 0 ? `${fmtBRL(l.i.dailyBudget)}/dia` : "—"}
+                </td>
+                {/* ROAS objetivo (o que VOCÊ configurou no ML) ao lado do ROAS
+                    ideal (o que a sua margem alvo exige). Ver os dois juntos é
+                    o que revela uma meta configurada abaixo do que o produto
+                    precisa — no ML esses números vivem em telas separadas. */}
+                <td
+                  data-label="ROAS obj."
+                  title={l.i.roasTarget > 0 && l.roasIdeal != null
+                    ? (l.i.roasTarget < l.roasIdeal
+                      ? `Sua meta no ML (${num(l.i.roasTarget, 2)}x) está ABAIXO do ROAS que entrega a margem alvo (${num(l.roasIdeal, 2)}x). Atingir a meta configurada não basta pra fechar a margem.`
+                      : `Sua meta no ML (${num(l.i.roasTarget, 2)}x) cobre o ROAS ideal (${num(l.roasIdeal, 2)}x).`)
+                    : "ROAS objetivo configurado na campanha, no painel do Mercado Ads."}
+                  style={{
+                    textAlign: "right", whiteSpace: "nowrap", padding: padCel,
+                    color: l.i.roasTarget <= 0 ? "var(--muted)"
+                      : (l.roasIdeal != null && l.i.roasTarget < l.roasIdeal) ? "var(--warning)" : "var(--text)",
+                    fontWeight: l.i.roasTarget > 0 && l.roasIdeal != null && l.i.roasTarget < l.roasIdeal ? 700 : 400,
+                  }}
+                >
+                  {l.i.roasTarget > 0 ? `${num(l.i.roasTarget, 2)}x` : "—"}
+                  {l.i.roasTarget > 0 && l.roasIdeal != null && l.i.roasTarget < l.roasIdeal && " ⚠"}
+                </td>
+                <td data-label="Impressões" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: "var(--muted)" }}>{num(l.i.prints)}</td>
+                <td data-label="Cliques" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: "var(--muted)" }}>
+                  {num(l.i.clicks)}
+                  {l.i.prints > 0 && (
+                    <span style={{ display: "block", fontSize: ".64rem", color: "var(--muted)" }}>CTR {num(l.ctr, 2)}%</span>
+                  )}
+                </td>
+                <td data-label="Receita atribuída" style={{ textAlign: "right", color: "var(--green)", whiteSpace: "nowrap", padding: padCel, fontWeight: 600 }}>
+                  {fmtBRL(l.i.adSales)}
+                </td>
+                <td
+                  data-label="ACOS"
+                  title="Investido ÷ receita atribuída. Quanto menor, mais barato foi comprar aquela receita."
+                  style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: corAcos(l.i.adSales > 0 ? (l.i.cost / l.i.adSales) * 100 : 0, l.i.adSales > 0), fontWeight: 600 }}
+                >
+                  {l.i.adSales > 0 ? `${num((l.i.cost / l.i.adSales) * 100, 1)}%` : "—"}
+                </td>
                 <td data-label="Receita" style={{ textAlign: "right", color: "var(--green)", whiteSpace: "nowrap", padding: padCel }}>{fmtBRL(l.v)}</td>
                 <td data-label="Lucro após Ads" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.lucroAtual == null ? "var(--muted)" : l.lucroAtual >= 0 ? "var(--green)" : "var(--red)", fontWeight: 700 }} title={l.lucroAtual == null ? "Sem venda vinculada no período pra calcular — não é prejuízo, é falta de dado." : undefined}>
                   {l.lucroAtual != null ? fmtBRL(l.lucroAtual) : "—"}
@@ -187,13 +242,18 @@ export default function AdsTable({
                     leitura que gerou "o ROAS está errado" (4,71x aqui contra
                     10,77x no ML, mesmo anúncio, mesmo período). */}
                 <td data-label="ROAS" style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: corRoas(l.r), fontWeight: 700 }}>
-                  {l.i.cost > 0 ? `${num(l.r, 2)}x` : "—"}
-                  {l.roasMlAds != null && Math.abs(l.roasMlAds - l.r) > 0.01 && (
+                  {/* O ROAS do ML vem PRIMEIRO: é o número que o vendedor
+                      confere contra o painel. O do modo escolhido fica abaixo,
+                      rotulado — antes o principal era o do modo e uma linha com
+                      receita direta zerada exibia "0,00x" ao lado de 13,09x no
+                      ML, o que parecia defeito e não diferença de definição. */}
+                  {l.roasMlAds != null ? `${num(l.roasMlAds, 2)}x` : "—"}
+                  {l.i.cost > 0 && l.roasMlAds != null && Math.abs(l.roasMlAds - l.r) > 0.01 && (
                     <span
                       style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}
-                      title={`No painel do Mercado Ads este anúncio aparece com ROAS ${num(l.roasMlAds, 2)}x, porque lá a conta usa a receita atribuída TOTAL (${fmtBRL(l.i.adSales)}: clique direto + venda assistida). Aqui o modo "${pub ? "Publicidade direta" : "Geral"}" usa ${fmtBRL(l.v)}. Os dois estão certos e respondem perguntas diferentes.`}
+                      title={`Acima: ROAS do painel do Mercado Ads — receita atribuída TOTAL (${fmtBRL(l.i.adSales)}: clique direto + venda assistida) ÷ investido. Abaixo: o modo "${pub ? "Publicidade direta" : "Geral"}", que usa ${fmtBRL(l.v)}. Os dois estão certos e respondem perguntas diferentes.`}
                     >
-                      ML: {num(l.roasMlAds, 2)}x
+                      {pub ? "direta" : "geral"}: {num(l.r, 2)}x
                     </span>
                   )}
                 </td>
@@ -246,13 +306,13 @@ export default function AdsTable({
                     unidades creditadas ao clique, não a venda total do item. */}
                 <td
                   data-label="Vendas atribuídas"
-                  title={`${num(l.i.adUnits)} unidade(s) atribuída(s) pelo Mercado Ads (${fmtBRL(l.i.adSales)}) — é o mesmo número da coluna "Vendas atribuídas" do painel do ML. Dessas, ${num(l.i.directUnits)} vieram de clique direto (${fmtBRL(l.i.directSales)}); o resto é venda assistida.`}
-                  style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.i.adUnits > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}
+                  title={`${num(l.i.adUnitsAtribuidas)} venda(s) atribuída(s) — mesmo número da coluna "Vendas atribuídas" do painel do ML: ${num(l.i.directUnits)} de clique direto + ${num(l.i.indirectUnits)} assistida(s) (clicou e comprou depois). Receita atribuída: ${fmtBRL(l.i.adSales)}.`}
+                  style={{ textAlign: "right", whiteSpace: "nowrap", padding: padCel, color: l.i.adUnitsAtribuidas > 0 ? "var(--text)" : "var(--muted)", fontWeight: 600 }}
                 >
-                  {num(l.i.adUnits)}
-                  {l.i.adUnits !== l.i.directUnits && (
+                  {num(l.i.adUnitsAtribuidas)}
+                  {l.i.indirectUnits > 0 && (
                     <span style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}>
-                      {num(l.i.directUnits)} direta(s)
+                      {num(l.i.directUnits)} direta · {num(l.i.indirectUnits)} assistida
                     </span>
                   )}
                 </td>

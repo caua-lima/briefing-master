@@ -30,6 +30,9 @@ export type ItemParaCampanha = {
   cost: number;
   directSales: number;
   directUnits: number;
+  /** Configuracao da campanha no painel do ML — orcamento diario e ROAS objetivo. */
+  dailyBudget?: number;
+  roasTarget?: number;
   totalSales: number;
   totalUnits: number;
   lucroLiquido: number;
@@ -86,6 +89,13 @@ export type CampanhaAgregada = {
   roasMlAds: number | null;
   /** Receita atribuída total pelo ML nesta campanha (base do roasMlAds). */
   receitaAtribuida: number;
+  /**
+   * Orcamento diario e ROAS objetivo configurados na campanha. Vem do anuncio
+   * (a config e da campanha, entao todos os anuncios dela trazem o mesmo
+   * valor); 0 = o ML nao devolveu a configuracao.
+   */
+  dailyBudget: number;
+  roasTarget: number;
 };
 
 /** Anúncio sem campanha identificada — agrupado à parte pra não sumir da soma. */
@@ -109,8 +119,12 @@ export function agregarPorCampanha(
         campaignName: f.campaignName || (id === CAMPANHA_SEM_ID ? "Sem campanha identificada" : id),
         anuncios: 0, prints: 0, clicks: 0, cost: 0, receita: 0, unidades: 0,
         lucroAposAds: 0, roas: null, acos: null, roasMlAds: null, receitaAtribuida: 0,
+        dailyBudget: 0, roasTarget: 0,
         temDireto: false,
       };
+      // A config e da CAMPANHA: o primeiro anuncio que a trouxer ja define.
+      if (!atual.dailyBudget && i.dailyBudget) atual.dailyBudget = i.dailyBudget;
+      if (!atual.roasTarget && i.roasTarget) atual.roasTarget = i.roasTarget;
       if (!atual.campaignName && f.campaignName) atual.campaignName = f.campaignName;
 
       atual.anuncios += 1;
@@ -172,6 +186,8 @@ export function agregarPorCampanha(
         acos: c.receita > 0 ? (c.cost / c.receita) * 100 : null,
         roasMlAds: c.cost > 0 ? c.receitaAtribuida / c.cost : null,
         receitaAtribuida: c.receitaAtribuida,
+        dailyBudget: c.dailyBudget,
+        roasTarget: c.roasTarget,
       };
     })
     // Maior investimento primeiro: é onde uma decisão errada custa mais caro.

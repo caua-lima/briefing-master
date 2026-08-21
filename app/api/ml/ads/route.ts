@@ -252,6 +252,14 @@ export async function GET(req: Request) {
         clicks: a.clicks, prints: a.prints, cost: a.cost,
         directSales: a.directSales, directUnits: a.directUnits,
         adSales: a.sales, adUnits: a.units,
+        /**
+         * "Vendas atribuidas" como o painel do Mercado Ads conta: direta +
+         * assistida. NAO e `advertising_items_quantity` (o antigo adUnits) —
+         * medido em 5 campanhas da conta, os dois so batem quando a venda
+         * assistida e zero; no resto o app mostrava 6 contra 14 do ML.
+         */
+        adUnitsAtribuidas: a.directUnits + a.indirectUnits,
+        indirectUnits: a.indirectUnits,
         totalSales: v.receita, totalUnits: v.unidades,
         lucroAntesAds, lucroLiquido,
         lucroDiretoAntesAds, lucroDiretoLiquido, diretoDisponivel,

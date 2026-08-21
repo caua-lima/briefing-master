@@ -171,3 +171,20 @@ describe("roasMlAds — o ROAS que o painel do Mercado Ads mostra", () => {
     expect(r[0].roasMlAds).toBeNull();
   });
 });
+
+describe("orcamento e ROAS objetivo da campanha", () => {
+  it("vem do anuncio e nao duplica entre anuncios da mesma campanha", () => {
+    const r = agregarPorCampanha([
+      item({ dailyBudget: 20, roasTarget: 6.4 }),
+      item({ dailyBudget: 20, roasTarget: 6.4 }),
+    ], "geral");
+    expect(r[0].dailyBudget).toBe(20);
+    expect(r[0].roasTarget).toBe(6.4);
+  });
+
+  it("sem configuracao devolvida pelo ML fica 0, nao um chute", () => {
+    const r = agregarPorCampanha([item()], "geral");
+    expect(r[0].dailyBudget).toBe(0);
+    expect(r[0].roasTarget).toBe(0);
+  });
+});

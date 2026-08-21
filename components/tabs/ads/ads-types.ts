@@ -14,6 +14,9 @@ export type AdItem = {
   clicks: number; prints: number; cost: number;
   directSales: number; directUnits: number;
   adSales: number; adUnits: number;
+  /** Vendas atribuidas como o ML conta: direta + assistida. */
+  adUnitsAtribuidas: number;
+  indirectUnits: number;
   totalSales: number; totalUnits: number;
   lucroAntesAds: number; lucroLiquido: number;
   lucroDiretoAntesAds: number; lucroDiretoLiquido: number;
@@ -37,6 +40,7 @@ export type AdItemCampanhaUI = {
   /** Receita/unidades atribuídas TOTAIS (direta + assistida) — base do ROAS do painel do ML. */
   sales: number; units: number;
   directSales: number; directUnits: number;
+  indirectUnits: number;
 };
 
 export const STATUS_META: Record<StatusAnuncio, { label: string; cor: string; bg: string }> = {

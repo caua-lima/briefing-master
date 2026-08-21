@@ -33,6 +33,10 @@ export default function AdsCampaignList({ itens, modo }: { itens: ItemParaCampan
           <thead>
             <tr>
               <th style={{ textAlign: "left" }}>Campanha</th>
+              {/* Orçamento e ROAS objetivo são o que se ajusta no painel do ML —
+                  tê-los aqui é o que permite decidir e agir sem trocar de tela. */}
+              <th title="Orçamento diário configurado na campanha.">Orçamento</th>
+              <th title="ROAS objetivo que você configurou na campanha, no painel do Mercado Ads.">ROAS obj.</th>
               <th>Investido</th>
               <th>Receita</th>
               <th>ROAS</th>
@@ -48,6 +52,12 @@ export default function AdsCampaignList({ itens, modo }: { itens: ItemParaCampan
                   <span style={{ display: "block", fontSize: ".68rem", color: "var(--muted)", fontWeight: 400 }}>
                     {c.anuncios} anúncio(s) · {num(c.clicks)} cliques
                   </span>
+                </td>
+                <td data-label="Orçamento" style={{ whiteSpace: "nowrap", color: c.dailyBudget > 0 ? "var(--text)" : "var(--muted)" }}>
+                  {c.dailyBudget > 0 ? `${fmtBRL(c.dailyBudget)}/dia` : "—"}
+                </td>
+                <td data-label="ROAS obj." style={{ whiteSpace: "nowrap", fontWeight: 600, color: c.roasTarget > 0 ? "var(--text)" : "var(--muted)" }}>
+                  {c.roasTarget > 0 ? `${num(c.roasTarget, 2)}x` : "—"}
                 </td>
                 <td data-label="Investido" style={{ color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(c.cost)}</td>
                 <td data-label="Receita" style={{ color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(c.receita)}</td>
