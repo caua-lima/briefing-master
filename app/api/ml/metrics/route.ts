@@ -6,7 +6,7 @@ import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders"
 import { getMlAccessToken } from "../token";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
 import { diaBRDe, recortarPorDiaBR } from "@/lib/domain/periodo-br";
-import { classificarVenda } from "@/lib/domain/venda-status";
+import { classificarVenda, detectarPedidosSubstituidos } from "@/lib/domain/venda-status";
 
 export const maxDuration = 30;
 
@@ -70,6 +70,9 @@ type Aggregates = {
   canceladasCount: number;
   /** Pedidos que o cache `ml_returns` dizia cancelados mas o ML confirma como venda. */
   resgatadosDoCache: number;
+  /** Pedidos cancelados só para virar outros do mesmo pacote (separação de envio). */
+  substituidasCount: number;
+  substituidasValor: number;
   reconc: { count: number; nosso: number; real: number };
 };
 
@@ -172,6 +175,22 @@ function computeAggregates(
   let reconcNosso = 0;   // total − sale_fee − frete (nossa estimativa do repasse)
   let reconcReal = 0;    // net_received_amount (o que o MP de fato liberou)
 
+  /**
+   * Pedidos cancelados só para virar outros do MESMO pacote (separação de
+   * envio na agência). Ver detectarPedidosSubstituidos: o ML cancela o
+   * original e cria unitários, e contar os três inflava bruto e canceladas ao
+   * mesmo tempo.
+   */
+  const substituidos = detectarPedidosSubstituidos(
+    orders.map((o) => ({
+      orderId: String(o.order_id ?? ""),
+      packId: o.pack_id as string | null | undefined,
+      status: o.status,
+    })),
+  );
+  let substituidasCount = 0;
+  let substituidasValor = 0;
+
   const anunciosMap = new Map<string, AnuncioResult>();
   // Um pedido pode ter várias unidades do mesmo anúncio: 'vendas' conta o
   // PEDIDO uma vez só, enquanto 'qty' soma as unidades.
@@ -181,21 +200,38 @@ function computeAggregates(
   for (const o of orders) {
     const oid = String(o.order_id ?? "");
     const totalAmt = Number(o.total_amount ?? 0);
-    // Faturamento BRUTO inclui tudo (inclusive cancelado/devolvido).
-    faturamentoBruto += totalAmt;
 
     /**
-     * Cancelada x devolvida x válida. O STATUS AO VIVO manda sobre o cache de
-     * `ml_returns` — ver lib/domain/venda-status.ts. Confiar no cache tirava
-     * do faturamento pedidos que o ML ainda conta como venda boa (R$ 360,28
-     * medidos contra o Seller Center).
+     * Cancelada x devolvida x substituída x válida — ver lib/domain/venda-status.ts.
+     * Duas regras vêm de divergências medidas contra o Seller Center:
+     *   · o STATUS AO VIVO manda sobre o cache de `ml_returns`;
+     *   · pedido cancelado só pra virar outros do mesmo pacote (separação de
+     *     envio) não é cancelamento — o valor já está nos pedidos novos.
      */
     const classe = classificarVenda({
       status: o.status,
       noCacheDeCancelados: cancelIds.has(oid),
       temDevolucaoConcluida: devolIds.has(oid),
+      substituidoNoPacote: substituidos.has(oid),
     });
     if (classe.resgatadoDoCache) resgatadosDoCache++;
+
+    /**
+     * Substituído sai ANTES do faturamento bruto, e é o único que sai.
+     * Cancelado e devolvido ficam no bruto de propósito (o bruto é "tudo que
+     * passou"), mas o substituído não é uma venda a mais: contá-lo somaria a
+     * mesma compra duas vezes, uma no original e outra nos pedidos que o
+     * substituíram.
+     */
+    if (classe.classe === "substituida") {
+      substituidasCount++;
+      substituidasValor += totalAmt;
+      continue;
+    }
+
+    // Faturamento BRUTO inclui tudo (inclusive cancelado/devolvido).
+    faturamentoBruto += totalAmt;
+
     // Cancelado = "não venda" (estoque nem saiu). Fica só no bruto; sai do
     // faturamento líquido e do lucro.
     if (classe.classe === "cancelada") { vendasCanceladas += totalAmt; canceladasCount++; continue; }
@@ -335,6 +371,8 @@ function computeAggregates(
     unidadesVendidas,
     canceladasCount,
     resgatadosDoCache,
+    substituidasCount,
+    substituidasValor,
     reconc: { count: reconcCount, nosso: reconcNosso, real: reconcReal },
   };
 }
@@ -487,6 +525,15 @@ export async function GET(req: Request) {
 
     // Série diária de faturamento líquido (para o gráfico de metas): sem
     // cancelados/devolvidos, pois representa a venda que de fato valeu.
+    // Mesmo conjunto que o agregado usa — recalculado aqui porque a detecção
+    // é do escopo da LISTA de pedidos, não de um pedido isolado.
+    const substituidosSerie = detectarPedidosSubstituidos(
+      orders.map((o) => ({
+        orderId: String(o.order_id ?? ""),
+        packId: o.pack_id as string | null | undefined,
+        status: o.status,
+      })),
+    );
     const serieMap = new Map<string, number>();
     for (const o of orders) {
       const oid = String(o.order_id ?? "");
@@ -496,6 +543,7 @@ export async function GET(req: Request) {
         status: o.status,
         noCacheDeCancelados: cancelIds.has(oid),
         temDevolucaoConcluida: devolIds.has(oid),
+        substituidoNoPacote: substituidosSerie.has(oid),
       }).classe !== "valida") continue;
       const dia = diaBRDe(String(o.date_created ?? ""));
       if (dia) serieMap.set(dia, (serieMap.get(dia) ?? 0) + Number(o.total_amount ?? 0));
@@ -681,6 +729,14 @@ export async function GET(req: Request) {
          * ser visível em vez de silenciosa.
          */
         resgatadosDoCache: agg.resgatadosDoCache,
+        /**
+         * Pedidos cancelados só para virar outros do mesmo pacote — separação
+         * de envio na agência. Não entram em lugar nenhum (nem bruto, nem
+         * canceladas), porque o valor já está nos pedidos que os
+         * substituíram. Exposto pra correção ser visível.
+         */
+        substituidasQuantidade: agg.substituidasCount,
+        substituidasValor: agg.substituidasValor,
       },
       serieDiaria,
       adsDiag,

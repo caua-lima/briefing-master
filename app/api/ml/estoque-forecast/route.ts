@@ -85,6 +85,12 @@ export async function GET(req: Request) {
 
     // Pedidos do período (paginado). Cancelados/inválidos não contam como venda.
     const vendas: Record<string, number> = {};
+    /**
+     * Separação de envio (o ML cancela o pedido e cria outros no mesmo pacote)
+     * já sai certo aqui SEM tratamento especial: o original vem com status
+     * "cancelled" e é pulado logo abaixo, e os pedidos novos contam. Só as
+     * rotas que somam o faturamento BRUTO precisam de detectarPedidosSubstituidos.
+     */
     let offset = 0;
     while (true) {
       const u =

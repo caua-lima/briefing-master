@@ -21,7 +21,7 @@ function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pau
 }
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
-import { classificarVenda } from "@/lib/domain/venda-status";
+import { classificarVenda, detectarPedidosSubstituidos } from "@/lib/domain/venda-status";
 
 export const maxDuration = 30;
 
@@ -48,6 +48,15 @@ function vendasPorItem(
   cancelIds: Set<string>, devolIds: Set<string>,
 ): Map<string, VendaItem> {
   const map = new Map<string, VendaItem>();
+  // Separação de envio: o ML cancela o pedido e cria outros no mesmo pacote.
+  // Sem isto o item apareceria com a receita contada duas vezes aqui.
+  const substituidos = detectarPedidosSubstituidos(
+    orders.map((o) => ({
+      orderId: String(o.order_id ?? ""),
+      packId: o.pack_id as string | null | undefined,
+      status: o.status,
+    })),
+  );
   for (const o of orders) {
     const oid = String(o.order_id ?? "");
     /**
@@ -60,6 +69,7 @@ function vendasPorItem(
       status: o.status,
       noCacheDeCancelados: cancelIds.has(oid),
       temDevolucaoConcluida: devolIds.has(oid),
+      substituidoNoPacote: substituidos.has(oid),
     }).classe !== "valida") continue;
     const items = (o.items as OrderItem[]) ?? [];
     const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);

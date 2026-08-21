@@ -114,6 +114,8 @@ type Conciliacao = {
   canceladasValor:       number;
   descartadosForaDaJanela: number;
   resgatadosDoCache?:    number;
+  substituidasQuantidade?: number;
+  substituidasValor?:    number;
 };
 
 type Devolucao = {
@@ -605,6 +607,15 @@ function ConferenciaML({ c, periodo }: { c: Conciliacao; periodo: string }) {
                 horário, e sem esse corte eles inflariam o faturamento.
               </>
             )}
+            {(c.substituidasQuantidade ?? 0) > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--green)" }}>{c.substituidasQuantidade} pedido(s)</b> ({fmtBRL(c.substituidasValor ?? 0)})
+                foram cancelados pelo Mercado Livre apenas para virar outros pedidos do mesmo
+                pacote — é o que acontece quando você <b>separa o envio</b> na agência. Não são
+                venda perdida: o valor já está nos pedidos que os substituíram, então eles não
+                entram nem no bruto nem em “Vendas canceladas”.
+              </>
+            )}
             {(c.resgatadosDoCache ?? 0) > 0 && (
               <>
                 {" "}· <b style={{ color: "var(--green)" }}>{c.resgatadosDoCache} pedido(s)</b> estavam
@@ -975,35 +986,170 @@ function diasDoPeriodo(from?: string, to?: string): number {
   return Math.max(1, Math.round((b - a) / 86400000) + 1);
 }
 
+/** Dia civil BR de hoje, deslocado por `offsetDias`. */
+function diaBR(offsetDias = 0): string {
+  const d = new Date(Date.now() - 3 * 3600 * 1000 + offsetDias * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+type JanelaMedia = "periodo" | "mes" | "30d";
+
+const JANELA_LABEL: Record<JanelaMedia, string> = {
+  periodo: "Período selecionado",
+  mes: "Este mês",
+  "30d": "Últimos 30 dias",
+};
+
+/**
+ * Janela de datas de cada opção. "Este mês" vai do dia 1º até HOJE, não até o
+ * fim do mês: dividir as vendas por 31 dias no dia 5 daria uma média
+ * artificialmente baixa, e é essa média que decide reposição.
+ */
+function janelaDe(j: JanelaMedia, from?: string, to?: string): { from: string; to: string } | null {
+  if (j === "periodo") return from && to ? { from, to } : null;
+  const hoje = diaBR();
+  if (j === "mes") return { from: `${hoje.slice(0, 7)}-01`, to: hoje };
+  // 30 dias corridos INCLUINDO hoje — daí o -29.
+  return { from: diaBR(-29), to: hoje };
+}
+
+/**
+ * Agrupa os anúncios por PRODUTO.
+ *
+ * A lista da API é uma linha por anúncio (MLB), e o mesmo produto costuma ter
+ * vários — então "Erva Limão Caipira" aparecia duas vezes, com o giro partido
+ * entre as linhas. Partido, ele engana duas vezes: some do topo da lista e faz
+ * a média/dia de cada metade parecer baixa demais pra repor.
+ *
+ * A chave é o TÍTULO normalizado porque, para anúncio vinculado, a API já
+ * devolve o nome do produto cadastrado (ver `produto.name` em
+ * app/api/ml/metrics/route.ts) — dois anúncios do mesmo produto chegam com o
+ * mesmo nome. Anúncio sem cadastro mantém o título do ML e continua sozinho,
+ * que é o certo: sem vínculo, não dá pra afirmar que é o mesmo produto.
+ */
+function agruparPorProduto(anuncios: AnuncioResult[]): { title: string; qty: number; anuncios: number }[] {
+  const mapa = new Map<string, { title: string; qty: number; anuncios: number }>();
+  for (const a of anuncios) {
+    if (a.semVenda || a.qty <= 0) continue;
+    const chave = a.title.trim().toLowerCase();
+    const atual = mapa.get(chave) ?? { title: a.title.trim(), qty: 0, anuncios: 0 };
+    atual.qty += a.qty;
+    atual.anuncios += 1;
+    mapa.set(chave, atual);
+  }
+  return Array.from(mapa.values());
+}
+
 function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; from?: string; to?: string }) {
-  const dias = diasDoPeriodo(from, to);
-  const linhas = anuncios
-    .filter((a) => !a.semVenda && a.qty > 0)
-    .map((a) => ({ title: a.title, qty: a.qty, media: a.qty / dias }))
+  const [janela, setJanela] = useState<JanelaMedia>("periodo");
+  /**
+   * Resultado guardado JUNTO com a chave da janela que o produziu. Guardar só
+   * os dados obrigaria a limpá-los dentro do efeito ao trocar de janela —
+   * setState síncrono em efeito, que dispara render em cascata. Comparando a
+   * chave, o resultado velho simplesmente deixa de casar e é ignorado.
+   */
+  const [cache, setCache] = useState<{ chave: string; dados: AnuncioResult[] } | null>(null);
+
+  const alvo = janelaDe(janela, from, to);
+  const chaveAlvo = alvo ? `${janela}|${alvo.from}|${alvo.to}` : "";
+  /**
+   * Derivado, não estado: "está carregando" é exatamente "a janela pedida não
+   * é a do cache". Um `useState` aqui exigiria setState dentro do efeito — a
+   * cascata de render que o lint aponta — sem dizer nada que a chave já não diga.
+   */
+  const carregando = janela !== "periodo" && cache?.chave !== chaveAlvo;
+
+  /**
+   * "Este mês" e "Últimos 30 dias" não são recortes do período já carregado —
+   * podem cobrir dias que ele nem inclui. Então buscam a MESMA rota de
+   * métricas com a própria janela, em vez de recalcular por cima de dados
+   * incompletos.
+   */
+  useEffect(() => {
+    if (janela === "periodo" || !alvo) return;
+    let vivo = true;
+    const chave = chaveAlvo;
+    authedFetch(`/api/ml/metrics?from=${alvo.from}&to=${alvo.to}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => { if (vivo) setCache({ chave, dados: j.anuncios ?? [] }); })
+      // Falha vira lista vazia COM a chave: sem isso a tela ficaria em
+      // "carregando" pra sempre depois de um erro de rede.
+      .catch(() => { if (vivo) setCache({ chave, dados: [] }); });
+    return () => { vivo = false; };
+    // chaveAlvo já cobre janela/from/to; `alvo` é recriado a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveAlvo]);
+
+  const base = janela === "periodo"
+    ? anuncios
+    : (cache?.chave === chaveAlvo ? cache.dados : []);
+  const dias = alvo ? diasDoPeriodo(alvo.from, alvo.to) : diasDoPeriodo(from, to);
+  const linhas = agruparPorProduto(base)
+    .map((g) => ({ ...g, media: g.qty / dias }))
     .sort((x, y) => y.media - x.media);
-  if (!linhas.length) return null;
   const totalQty = linhas.reduce((s, l) => s + l.qty, 0);
+
+  const seletor = (
+    <div className="seg" style={{ marginLeft: "auto" }}>
+      {(["periodo", "mes", "30d"] as const).map((j) => (
+        <button
+          key={j}
+          type="button"
+          className={`seg-btn ${janela === j ? "active" : ""}`}
+          onClick={() => setJanela(j)}
+          disabled={j === "periodo" && !(from && to)}
+        >
+          {JANELA_LABEL[j]}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="panel">
-      <div className="panel-head" style={{ marginBottom: 8 }}>
-        <span className="panel-title">Média de vendas por dia</span>
-        <span className="panel-sub">{dias} dia(s) no período · {totalQty} un vendidas · média {(totalQty / dias).toFixed(1)}/dia</span>
+      <div className="panel-head" style={{ marginBottom: 8, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <span>
+          <span className="panel-title">Média de vendas por dia</span>
+          <span className="panel-sub" style={{ display: "block" }}>
+            {carregando
+              ? "carregando…"
+              : `${dias} dia(s) · ${totalQty} un vendidas · média ${(totalQty / dias).toFixed(1)}/dia`}
+            {alvo && ` · ${formatDateBR(alvo.from)} a ${formatDateBR(alvo.to)}`}
+          </span>
+        </span>
+        {seletor}
       </div>
-      <div className="table-wrapper" style={{ border: "none" }}>
-        <table className="tbl-modern tbl-cards">
-          <thead><tr><th style={{ textAlign: "left" }}>Produto</th><th>Vendas no período</th><th>Média/dia</th></tr></thead>
-          <tbody>
-            {linhas.map((l, i) => (
-              <tr key={l.title + i}>
-                <td style={{ textAlign: "left", fontWeight: 600 }}>{l.title}</td>
-                <td data-label="Vendas no período" style={{ color: "var(--muted)" }}>{l.qty} un</td>
-                <td data-label="Média/dia" style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+
+      {linhas.length === 0 ? (
+        <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 2px" }}>
+          {carregando ? "Buscando as vendas desta janela…" : "Nenhuma venda nesta janela."}
+        </div>
+      ) : (
+        <div className="table-wrapper" style={{ border: "none" }}>
+          <table className="tbl-modern tbl-cards">
+            <thead><tr><th style={{ textAlign: "left" }}>Produto</th><th>Vendas no período</th><th>Média/dia</th></tr></thead>
+            <tbody>
+              {linhas.map((l) => (
+                <tr key={l.title}>
+                  <td style={{ textAlign: "left", fontWeight: 600 }}>
+                    {l.title}
+                    {l.anuncios > 1 && (
+                      <span
+                        style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}
+                        title="Este produto vende por mais de um anúncio; as vendas dos dois estão somadas aqui."
+                      >
+                        {l.anuncios} anúncios somados
+                      </span>
+                    )}
+                  </td>
+                  <td data-label="Vendas no período" style={{ color: "var(--muted)" }}>{l.qty} un</td>
+                  <td data-label="Média/dia" style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
