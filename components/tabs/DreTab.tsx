@@ -183,7 +183,7 @@ export default function DreTab() {
   const [coletaFull, setColetaFull] = useState<CustoColetaFull | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (forcar = false) => {
     setLoading(true);
     try {
       const r = await authedFetch(`/api/ml/metrics?from=${range.from}&to=${range.to}`, { cache: "no-store" });
@@ -203,7 +203,10 @@ export default function DreTab() {
       if (!Number.isFinite(diasAte) || diasAte > JANELA_MAX_DIAS_FULL) {
         setColetaFull({ total: 0, parcial: false, foraDaJanela: true, remessas: 0, pendentes: [] });
       } else {
-        const rf = await authedFetch(`/api/ml/gestao-full?dias=${Math.max(diasAte, 1)}`, { cache: "no-store" });
+        const rf = await authedFetch(
+          `/api/ml/gestao-full?dias=${Math.max(diasAte, 1)}${forcar ? "&forcar=1" : ""}`,
+          { cache: "no-store" },
+        );
         if (!rf.ok) setColetaFull(null);
         else {
           const j = (await rf.json()) as {
@@ -460,7 +463,7 @@ export default function DreTab() {
         {!!coletaFull?.pendentes.length && (
           <ColetaPendentes
             pendentes={coletaFull.pendentes}
-            onSalvo={load}
+            onSalvo={() => load(true)}
           />
         )}
 

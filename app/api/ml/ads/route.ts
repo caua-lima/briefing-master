@@ -20,6 +20,8 @@ function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pau
 }
 import { getSellerId, getValidMlAccessToken, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
+import { classificarVenda, detectarPedidosSubstituidos } from "@/lib/domain/venda-status";
+import { diaBRDe } from "@/lib/domain/periodo-br";
 
 export const maxDuration = 30;
 
@@ -32,10 +34,6 @@ function todayISO(offsetDays = 0): string {
 }
 const normSku = (s: string) => s.trim().toLowerCase();
 const normId = (s: string) => s.trim().toUpperCase().replace(/^MLB/, "");
-const isNaoVenda = (s: unknown) => {
-  const v = String(s ?? "").toLowerCase();
-  return v === "cancelled" || v === "invalid";
-};
 
 type VendaItem = { receita: number; unidades: number; cmv: number; imposto: number; taxaML: number; envio: number };
 
@@ -50,9 +48,37 @@ function vendasPorItem(
   cancelIds: Set<string>, devolIds: Set<string>,
 ): Map<string, VendaItem> {
   const map = new Map<string, VendaItem>();
+  // Separação de envio: o ML cancela o pedido e cria outros no mesmo pacote.
+  // Sem isto o item apareceria com a receita contada duas vezes aqui.
+  const substituidos = detectarPedidosSubstituidos(
+    orders.map((o) => ({
+      orderId: String(o.order_id ?? ""),
+      packId: o.pack_id as string | null | undefined,
+      status: o.status,
+      // Comprador + dia + itens: a 2ª regra de detectarPedidosSubstituidos,
+      // que pega a separação de envio quando o ML não reaproveita o pack_id.
+      buyerId: (o.buyer_id as string | null | undefined) ?? null,
+      dia: diaBRDe(String(o.date_created ?? "")),
+      itens: ((o.items as OrderItem[]) ?? []).map((it) => ({
+        itemId: String(it.item_id ?? ""),
+        qty: Number(it.quantity ?? 1),
+      })),
+    })),
+  );
   for (const o of orders) {
     const oid = String(o.order_id ?? "");
-    if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
+    /**
+     * MESMA regra do Dashboard (lib/domain/venda-status.ts): o status ao vivo
+     * manda sobre o cache de `ml_returns`. Antes esta rota repetia a condição
+     * à mão, então uma venda "resgatada" contava no Dashboard e continuava
+     * fora daqui — e o ROAS saía calculado sobre uma receita menor.
+     */
+    if (classificarVenda({
+      status: o.status,
+      noCacheDeCancelados: cancelIds.has(oid),
+      temDevolucaoConcluida: devolIds.has(oid),
+      substituidoNoPacote: substituidos.has(oid),
+    }).classe !== "valida") continue;
     const items = (o.items as OrderItem[]) ?? [];
     const totalUnits = items.reduce((s, it) => s + Number(it.quantity ?? 1), 0);
     const envioPerUnit = totalUnits > 0 ? Number(o.shipping_cost ?? 0) / totalUnits : 0;
@@ -183,6 +209,11 @@ export async function GET(req: Request) {
     // vira só um dado extra no tooltip agora; a etiqueta principal é da campanha.
     const statusPorItem = await getItemStatusByItem(tenant.tenantId, mlbsAds).catch(() => ({} as Record<string, string>));
 
+    // id → nome de TODAS as campanhas da conta, pra nomear também as fatias de
+    // campanhas que não são a principal do anúncio.
+    const nomePorCampanha = new Map<string, string>();
+    for (const c of cfg.campanhasResumo) if (c.id) nomePorCampanha.set(String(c.id), c.name);
+
     const items = ads.map((a) => {
       const v = vendas.get(a.itemId) ?? { receita: 0, unidades: 0, cmv: 0, imposto: 0, taxaML: 0, envio: 0 };
       const lucroAntesAds = v.receita - v.cmv - v.imposto - v.taxaML - v.envio;
@@ -208,6 +239,23 @@ export async function GET(req: Request) {
 
       const c = cfg.porItem[a.itemId.toUpperCase()];
       const mlStatus = statusPorItem[a.itemId.toUpperCase()] ?? ""; // status do catálogo — só informativo
+
+      /**
+       * Nome de CADA campanha em que este anúncio rodou. `cfg.porItem` só
+       * conhece a campanha principal, então as demais (ex.: uma campanha
+       * antiga que gastou no começo do período) sairiam sem nome. O resumo de
+       * campanhas da conta cobre esse caso.
+       */
+      const campanhas = a.campanhas.map((f) => ({
+        ...f,
+        // Nome resolvido abaixo; `sales`/`units` já vêm da fatia e são a base
+        // do ROAS que o painel do Mercado Ads mostra.
+        campaignName:
+          nomePorCampanha.get(f.campaignId)
+          ?? (f.campaignId === (c?.campaignId ?? "") ? c?.campaignName ?? "" : "")
+          ?? "",
+      }));
+
       return {
         itemId: a.itemId, title: a.title,
         status: statusLabel(c?.campaignId ?? "", c?.status ?? ""),
@@ -215,6 +263,14 @@ export async function GET(req: Request) {
         clicks: a.clicks, prints: a.prints, cost: a.cost,
         directSales: a.directSales, directUnits: a.directUnits,
         adSales: a.sales, adUnits: a.units,
+        /**
+         * "Vendas atribuidas" como o painel do Mercado Ads conta: direta +
+         * assistida. NAO e `advertising_items_quantity` (o antigo adUnits) —
+         * medido em 5 campanhas da conta, os dois so batem quando a venda
+         * assistida e zero; no resto o app mostrava 6 contra 14 do ML.
+         */
+        adUnitsAtribuidas: a.directUnits + a.indirectUnits,
+        indirectUnits: a.indirectUnits,
         totalSales: v.receita, totalUnits: v.unidades,
         lucroAntesAds, lucroLiquido,
         lucroDiretoAntesAds, lucroDiretoLiquido, diretoDisponivel,
@@ -222,6 +278,7 @@ export async function GET(req: Request) {
         dailyBudget: c?.dailyBudget ?? 0,
         roasTarget: c?.roasTarget ?? 0,
         acosTarget: c?.acosTarget ?? 0,
+        campanhas,
       };
       // Sem campanha vai pro fim da lista, não importa o investimento — é
       // ruído pra quem quer olhar o que está rodando de verdade primeiro.

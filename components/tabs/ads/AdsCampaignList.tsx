@@ -33,6 +33,10 @@ export default function AdsCampaignList({ itens, modo }: { itens: ItemParaCampan
           <thead>
             <tr>
               <th style={{ textAlign: "left" }}>Campanha</th>
+              {/* Orçamento e ROAS objetivo são o que se ajusta no painel do ML —
+                  tê-los aqui é o que permite decidir e agir sem trocar de tela. */}
+              <th title="Orçamento diário configurado na campanha.">Orçamento</th>
+              <th title="ROAS objetivo que você configurou na campanha, no painel do Mercado Ads.">ROAS obj.</th>
               <th>Investido</th>
               <th>Receita</th>
               <th>ROAS</th>
@@ -49,10 +53,28 @@ export default function AdsCampaignList({ itens, modo }: { itens: ItemParaCampan
                     {c.anuncios} anúncio(s) · {num(c.clicks)} cliques
                   </span>
                 </td>
+                <td data-label="Orçamento" style={{ whiteSpace: "nowrap", color: c.dailyBudget > 0 ? "var(--text)" : "var(--muted)" }}>
+                  {c.dailyBudget > 0 ? `${fmtBRL(c.dailyBudget)}/dia` : "—"}
+                </td>
+                <td data-label="ROAS obj." style={{ whiteSpace: "nowrap", fontWeight: 600, color: c.roasTarget > 0 ? "var(--text)" : "var(--muted)" }}>
+                  {c.roasTarget > 0 ? `${num(c.roasTarget, 2)}x` : "—"}
+                </td>
                 <td data-label="Investido" style={{ color: "var(--red)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtBRL(c.cost)}</td>
                 <td data-label="Receita" style={{ color: "var(--green)", whiteSpace: "nowrap" }}>{fmtBRL(c.receita)}</td>
+                {/* Dois ROAS de propósito: o do modo escolhido e o do painel do
+                    Mercado Ads (receita atribuída total). Sem o segundo, o
+                    número daqui parece quebrado ao lado do ML — foi o que gerou
+                    "o ROAS está errado" (4,71x aqui × 10,77x lá, mesma campanha). */}
                 <td data-label="ROAS" style={{ fontWeight: 700, whiteSpace: "nowrap", color: c.roas != null ? corRoas(c.roas) : "var(--muted)" }}>
                   {c.roas != null ? `${num(c.roas, 2)}x` : "—"}
+                  {c.roasMlAds != null && c.roas != null && Math.abs(c.roasMlAds - c.roas) > 0.01 && (
+                    <span
+                      style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}
+                      title={`No Mercado Ads esta campanha aparece com ROAS ${num(c.roasMlAds, 2)}x, porque lá a conta usa a receita atribuída TOTAL (${fmtBRL(c.receitaAtribuida)}: clique direto + venda assistida). Aqui a base é ${fmtBRL(c.receita)}. Os dois estão certos e respondem perguntas diferentes.`}
+                    >
+                      ML: {num(c.roasMlAds, 2)}x
+                    </span>
+                  )}
                 </td>
                 <td
                   data-label="Lucro após Ads"

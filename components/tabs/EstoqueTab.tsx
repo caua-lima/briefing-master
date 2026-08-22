@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CUSTO_FAIXA_SENTINELA, custoNaData, impostoNaData, TIPO_MOVIMENTO_LABEL, type EstoqueMovimento, type MovimentoTipo, type Product } from "@/lib/domain/types";
-import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos } from "@/lib/firebase/data";
+import { addMovimento, deleteMovimento, deleteProduct, logAudit, upsertProduct, watchMovimentos, watchRemessasIgnoradas } from "@/lib/firebase/data";
+import { unidadesPendentesPorProduto, type Remessa } from "@/lib/domain/remessas";
 import { fmtBRL } from "@/lib/domain/calc";
 import { getCoverageStatus, COVERAGE_STATUS_LABEL, consolidarEstoqueAnuncios, ehFullLogistic, estoqueForaDoFull, type CoverageStatus } from "@/lib/domain/estoque";
+import { calcularLucroEstoque, medirTaxas, type FinanceiroProduto, type LucroEstoque } from "@/lib/domain/estoque-lucro";
 import Modal from "@/components/Modal";
 import type { UserData } from "@/components/useUserData";
 import { authedFetch } from "@/lib/api/authed-fetch";
@@ -13,7 +15,12 @@ import { gravarChaveApp, lerChaveApp } from "@/lib/storage";
 
 type MlItem = { available: number; sold: number; status: string; price: number; regularPrice: number; hasPromo: boolean; logistic: string; inventoryId?: string };
 type EstoqueML = Record<string, MlItem>;
-type Forecast = { vendas: Record<string, number>; dias: number };
+type Forecast = {
+  vendas: Record<string, number>;
+  dias: number;
+  /** Realizado por produto — base das taxas medidas (ver lib/domain/estoque-lucro.ts). */
+  financeiro?: Record<string, FinanceiroProduto>;
+};
 
 // dias-alvo de cobertura pra sugestão de reposição
 const DIAS_ALVO = 30;
@@ -58,13 +65,13 @@ function anunciosDe(p: Product, estoqueML: EstoqueML): AnuncioML[] {
  * a regra e o porquê de cada armadilha estão em lib/domain/estoque.ts
  * (consolidarEstoqueAnuncios), que é puro e tem os testes.
  */
-function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean; fullCompartilhado: boolean } {
+function fullDe(p: Product, estoqueML: EstoqueML): { qtd: number; proprio: number; ehFull: boolean; temDado: boolean; fullCompartilhado: boolean; proprioCompartilhado: boolean } {
   const c = consolidarEstoqueAnuncios(
     anunciosDe(p, estoqueML)
       .filter(({ item }) => item)
       .map(({ item }) => ({ available: item!.available, logistic: item!.logistic, inventoryId: item!.inventoryId })),
   );
-  return { qtd: c.full, proprio: c.proprio, ehFull: c.ehFull, temDado: c.temDado, fullCompartilhado: c.fullCompartilhado };
+  return { qtd: c.full, proprio: c.proprio, ehFull: c.ehFull, temDado: c.temDado, fullCompartilhado: c.fullCompartilhado, proprioCompartilhado: c.proprioCompartilhado };
 }
 
 // Full considerado "baixo" sugere reabastecer com o estoque de casa.
@@ -95,6 +102,12 @@ type PrevisaoProduto = {
   cobertura: number;    // dias até acabar o total (Infinity = sem vendas ou sem estoque)
   valorPotencial: number;
   reporQtd: number;     // unidades pra levar o Full a cobrir DIAS_ALVO (só produtos no Full)
+  /**
+   * Lucro que este estoque ainda pode render, com comissão e frete MEDIDOS
+   * nas vendas do período. `null` quando não há base (produto sem venda ou
+   * sem preço de anúncio) — a tela mostra "—", nunca R$ 0,00.
+   */
+  lucro: LucroEstoque | null;
 };
 
 function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): PrevisaoProduto {
@@ -120,7 +133,23 @@ function previsaoDe(p: Product, estoqueML: EstoqueML, forecast: Forecast): Previ
   const cobertura = mediaDiaria > 0 && total > 0 ? total / mediaDiaria : Infinity;
   // Reposição só faz sentido pra quem está no Full.
   const reporQtd = ehFull && mediaDiaria > 0 ? Math.max(0, Math.ceil(mediaDiaria * DIAS_ALVO) - full) : 0;
-  return { precoMin, precoMax, casa, full, proprio, ehFull, total, mediaDiaria, cobertura, valorPotencial, reporQtd };
+
+  /**
+   * Lucro projetado do que está parado. Precifica pelo MENOR preço entre os
+   * anúncios (precoMin), não o maior: o comprador escolhe o mais barato, então
+   * projetar pelo topo prometeria um lucro que a venda real não entrega.
+   * Imposto e custo saem da vigência de HOJE — é a decisão de hoje que está
+   * em jogo, não o histórico.
+   */
+  const lucro = calcularLucroEstoque({
+    preco: precoMin || precoMax,
+    custo: custoMedioDe(p),
+    impostoPct: impostoNaData(p, todayISO()),
+    unidades: total,
+    taxas: medirTaxas(forecast.financeiro?.[p.id]),
+  });
+
+  return { precoMin, precoMax, casa, full, proprio, ehFull, total, mediaDiaria, cobertura, valorPotencial, reporQtd, lucro };
 }
 
 export default function EstoqueTab({ uid, data }: { uid: string; data: UserData }) {
@@ -132,6 +161,8 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const [forecast, setForecast] = useState<Forecast>({ vendas: {}, dias: DIAS_ALVO });
   const [loadingML, setLoadingML] = useState(false);
   const [movimentos, setMovimentos] = useState<EstoqueMovimento[]>([]);
+  const [remessas, setRemessas] = useState<Remessa[]>([]);
+  const [remessasIgnoradas, setRemessasIgnoradas] = useState<Set<string>>(new Set());
   const [movModal, setMovModal] = useState<{ product: Product; tipo: MovimentoTipo } | null>(null);
   const [agenciasProduct, setAgenciasProduct] = useState<Product | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -147,17 +178,39 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
   const carregarEstoque = useCallback(async () => {
     setLoadingML(true);
     try {
-      const [rMl, rFc] = await Promise.all([
+      const [rMl, rFc, rFull] = await Promise.all([
         authedFetch("/api/ml/estoque-ml", { cache: "no-store" }),
         authedFetch(`/api/ml/estoque-forecast?dias=${DIAS_ALVO}`, { cache: "no-store" }),
+        /**
+         * Remessas pro Full. Sem isto, um envio que chegou no centro mas
+         * ainda não teve a baixa lançada fica contado NOS DOIS lados — o
+         * livro do galpão não desceu e o Full já subiu — e o total aparece
+         * inflado sem nada explicando. A rota tem cache de 5 min do lado do
+         * servidor, então não é uma chamada cara. Best-effort: sem ela a aba
+         * funciona igual, só sem o aviso.
+         */
+        authedFetch("/api/ml/gestao-full", { cache: "no-store" }).catch(() => null),
       ]);
       if (rMl.ok) setEstoqueML((await rMl.json()).estoque ?? {});
-      if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO }); }
+      if (rFc.ok) { const j = await rFc.json(); setForecast({ vendas: j.vendas ?? {}, dias: j.dias ?? DIAS_ALVO, financeiro: j.financeiro ?? {} }); }
+      if (rFull?.ok) { const j = await rFull.json(); setRemessas(j.remessas ?? []); }
     } catch { /* ignora */ } finally { setLoadingML(false); }
   }, []);
 
   useEffect(() => { carregarEstoque(); }, [carregarEstoque]);
   useEffect(() => watchMovimentos(setMovimentos), []);
+  useEffect(() => watchRemessasIgnoradas(setRemessasIgnoradas), []);
+
+  /**
+   * Unidades contadas duas vezes: já no Full e ainda no livro do galpão,
+   * porque a baixa da remessa nunca foi lançada (ver
+   * unidadesPendentesPorProduto). É o que fazia o total aparecer inflado sem
+   * explicação — 23 "em casa" que já não existiam somadas às 22 do Full.
+   */
+  const duplicadasPorProduto = useMemo(
+    () => unidadesPendentesPorProduto(remessas, movimentos, remessasIgnoradas),
+    [remessas, movimentos, remessasIgnoradas],
+  );
 
   const movsPorProduto = useMemo(() => {
     const map = new Map<string, EstoqueMovimento[]>();
@@ -335,6 +388,19 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
         onChange={(e) => setSearch(e.target.value)} aria-label="Buscar produto"
       />
 
+      {/* Aviso no topo porque a causa do total inflado não está na linha de um
+          produto só — está numa remessa que ninguém baixou. Sem isto, o número
+          errado aparece e a explicação fica escondida num tooltip. */}
+      {duplicadasPorProduto.size > 0 && (
+        <div className="note note-warn">
+          <b>Estoque contado duas vezes</b> em {duplicadasPorProduto.size} produto(s):{" "}
+          {Array.from(duplicadasPorProduto.values()).reduce((s, n) => s + n, 0)} unidade(s) já chegaram
+          no Full mas a saída do galpão nunca foi lançada, então seguem contadas nos dois lugares e o
+          total fica maior do que o real. A baixa mexe no custo médio, por isso não é aplicada sozinha
+          — resolva em <b>Full › Remessas pro Full</b>.
+        </div>
+      )}
+
       {reabastecer.length > 0 && (
         <div className="note note-warn">
           <b>Full baixo</b> em {reabastecer.length} produto(s) — você tem unidades em casa pra enviar:{" "}
@@ -377,6 +443,7 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
                     onEdit={() => setEditProduct({ ...p, mlbs: mlbsDe(p) })}
                     onMov={(tipo) => setMovModal({ product: p, tipo })}
                     onAgencias={() => setAgenciasProduct(p)}
+                    duplicadas={duplicadasPorProduto.get(p.id) ?? 0}
                   />
                 ))}
               </tbody>
@@ -470,11 +537,13 @@ export default function EstoqueTab({ uid, data }: { uid: string; data: UserData 
 }
 
 function ProductRow({
-  product, estoqueML, expanded, onToggle, onEdit, onMov, onAgencias,
+  product, estoqueML, expanded, onToggle, onEdit, onMov, onAgencias, duplicadas = 0,
 }: {
   product: Product;
   uid: string;
   estoqueML: EstoqueML;
+  /** Unidades já no Full que ainda não saíram do livro do galpão (0 = nenhuma). */
+  duplicadas?: number;
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -483,7 +552,7 @@ function ProductRow({
 }) {
   const imposto = parseNum(product.imposto ?? "0");
   const anuncios = anunciosDe(product, estoqueML);
-  const { qtd: full, proprio, ehFull, fullCompartilhado } = fullDe(product, estoqueML);
+  const { qtd: full, proprio, ehFull, fullCompartilhado, proprioCompartilhado } = fullDe(product, estoqueML);
   const casa = product.qtdLocal ?? 0;
   // Sem Full, "em casa" e "no anúncio" são o mesmo estoque físico (ver
   // estoqueForaDoFull) — mostra o valor do anúncio, que é o que reflete vendas
@@ -519,7 +588,33 @@ function ProductRow({
             </div>
           </div>
         </td>
-        <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casaExibida > 0 ? "var(--yellow)" : "var(--muted)" }}>{casaExibida} un</td>
+        <td data-label="Em casa" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: casaExibida > 0 ? "var(--yellow)" : "var(--muted)" }}>
+          {casaExibida} un
+          {/* Sem Full, "Em casa" vem do maior anúncio próprio — e com dois
+              anúncios sobre o mesmo galpão o número parece "faltar" se ninguém
+              explicar de onde ele saiu. */}
+          {/* O livro do galpão só desce quando a saída pro Full é lançada. Até
+              lá as MESMAS unidades contam aqui e no Full — o total infla e
+              parece erro de cálculo. Mostramos o tamanho exato da diferença em
+              vez de descontar na tela: a baixa é lançamento de verdade (mexe no
+              custo médio), e corrigir só aqui faria o painel discordar do livro. */}
+          {duplicadas > 0 && (
+            <span
+              title={`${duplicadas} unidade(s) já chegaram no Full mas a baixa não foi lançada, então continuam contadas aqui TAMBÉM. O total deste produto está inflado nessas unidades. Resolva na aba Full › Remessas pro Full.`}
+              style={{ display: "block", fontSize: ".62rem", color: "var(--warning)", fontWeight: 700, cursor: "help" }}
+            >
+              ⚠ {duplicadas} un já no Full
+            </span>
+          )}
+          {proprioCompartilhado && !ehFull && (
+            <span
+              title="Este produto está em mais de um anúncio fora do Full, e os dois vendem do MESMO estoque de casa. O total usa o maior declarado, não a soma: anunciar 18 e 18 é a mesma pilha de 18 unidades, não 36."
+              style={{ display: "block", fontSize: ".62rem", color: "var(--muted)", fontWeight: 400, cursor: "help" }}
+            >
+              mesmo estoque em {anuncios.filter(({ item }) => item && !ehFullLogistic(item.logistic)).length} anúncios
+            </span>
+          )}
+        </td>
         <td data-label="Full (ML)" style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: !ehFull ? "var(--muted)" : fullBaixo ? "var(--red)" : "var(--green)" }}>
           {ehFull ? `${full} un` : "—"}
           {fullBaixo && casa > 0 && <span title="Envie de casa pro Full" style={{ display: "block", fontSize: ".62rem", color: "var(--warning)" }}>reabastecer</span>}
@@ -879,7 +974,10 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
     <div className="panel">
       <div className="panel-head" style={{ marginBottom: 6 }}>
         <span className="panel-title">Previsão de vendas e reposição</span>
-        <span className="panel-sub">preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias</span>
+        <span className="panel-sub">
+          preço atual do ML · média dos últimos {forecast.dias} dias · repor p/ cobrir {DIAS_ALVO} dias ·
+          lucro projetado com comissão e frete MEDIDOS nas vendas do período
+        </span>
       </div>
       {linhas.length === 0 ? (
         <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 0" }}>Nenhum produto cadastrado ainda.</div>
@@ -897,6 +995,7 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                 <th style={{ textAlign: "right" }}>Repor (Full)</th>
                 <th style={{ textAlign: "right" }}>Custo estimado</th>
                 <th style={{ textAlign: "right" }}>Venda potencial</th>
+                <th style={{ textAlign: "right" }}>Lucro projetado</th>
                 <th style={{ textAlign: "center" }}>Planejado</th>
               </tr>
             </thead>
@@ -946,6 +1045,30 @@ function PrevisaoPanel({ products, estoqueML, forecast }: { products: Product[];
                       {custoEstimado > 0 ? fmtBRL(custoEstimado) : "—"}
                     </td>
                     <td data-label="Venda potencial" style={{ textAlign: "right", color: "var(--green)", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtBRL(f.valorPotencial)}</td>
+                    {/* Lucro projetado: o que a venda potencial vira DEPOIS de
+                        comissão, frete, custo e imposto. É a coluna que separa
+                        "estoque valioso" de "estoque que dá prejuízo girar". */}
+                    <td
+                      data-label="Lucro projetado"
+                      style={{
+                        textAlign: "right", fontWeight: 700, whiteSpace: "nowrap",
+                        color: f.lucro == null ? "var(--muted)" : f.lucro.lucroTotal >= 0 ? "var(--green)" : "var(--red)",
+                      }}
+                      title={
+                        f.lucro == null
+                          ? "Sem venda no período (ou sem preço no anúncio): não dá pra medir a comissão e o frete reais deste produto."
+                          : `${fmtBRL(f.lucro.lucroUnitario)} por unidade × ${f.total} un · margem ${f.lucro.margem.toFixed(1)}%`
+                      }
+                    >
+                      {f.lucro == null ? "—" : (
+                        <>
+                          {fmtBRL(f.lucro.lucroTotal)}
+                          <span style={{ display: "block", fontSize: ".64rem", fontWeight: 400, color: "var(--muted)" }}>
+                            {fmtBRL(f.lucro.lucroUnitario)}/un · {f.lucro.margem.toFixed(1)}%
+                          </span>
+                        </>
+                      )}
+                    </td>
                     <td data-label="Planejado" style={{ textAlign: "center" }}>
                       <input type="checkbox" checked={planejado} onChange={() => togglePlanejado(p.id)} aria-label={`Marcar ${p.name || "produto"} como reposição já planejada`} />
                     </td>

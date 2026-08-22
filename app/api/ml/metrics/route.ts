@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsSpendByItem, probeAds } from "@/lib/ml/ads";
-import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
+import { completarFretesFaltantes, fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 import { getMlAccessToken, getSellerId, resolverTenantDaRequisicao, tenantCol } from "@/lib/tenant";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
+import { diaBRDe, recortarPorDiaBR } from "@/lib/domain/periodo-br";
+import { classificarVenda, detectarPedidosSubstituidos } from "@/lib/domain/venda-status";
 
 export const maxDuration = 30;
 
@@ -61,6 +63,16 @@ type Aggregates = {
   anuncios: AnuncioResult[];
   pedidosSemVinculo: number;
   ordersCount: number;
+  /** Unidades das vendas que valeram — comparável a "Unidades vendidas" do Seller Center. */
+  unidadesVendidas: number;
+  /** Quantidade de pedidos cancelados (não o valor) — o Seller Center mostra a contagem. */
+  canceladasCount: number;
+  canceladasDetalhe: { orderId: string; valor: number; dia: string; status: string; origem: string; packId: string }[];
+  /** Pedidos que o cache `ml_returns` dizia cancelados mas o ML confirma como venda. */
+  resgatadosDoCache: number;
+  /** Pedidos cancelados só para virar outros do mesmo pacote (separação de envio). */
+  substituidasCount: number;
+  substituidasValor: number;
   reconc: { count: number; nosso: number; real: number };
 };
 
@@ -70,13 +82,6 @@ function parseDateParam(p: string | null) {
 
 function normalizeSku(s: string) {
   return s.trim().toLowerCase();
-}
-
-// Pedido que NÃO é venda de verdade (cancelado antes de enviar / inválido).
-// Sai do faturamento e do lucro — não é prejuízo, é "não venda".
-function isNaoVenda(status: unknown): boolean {
-  const s = String(status ?? "").toLowerCase();
-  return s === "cancelled" || s === "invalid";
 }
 
 /**
@@ -155,6 +160,12 @@ function computeAggregates(
   let totalImposto = 0;
   let totalTaxasML = 0;
   let pedidosSemVinculo = 0;
+  let unidadesVendidas = 0;
+  let canceladasCount = 0;
+  /** Cada pedido cancelado, pra conferência item a item contra o Seller Center. */
+  const canceladasDetalhe: { orderId: string; valor: number; dia: string; status: string; origem: string; packId: string }[] = [];
+  /** Pedidos que o cache dizia cancelados e o ML confirma como venda boa. */
+  let resgatadosDoCache = 0;
 
   /**
    * Conferência contra o dinheiro real do Mercado Pago. Para cada pedido com
@@ -166,6 +177,30 @@ function computeAggregates(
   let reconcNosso = 0;   // total − sale_fee − frete (nossa estimativa do repasse)
   let reconcReal = 0;    // net_received_amount (o que o MP de fato liberou)
 
+  /**
+   * Pedidos cancelados só para virar outros do MESMO pacote (separação de
+   * envio na agência). Ver detectarPedidosSubstituidos: o ML cancela o
+   * original e cria unitários, e contar os três inflava bruto e canceladas ao
+   * mesmo tempo.
+   */
+  const substituidos = detectarPedidosSubstituidos(
+    orders.map((o) => ({
+      orderId: String(o.order_id ?? ""),
+      packId: o.pack_id as string | null | undefined,
+      status: o.status,
+      // Comprador + dia + itens: a 2ª regra de detectarPedidosSubstituidos,
+      // que pega a separação de envio quando o ML não reaproveita o pack_id.
+      buyerId: (o.buyer_id as string | null | undefined) ?? null,
+      dia: diaBRDe(String(o.date_created ?? "")),
+      itens: ((o.items as OrderItem[]) ?? []).map((it) => ({
+        itemId: String(it.item_id ?? ""),
+        qty: Number(it.quantity ?? 1),
+      })),
+    })),
+  );
+  let substituidasCount = 0;
+  let substituidasValor = 0;
+
   const anunciosMap = new Map<string, AnuncioResult>();
   // Um pedido pode ter várias unidades do mesmo anúncio: 'vendas' conta o
   // PEDIDO uma vez só, enquanto 'qty' soma as unidades.
@@ -175,19 +210,70 @@ function computeAggregates(
   for (const o of orders) {
     const oid = String(o.order_id ?? "");
     const totalAmt = Number(o.total_amount ?? 0);
+
+    /**
+     * Cancelada x devolvida x substituída x válida — ver lib/domain/venda-status.ts.
+     * Duas regras vêm de divergências medidas contra o Seller Center:
+     *   · o STATUS AO VIVO manda sobre o cache de `ml_returns`;
+     *   · pedido cancelado só pra virar outros do mesmo pacote (separação de
+     *     envio) não é cancelamento — o valor já está nos pedidos novos.
+     */
+    const classe = classificarVenda({
+      status: o.status,
+      noCacheDeCancelados: cancelIds.has(oid),
+      temDevolucaoConcluida: devolIds.has(oid),
+      substituidoNoPacote: substituidos.has(oid),
+    });
+    if (classe.resgatadoDoCache) resgatadosDoCache++;
+
+    /**
+     * Substituído sai ANTES do faturamento bruto, e é o único que sai.
+     * Cancelado e devolvido ficam no bruto de propósito (o bruto é "tudo que
+     * passou"), mas o substituído não é uma venda a mais: contá-lo somaria a
+     * mesma compra duas vezes, uma no original e outra nos pedidos que o
+     * substituíram.
+     */
+    if (classe.classe === "substituida") {
+      substituidasCount++;
+      substituidasValor += totalAmt;
+      continue;
+    }
+
     // Faturamento BRUTO inclui tudo (inclusive cancelado/devolvido).
     faturamentoBruto += totalAmt;
 
     // Cancelado = "não venda" (estoque nem saiu). Fica só no bruto; sai do
-    // faturamento líquido e do lucro. Status vem do próprio pedido (robusto).
-    if (isNaoVenda(o.status) || cancelIds.has(oid)) { vendasCanceladas += totalAmt; continue; }
+    // faturamento líquido e do lucro.
+    if (classe.classe === "cancelada") {
+      vendasCanceladas += totalAmt;
+      canceladasCount++;
+      /**
+       * A LISTA, não só o total. Quatro rodadas de "o faturamento não bate"
+       * se passaram comparando dois totais e deduzindo a causa — o que sempre
+       * dependeu de eu supor o que o ML fez com aqueles pedidos. Com os ids na
+       * mão, dá pra abrir dois no Seller Center e resolver em uma rodada.
+       */
+      canceladasDetalhe.push({
+        orderId: oid,
+        valor: totalAmt,
+        dia: diaBRDe(String(o.date_created ?? "")),
+        status: String(o.status ?? ""),
+        // De onde veio o veredito: status ao vivo do ML ou o cache ml_returns.
+        origem: String(o.status ?? "").toLowerCase() === "cancelled" || String(o.status ?? "").toLowerCase() === "invalid"
+          ? "status do ML"
+          : "histórico (ml_returns)",
+        packId: o.pack_id ? String(o.pack_id) : "",
+      });
+      continue;
+    }
     // Devolvido = venda revertida, produto volta ao estoque → 0 a 0. Idem: só no bruto.
-    if (devolIds.has(oid)) { vendasDevolvidas += totalAmt; continue; }
+    if (classe.classe === "devolvida") { vendasDevolvidas += totalAmt; continue; }
 
     ordersCount++;
+    unidadesVendidas += ((o.items as OrderItem[]) ?? []).reduce((s, it) => s + Number(it.quantity ?? 1), 0);
     // A alíquota é a que valia no dia da venda: mudar o imposto hoje não pode
     // reescrever o lucro de meses já fechados.
-    const diaPedido = String(o.date_created ?? "").slice(0, 10);
+    const diaPedido = diaBRDe(String(o.date_created ?? ""));
     const items = (o.items as OrderItem[]) ?? [];
 
     // Frete Full do pedido distribuído por unidade (envio é por pedido)
@@ -313,6 +399,12 @@ function computeAggregates(
     anuncios,
     pedidosSemVinculo,
     ordersCount,
+    unidadesVendidas,
+    canceladasCount,
+    canceladasDetalhe: canceladasDetalhe.sort((a, b) => b.valor - a.valor),
+    resgatadosDoCache,
+    substituidasCount,
+    substituidasValor,
     reconc: { count: reconcCount, nosso: reconcNosso, real: reconcReal },
   };
 }
@@ -412,11 +504,62 @@ export async function GET(req: Request) {
     if (!orders) orders = await loadOrders(tenant.tenantId, start, end, startBR, endBR);
     if (!ordersHoje) ordersHoje = await loadOrders(tenant.tenantId, `${hj}T00:00:00.000Z`, `${hj}T23:59:59.999Z`, hjFromISO, hjToISO);
 
+    /**
+     * Recorte final pelo dia BR — ver recortarPorDiaBR. É o que faz o
+     * faturamento do app fechar com o "Vendas brutas" do Seller Center em vez
+     * de vir alguns reais acima por causa das vendas da borda.
+     */
+    const recorte = recortarPorDiaBR(orders, fromStr, toStr);
+    orders = recorte.dentro;
+    ordersHoje = recortarPorDiaBR(ordersHoje, hj, hj).dentro;
+
     // enriquece o frete (shipping_cost) a partir do cache do Firestore
     const allIds = [...orders, ...ordersHoje].map((o) => String(o.order_id ?? "")).filter(Boolean);
     const shipMap = await readShippingCosts(tenant.tenantId, allIds);
-    for (const o of orders) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
-    for (const o of ordersHoje) if (o.shipping_cost == null) o.shipping_cost = shipMap.get(String(o.order_id)) ?? 0;
+    /**
+     * "Não sei" NÃO pode virar "zero".
+     *
+     * O custo de frete do vendedor só existe depois que o sync consulta
+     * /shipments/{id}/costs e grava. Pedido que ainda não passou por ali não
+     * está em `shipMap` — e o `?? 0` transformava essa ausência em frete
+     * grátis, inflando a margem em silêncio. É o mesmo padrão que já mordeu
+     * aqui em cancelamento e em estoque: falta de dado virando o número
+     * favorável.
+     *
+     * O valor segue 0 (não dá pra somar um custo que não conhecemos), mas
+     * agora contamos quantos pedidos estão nessa situação e o quanto eles
+     * representam, pra tela poder dizer que a margem é um TETO.
+     */
+    // 1) O que o cache já tem.
+    for (const o of orders) if (o.shipping_cost == null) { const v = shipMap.get(String(o.order_id)); if (v != null) o.shipping_cost = v; }
+    for (const o of ordersHoje) if (o.shipping_cost == null) { const v = shipMap.get(String(o.order_id)); if (v != null) o.shipping_cost = v; }
+
+    /**
+     * 2) O que falta, BUSCA no ML — não assume zero.
+     *
+     * Antes o que faltava caía direto num `?? 0`, e a margem daquele pedido
+     * saía como se o frete fosse grátis. Agora o custo é consultado de fato
+     * (ver completarFretesFaltantes), priorizando os pedidos de maior valor,
+     * que são os que mais distorcem a margem. Best-effort e com teto: é uma
+     * requisição por pedido, e o mês inteiro sem sync estouraria o tempo.
+     */
+    let pedidosSemFrete = 0;
+    let valorSemFrete = 0;
+    if (token) {
+      await completarFretesFaltantes(token, orders).catch(() => ({ buscados: 0, aindaSemFrete: 0 }));
+      await completarFretesFaltantes(token, ordersHoje, 20).catch(() => ({ buscados: 0, aindaSemFrete: 0 }));
+    }
+
+    // 3) O que AINDA falta entra como 0 — não dá pra somar o que não se sabe —
+    //    mas é contado, pra tela poder dizer que a margem é um teto.
+    const zerarDesconhecido = (o: FirebaseFirestore.DocumentData, contar: boolean) => {
+      if (o.shipping_cost != null) return;
+      if (contar) { pedidosSemFrete++; valorSemFrete += Number(o.total_amount ?? 0); }
+      o.shipping_cost = 0;
+      o.frete_desconhecido = true;
+    };
+    for (const o of orders) zerarDesconhecido(o, true);
+    for (const o of ordersHoje) zerarDesconhecido(o, false);
 
     // ── Devoluções + cancelamentos: separa por tipo ───────────
     // Cancelamento = venda que não aconteceu (estoque não saiu/voltou).
@@ -427,8 +570,21 @@ export async function GET(req: Request) {
       colReturnsM.where("date_created", ">=", start).where("date_created", "<=", end).get(),
       colReturnsM.where("date_created", ">=", startBR).where("date_created", "<=", endBR).get(),
     ]);
+    /**
+     * A consulta acima UNE uma janela UTC com uma janela BR — união que
+     * arrasta as 3 últimas horas do dia ANTERIOR ao período (ver
+     * recortarPorDiaBR). Para os Ids de cancelamento isso é inofensivo (um
+     * pedido de fora não está em `orders`), mas o total de Devoluções somava
+     * essa sobra e aparecia no KPI como devolução do período. Mesmo recorte
+     * por dia BR aqui, pelo mesmo motivo.
+     */
     const retMap = new Map<string, FirebaseFirestore.DocumentData>();
-    for (const snap of [retUTC, retBR]) for (const doc of snap.docs) retMap.set(doc.id, doc.data());
+    for (const snap of [retUTC, retBR]) {
+      for (const doc of snap.docs) {
+        const dia = diaBRDe(String(doc.data()?.date_created ?? ""));
+        if (dia >= fromStr && dia <= toStr) retMap.set(doc.id, doc.data());
+      }
+    }
     const cancelIds = new Set<string>();
     const devolIds = new Set<string>();
     const emAndamentoIds = new Set<string>();
@@ -449,11 +605,27 @@ export async function GET(req: Request) {
 
     // Série diária de faturamento líquido (para o gráfico de metas): sem
     // cancelados/devolvidos, pois representa a venda que de fato valeu.
+    // Mesmo conjunto que o agregado usa — recalculado aqui porque a detecção
+    // é do escopo da LISTA de pedidos, não de um pedido isolado.
+    const substituidosSerie = detectarPedidosSubstituidos(
+      orders.map((o) => ({
+        orderId: String(o.order_id ?? ""),
+        packId: o.pack_id as string | null | undefined,
+        status: o.status,
+      })),
+    );
     const serieMap = new Map<string, number>();
     for (const o of orders) {
       const oid = String(o.order_id ?? "");
-      if (isNaoVenda(o.status) || cancelIds.has(oid) || devolIds.has(oid)) continue;
-      const dia = String(o.date_created ?? "").slice(0, 10);
+      // MESMA regra do agregado (classificarVenda) — duplicar a condição aqui
+      // era o que fazia o gráfico e os KPIs discordarem quando uma delas mudava.
+      if (classificarVenda({
+        status: o.status,
+        noCacheDeCancelados: cancelIds.has(oid),
+        temDevolucaoConcluida: devolIds.has(oid),
+        substituidoNoPacote: substituidosSerie.has(oid),
+      }).classe !== "valida") continue;
+      const dia = diaBRDe(String(o.date_created ?? ""));
       if (dia) serieMap.set(dia, (serieMap.get(dia) ?? 0) + Number(o.total_amount ?? 0));
     }
     const serieDiaria = Array.from(serieMap.entries())
@@ -476,7 +648,7 @@ export async function GET(req: Request) {
       .map(([id, r]) => ({
         order_id: String(r.order_id ?? ""),
         valor: Number(r.total_amount ?? 0),
-        data: String(r.date_created ?? "").slice(0, 10),
+        data: diaBRDe(String(r.date_created ?? "")),
         motivo: String(r.reason ?? r.motivo ?? ""),
         produto: String(r.produto ?? r.title ?? ""),
         tipo: String(r.tipo ?? r.status ?? ""),
@@ -594,6 +766,66 @@ export async function GET(req: Request) {
         totalImposto: aggHoje.totalImposto,
         lucroLiquido: lucroLiquidoHoje,
         pedidos: aggHoje.ordersCount,
+      },
+      /**
+       * ── Conciliação com o Seller Center ──
+       *
+       * As MESMAS quatro métricas do painel "Resumo de desempenho" do Mercado
+       * Livre, calculadas pelo nosso lado. Existe porque "o número não bate"
+       * é impossível de investigar comparando um total contra outro: sem
+       * separar venda, unidade e cancelamento, qualquer divergência vira
+       * chute.
+       *
+       * A diferença de DEFINIÇÃO que mais confunde: o "Vendas brutas" do
+       * Seller Center NÃO inclui os pedidos cancelados, enquanto o
+       * "Faturamento bruto" daqui inclui de propósito (para o cancelamento
+       * aparecer como linha própria). O campo comparável ao ML é
+       * `vendasBrutas` abaixo — igual ao faturamento líquido.
+       */
+      conciliacao: {
+        // Compare com "Vendas brutas" do Seller Center.
+        vendasBrutas: faturamentoLiquido,
+        // Compare com "Quantidade de vendas".
+        quantidadeVendas: agg.ordersCount,
+        // Compare com "Unidades vendidas".
+        unidadesVendidas: agg.unidadesVendidas,
+        // Compare com "Preço médio por venda" / "Preço médio por unidade".
+        precoMedioPorVenda: agg.ordersCount > 0 ? faturamentoLiquido / agg.ordersCount : 0,
+        precoMedioPorUnidade: agg.unidadesVendidas > 0 ? faturamentoLiquido / agg.unidadesVendidas : 0,
+        // Compare com "Quantidade de vendas canceladas".
+        canceladasQuantidade: agg.canceladasCount,
+        canceladasValor: agg.vendasCanceladas,
+        /** Os pedidos, um a um — pra conferir no Seller Center em vez de deduzir. */
+        canceladasDetalhe: agg.canceladasDetalhe.slice(0, 40),
+        /**
+         * Pedidos cujo custo de frete do vendedor ainda não foi confirmado
+         * pelo ML. Entram no lucro com frete 0 porque não há como somar o que
+         * não se conhece — então o lucro e a margem são um TETO enquanto isso.
+         */
+        pedidosSemFrete,
+        valorSemFrete,
+        /**
+         * Pedidos que o ML devolveu mas cujo dia BR cai FORA do período — já
+         * descartados do cálculo (ver recortarPorDiaBR). Se vier > 0, é a
+         * borda de fuso agindo: sem o recorte eles inflariam o faturamento.
+         */
+        descartadosForaDaJanela: recorte.foraDaJanela,
+        /**
+         * Pedidos que a coleção `ml_returns` dava como cancelados mas o ML
+         * confirma como venda boa — cancelamento revertido que ficou gravado,
+         * já que aquele sync só escreve e nunca remove. Antes eram descontados
+         * pra sempre; agora contam como venda e aparecem aqui, pra a correção
+         * ser visível em vez de silenciosa.
+         */
+        resgatadosDoCache: agg.resgatadosDoCache,
+        /**
+         * Pedidos cancelados só para virar outros do mesmo pacote — separação
+         * de envio na agência. Não entram em lugar nenhum (nem bruto, nem
+         * canceladas), porque o valor já está nos pedidos que os
+         * substituíram. Exposto pra correção ser visível.
+         */
+        substituidasQuantidade: agg.substituidasCount,
+        substituidasValor: agg.substituidasValor,
       },
       serieDiaria,
       adsDiag,

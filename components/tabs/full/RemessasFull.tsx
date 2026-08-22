@@ -61,12 +61,12 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
     }
   }
 
-  async function buscar() {
+  async function buscar(forcar = false) {
     setAberto(true);
     setCarregando(true);
     setErro("");
     try {
-      const r = await authedFetch("/api/ml/gestao-full", { cache: "no-store" });
+      const r = await authedFetch(`/api/ml/gestao-full${forcar ? "?forcar=1" : ""}`, { cache: "no-store" });
       const txt = await r.text();
       if (!r.ok) setErro(`HTTP ${r.status} — ${txt.slice(0, 300)}`);
       else setDados(JSON.parse(txt));
@@ -194,7 +194,7 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={buscar} disabled={carregando}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => buscar()} disabled={carregando}>
           {carregando ? "Buscando…" : aberto ? "Buscar de novo" : "Buscar remessas"}
         </button>
         <label
@@ -346,7 +346,7 @@ export default function RemessasFull({ movimentos }: { movimentos: EstoqueMovime
                         setSalvandoCusto(r.remessa);
                         try {
                           await salvarCustoRemessaFull(r.remessa, n);
-                          await buscar();
+                          await buscar(true);
                         } catch (e) {
                           alert("Não consegui salvar o custo: " + (e instanceof Error ? e.message : String(e)));
                         } finally { setSalvandoCusto(""); }

@@ -98,8 +98,27 @@ type MlMetrics = {
   devolucoesDetalhe?: Devolucao[];
   adsDiag?:           unknown;
   adsFalhou?:         boolean;
+  conciliacao?:       Conciliacao;
   from:               string;
   to:                 string;
+};
+
+/** Espelho das métricas do Seller Center — ver o bloco `conciliacao` em app/api/ml/metrics/route.ts. */
+type Conciliacao = {
+  vendasBrutas:          number;
+  quantidadeVendas:      number;
+  unidadesVendidas:      number;
+  precoMedioPorVenda:    number;
+  precoMedioPorUnidade:  number;
+  canceladasQuantidade:  number;
+  canceladasValor:       number;
+  descartadosForaDaJanela: number;
+  resgatadosDoCache?:    number;
+  substituidasQuantidade?: number;
+  substituidasValor?:    number;
+  canceladasDetalhe?:    { orderId: string; valor: number; dia: string; status: string; origem: string; packId: string }[];
+  pedidosSemFrete?:      number;
+  valorSemFrete?:        number;
 };
 
 type Devolucao = {
@@ -483,6 +502,8 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
   const stats: { label: string; icon: string; value: number; color: string }[] = [
     { label: "Faturamento bruto", icon: "", value: h.faturamentoBruto, color: "var(--green)" },
     { label: "CMV (produto)",     icon: "", value: h.totalCMV,         color: "var(--red)" },
+    { label: "Frete/Full",        icon: "", value: h.totalEnvio,       color: "var(--red)" },
+    { label: "Taxas ML",          icon: "", value: h.totalTaxasML,     color: "var(--red)" },
     { label: "Imposto",           icon: "", value: h.totalImposto,     color: "var(--red)" },
     { label: "Gasto com ADS",     icon: "", value: h.totalAds,         color: "var(--red)" },
     { label: "Lucro líquido",     icon: "", value: h.lucroLiquido,     color: h.lucroLiquido >= 0 ? "var(--green)" : "var(--red)" },
@@ -505,6 +526,153 @@ function VendasDoDiaHero({ hoje }: { hoje?: HojeBreakdown }) {
         ))}
       </div>
       <div className="hero-foot">Lucro líquido = retorno − CMV − ADS − Full − taxas ML − imposto</div>
+    </section>
+  );
+}
+
+/**
+ * ── Conferência com o Mercado Livre ──
+ *
+ * Painel de conciliação: as mesmas métricas do "Resumo de desempenho" do
+ * Seller Center, calculadas aqui. Existe porque "o número não bate" é
+ * impossível de investigar comparando um total contra outro — a divergência
+ * quase sempre está numa DEFINIÇÃO, não num erro de soma.
+ *
+ * A confusão mais comum, e o motivo deste painel: o "Vendas brutas" do
+ * Seller Center NÃO conta pedido cancelado; o "Faturamento bruto" do card
+ * acima conta de propósito, pra o cancelamento aparecer como linha própria.
+ * Comparar os dois direto sempre vai dar diferença — o número comparável é o
+ * "Vendas brutas" daqui.
+ */
+function ConferenciaML({ c, periodo }: { c: Conciliacao; periodo: string }) {
+  const [aberto, setAberto] = useState(false);
+
+  const linhas: { rotulo: string; valor: string; noML: string }[] = [
+    { rotulo: "Vendas brutas", valor: fmtBRL(c.vendasBrutas), noML: "Vendas brutas" },
+    { rotulo: "Quantidade de vendas", valor: String(c.quantidadeVendas), noML: "Quantidade de vendas" },
+    { rotulo: "Unidades vendidas", valor: String(c.unidadesVendidas), noML: "Unidades vendidas" },
+    { rotulo: "Preço médio por venda", valor: fmtBRL(c.precoMedioPorVenda), noML: "Preço médio por venda" },
+    { rotulo: "Preço médio por unidade", valor: fmtBRL(c.precoMedioPorUnidade), noML: "Preço médio por unidade" },
+    { rotulo: "Vendas canceladas", valor: `${c.canceladasQuantidade} · ${fmtBRL(c.canceladasValor)}`, noML: "Quantidade de vendas canceladas" },
+  ];
+
+  return (
+    <section className="panel">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+          width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer",
+          color: "inherit", textAlign: "left",
+        }}
+      >
+        <span>
+          <span className="panel-title">Conferência com o Mercado Livre</span>
+          <span className="panel-sub" style={{ display: "block" }}>
+            compare com “Resumo de desempenho” do Seller Center · {periodo}
+          </span>
+        </span>
+        <span style={{ color: "var(--muted)", fontSize: ".8rem" }}>{aberto ? "▲" : "▼"}</span>
+      </button>
+
+      {aberto && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {linhas.map((l) => (
+              <div
+                key={l.rotulo}
+                style={{
+                  display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10,
+                  padding: "8px 10px", borderRadius: 8, background: "var(--surface-raised,var(--surface2))",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: ".82rem", fontWeight: 600 }}>
+                  {l.rotulo}
+                  <span style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}>
+                    no ML: “{l.noML}”
+                  </span>
+                </span>
+                <span className="money" style={{ fontWeight: 700, fontSize: ".95rem" }}>{l.valor}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* A LISTA dos cancelados. Comparar dois totais nunca disse QUAIS
+              pedidos divergem — com os ids, dá pra abrir dois no Seller Center
+              e saber na hora se é cancelamento real ou separação de envio. */}
+          {(c.canceladasDetalhe?.length ?? 0) > 0 && (
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: "pointer", color: "var(--muted)", fontSize: ".78rem" }}>
+                Ver os {c.canceladasDetalhe!.length} pedido(s) que estamos contando como cancelados
+              </summary>
+              <div style={{ fontSize: ".72rem", color: "var(--muted)", margin: "8px 0", lineHeight: 1.5 }}>
+                Abra um ou dois destes no Mercado Livre. Se lá aparecerem como venda válida,
+                é separação de envio (ou cancelamento revertido) e o número daqui está alto.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflowY: "auto" }}>
+                {c.canceladasDetalhe!.map((p) => (
+                  <div
+                    key={p.orderId}
+                    style={{
+                      display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+                      padding: "6px 10px", borderRadius: 6, background: "var(--surface-raised,var(--surface2))",
+                    }}
+                  >
+                    <span style={{ fontFamily: "ui-monospace, monospace", fontSize: ".72rem" }}>
+                      #{p.orderId}
+                      <span style={{ color: "var(--muted)", fontFamily: "inherit" }}>
+                        {" "}· {formatDateBR(p.dia)} · {p.origem}{p.packId ? ` · pacote ${p.packId}` : ""}
+                      </span>
+                    </span>
+                    <b className="money" style={{ whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</b>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.6 }}>
+            <b>Se “Vendas brutas” bater e o card acima não</b>, está tudo certo: o
+            “Faturamento bruto” do card inclui os cancelados de propósito, e o ML não.
+            {c.descartadosForaDaJanela > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--yellow)" }}>{c.descartadosForaDaJanela} pedido(s)</b> vieram
+                do ML com data fora do período e foram descartados — é a borda de fuso
+                horário, e sem esse corte eles inflariam o faturamento.
+              </>
+            )}
+            {(c.substituidasQuantidade ?? 0) > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--green)" }}>{c.substituidasQuantidade} pedido(s)</b> ({fmtBRL(c.substituidasValor ?? 0)})
+                foram cancelados pelo Mercado Livre apenas para virar outros pedidos do mesmo
+                pacote — é o que acontece quando você <b>separa o envio</b> na agência. Não são
+                venda perdida: o valor já está nos pedidos que os substituíram, então eles não
+                entram nem no bruto nem em “Vendas canceladas”.
+              </>
+            )}
+            {(c.pedidosSemFrete ?? 0) > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--yellow)" }}>{c.pedidosSemFrete} pedido(s)</b> ({fmtBRL(c.valorSemFrete ?? 0)})
+                ainda estão sem o custo de frete confirmado pelo Mercado Livre. Eles entram no
+                lucro com frete R$ 0,00 — não dá pra somar um custo que não conhecemos —, então o
+                <b> lucro e a margem acima são um teto</b>, não o número final. Use “⟳ Atualizar ML”
+                pra buscar esses fretes.
+              </>
+            )}
+            {(c.resgatadosDoCache ?? 0) > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--green)" }}>{c.resgatadosDoCache} pedido(s)</b> estavam
+                marcados como cancelados no nosso histórico, mas o Mercado Livre os confirma
+                como venda — voltaram a contar. Cancelamento revertido fica gravado aqui e
+                antes seguia descontado pra sempre.
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -864,35 +1032,170 @@ function diasDoPeriodo(from?: string, to?: string): number {
   return Math.max(1, Math.round((b - a) / 86400000) + 1);
 }
 
+/** Dia civil BR de hoje, deslocado por `offsetDias`. */
+function diaBR(offsetDias = 0): string {
+  const d = new Date(Date.now() - 3 * 3600 * 1000 + offsetDias * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+type JanelaMedia = "periodo" | "mes" | "30d";
+
+const JANELA_LABEL: Record<JanelaMedia, string> = {
+  periodo: "Período selecionado",
+  mes: "Este mês",
+  "30d": "Últimos 30 dias",
+};
+
+/**
+ * Janela de datas de cada opção. "Este mês" vai do dia 1º até HOJE, não até o
+ * fim do mês: dividir as vendas por 31 dias no dia 5 daria uma média
+ * artificialmente baixa, e é essa média que decide reposição.
+ */
+function janelaDe(j: JanelaMedia, from?: string, to?: string): { from: string; to: string } | null {
+  if (j === "periodo") return from && to ? { from, to } : null;
+  const hoje = diaBR();
+  if (j === "mes") return { from: `${hoje.slice(0, 7)}-01`, to: hoje };
+  // 30 dias corridos INCLUINDO hoje — daí o -29.
+  return { from: diaBR(-29), to: hoje };
+}
+
+/**
+ * Agrupa os anúncios por PRODUTO.
+ *
+ * A lista da API é uma linha por anúncio (MLB), e o mesmo produto costuma ter
+ * vários — então "Erva Limão Caipira" aparecia duas vezes, com o giro partido
+ * entre as linhas. Partido, ele engana duas vezes: some do topo da lista e faz
+ * a média/dia de cada metade parecer baixa demais pra repor.
+ *
+ * A chave é o TÍTULO normalizado porque, para anúncio vinculado, a API já
+ * devolve o nome do produto cadastrado (ver `produto.name` em
+ * app/api/ml/metrics/route.ts) — dois anúncios do mesmo produto chegam com o
+ * mesmo nome. Anúncio sem cadastro mantém o título do ML e continua sozinho,
+ * que é o certo: sem vínculo, não dá pra afirmar que é o mesmo produto.
+ */
+function agruparPorProduto(anuncios: AnuncioResult[]): { title: string; qty: number; anuncios: number }[] {
+  const mapa = new Map<string, { title: string; qty: number; anuncios: number }>();
+  for (const a of anuncios) {
+    if (a.semVenda || a.qty <= 0) continue;
+    const chave = a.title.trim().toLowerCase();
+    const atual = mapa.get(chave) ?? { title: a.title.trim(), qty: 0, anuncios: 0 };
+    atual.qty += a.qty;
+    atual.anuncios += 1;
+    mapa.set(chave, atual);
+  }
+  return Array.from(mapa.values());
+}
+
 function MediaVendasDia({ anuncios, from, to }: { anuncios: AnuncioResult[]; from?: string; to?: string }) {
-  const dias = diasDoPeriodo(from, to);
-  const linhas = anuncios
-    .filter((a) => !a.semVenda && a.qty > 0)
-    .map((a) => ({ title: a.title, qty: a.qty, media: a.qty / dias }))
+  const [janela, setJanela] = useState<JanelaMedia>("periodo");
+  /**
+   * Resultado guardado JUNTO com a chave da janela que o produziu. Guardar só
+   * os dados obrigaria a limpá-los dentro do efeito ao trocar de janela —
+   * setState síncrono em efeito, que dispara render em cascata. Comparando a
+   * chave, o resultado velho simplesmente deixa de casar e é ignorado.
+   */
+  const [cache, setCache] = useState<{ chave: string; dados: AnuncioResult[] } | null>(null);
+
+  const alvo = janelaDe(janela, from, to);
+  const chaveAlvo = alvo ? `${janela}|${alvo.from}|${alvo.to}` : "";
+  /**
+   * Derivado, não estado: "está carregando" é exatamente "a janela pedida não
+   * é a do cache". Um `useState` aqui exigiria setState dentro do efeito — a
+   * cascata de render que o lint aponta — sem dizer nada que a chave já não diga.
+   */
+  const carregando = janela !== "periodo" && cache?.chave !== chaveAlvo;
+
+  /**
+   * "Este mês" e "Últimos 30 dias" não são recortes do período já carregado —
+   * podem cobrir dias que ele nem inclui. Então buscam a MESMA rota de
+   * métricas com a própria janela, em vez de recalcular por cima de dados
+   * incompletos.
+   */
+  useEffect(() => {
+    if (janela === "periodo" || !alvo) return;
+    let vivo = true;
+    const chave = chaveAlvo;
+    authedFetch(`/api/ml/metrics?from=${alvo.from}&to=${alvo.to}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => { if (vivo) setCache({ chave, dados: j.anuncios ?? [] }); })
+      // Falha vira lista vazia COM a chave: sem isso a tela ficaria em
+      // "carregando" pra sempre depois de um erro de rede.
+      .catch(() => { if (vivo) setCache({ chave, dados: [] }); });
+    return () => { vivo = false; };
+    // chaveAlvo já cobre janela/from/to; `alvo` é recriado a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveAlvo]);
+
+  const base = janela === "periodo"
+    ? anuncios
+    : (cache?.chave === chaveAlvo ? cache.dados : []);
+  const dias = alvo ? diasDoPeriodo(alvo.from, alvo.to) : diasDoPeriodo(from, to);
+  const linhas = agruparPorProduto(base)
+    .map((g) => ({ ...g, media: g.qty / dias }))
     .sort((x, y) => y.media - x.media);
-  if (!linhas.length) return null;
   const totalQty = linhas.reduce((s, l) => s + l.qty, 0);
+
+  const seletor = (
+    <div className="seg" style={{ marginLeft: "auto" }}>
+      {(["periodo", "mes", "30d"] as const).map((j) => (
+        <button
+          key={j}
+          type="button"
+          className={`seg-btn ${janela === j ? "active" : ""}`}
+          onClick={() => setJanela(j)}
+          disabled={j === "periodo" && !(from && to)}
+        >
+          {JANELA_LABEL[j]}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="panel">
-      <div className="panel-head" style={{ marginBottom: 8 }}>
-        <span className="panel-title">Média de vendas por dia</span>
-        <span className="panel-sub">{dias} dia(s) no período · {totalQty} un vendidas · média {(totalQty / dias).toFixed(1)}/dia</span>
+      <div className="panel-head" style={{ marginBottom: 8, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <span>
+          <span className="panel-title">Média de vendas por dia</span>
+          <span className="panel-sub" style={{ display: "block" }}>
+            {carregando
+              ? "carregando…"
+              : `${dias} dia(s) · ${totalQty} un vendidas · média ${(totalQty / dias).toFixed(1)}/dia`}
+            {alvo && ` · ${formatDateBR(alvo.from)} a ${formatDateBR(alvo.to)}`}
+          </span>
+        </span>
+        {seletor}
       </div>
-      <div className="table-wrapper" style={{ border: "none" }}>
-        <table className="tbl-modern tbl-cards">
-          <thead><tr><th style={{ textAlign: "left" }}>Produto</th><th>Vendas no período</th><th>Média/dia</th></tr></thead>
-          <tbody>
-            {linhas.map((l, i) => (
-              <tr key={l.title + i}>
-                <td style={{ textAlign: "left", fontWeight: 600 }}>{l.title}</td>
-                <td data-label="Vendas no período" style={{ color: "var(--muted)" }}>{l.qty} un</td>
-                <td data-label="Média/dia" style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+
+      {linhas.length === 0 ? (
+        <div style={{ color: "var(--muted)", fontSize: ".82rem", padding: "8px 2px" }}>
+          {carregando ? "Buscando as vendas desta janela…" : "Nenhuma venda nesta janela."}
+        </div>
+      ) : (
+        <div className="table-wrapper" style={{ border: "none" }}>
+          <table className="tbl-modern tbl-cards">
+            <thead><tr><th style={{ textAlign: "left" }}>Produto</th><th>Vendas no período</th><th>Média/dia</th></tr></thead>
+            <tbody>
+              {linhas.map((l) => (
+                <tr key={l.title}>
+                  <td style={{ textAlign: "left", fontWeight: 600 }}>
+                    {l.title}
+                    {l.anuncios > 1 && (
+                      <span
+                        style={{ display: "block", fontSize: ".66rem", fontWeight: 400, color: "var(--muted)" }}
+                        title="Este produto vende por mais de um anúncio; as vendas dos dois estão somadas aqui."
+                      >
+                        {l.anuncios} anúncios somados
+                      </span>
+                    )}
+                  </td>
+                  <td data-label="Vendas no período" style={{ color: "var(--muted)" }}>{l.qty} un</td>
+                  <td data-label="Média/dia" style={{ fontWeight: 700, color: "var(--accent)" }}>{l.media.toFixed(1)}/dia</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1344,6 +1647,13 @@ export default function Dashboard({ data, onVerEstoque, onVerMetas, onNavigate }
               <Kpi label="Devoluções" value={mlMetrics?.vendasDevolvidas ?? 0} tone="neg" sub="0 a 0 (produto volta ao estoque)" />
             </div>
           </section>
+
+          {mlMetrics?.conciliacao && (
+            <ConferenciaML
+              c={mlMetrics.conciliacao}
+              periodo={`${formatDateBR(mlMetrics.from)} a ${formatDateBR(mlMetrics.to)}`}
+            />
+          )}
 
           {/* Central de Atenção — abaixo dos KPIs, acima das tabelas secundárias */}
           {mlMetrics && (

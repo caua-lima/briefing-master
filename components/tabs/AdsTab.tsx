@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtBRL } from "@/lib/domain/calc";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import DateRangePicker from "@/components/dashboard/DateRangePicker";
-import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation } from "@/lib/domain/ads";
+import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation, lucroNoRoas, motivoSemRoasIdeal } from "@/lib/domain/ads";
 import { calculateAdsReconciliation } from "@/lib/domain/ads-reconciliation";
 import { derivarPeriodoAnterior, periodoAnteriorTemDadosSuficientes } from "@/lib/domain/ads-comparison";
 import { formatarResumoAlteracao } from "@/lib/domain/ads-changelog";
@@ -147,6 +147,27 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
     finally { setLoading(false); }
   }, [range]);
 
+  /**
+   * Atualização COMPLETA: ressincroniza os pedidos do período antes de
+   * recarregar.
+   *
+   * O `load()` sozinho já busca o Ads ao vivo, mas o outro lado da conta —
+   * receita, frete, cancelamento — vem do que o sync gravou. Sem ressincronizar,
+   * apertar "Atualizar" trazia gasto de agora contra venda de horas atrás, e o
+   * ROAS saía de uma comparação desalinhada. Mesmo padrão da aba Pedidos.
+   */
+  const [ressincronizando, setRessincronizando] = useState(false);
+  const atualizarTudo = useCallback(async () => {
+    setRessincronizando(true);
+    try {
+      // Best-effort: sync que falha não pode impedir a releitura do Ads.
+      await authedFetch(`/api/ml/sync-all?from=${range.from}&to=${range.to}`, { method: "POST" }).catch(() => null);
+      await load();
+    } finally {
+      setRessincronizando(false);
+    }
+  }, [range, load]);
+
   // Falso positivo comprovado (mesmo padrão já documentado em PedidosTab.tsx/
   // AdsTab.tsx anterior): fetch disparado por mudança de período — load() faz
   // setState de forma assíncrona, não o corpo do efeito em si.
@@ -189,14 +210,23 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
     // ROAS ideal = o que sobra a margem ALVO, não só o que empata.
     const roasIdeal = calculateTargetRoas(v, lucroAntes, metaMargem);
     const abaixoDoIdeal = roasIdeal != null && i.cost > 0 && r < roasIdeal;
+    // O ROAS ideal em dinheiro: quanto sobraria mantendo a receita de hoje.
+    const lucroNoIdeal = lucroNoRoas(v, lucroAntes, roasIdeal);
+    const motivoSemIdeal = roasIdeal == null ? motivoSemRoasIdeal(v, lucroAntes, metaMargem) : null;
     const lucroAtual = pub ? (i.diretoDisponivel ? i.lucroDiretoLiquido : null) : i.lucroLiquido;
     const margemAtual = v > 0 && lucroAtual != null ? (lucroAtual / v) * 100 : null;
     const reco = getAdRecommendation({
       clicks: i.clicks, vendas: v, cost: i.cost, lucro: lucroAtual, roas: r,
       roasTarget: i.roasTarget, breakEvenRoas: breakEven, margem: margemAtual,
       metaMargem,
+      // Sem isto, "produto no vermelho antes do ads" era rotulado como falta
+      // de dado — ver getAdRecommendation.
+      lucroAntesAds: lucroAntes,
     });
-    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, roasIdeal, abaixoDoIdeal, lucroAtual, margemAtual, reco };
+    const ganhoNoIdeal = lucroNoIdeal != null && lucroAtual != null ? lucroNoIdeal - lucroAtual : null;
+    // O mesmo ROAS que aparece no painel do Mercado Ads (receita atribuída total).
+    const roasMlAds = i.cost > 0 ? i.adSales / i.cost : null;
+    return { i, v, un, r, a, ctr, cpc, pctAds, breakEven, abaixoDoBreakEven, roasIdeal, abaixoDoIdeal, lucroNoIdeal, ganhoNoIdeal, motivoSemIdeal, roasMlAds, lucroAtual, margemAtual, reco };
   }), [items, pub, metaMargem]);
 
   const linhasFiltradas = useMemo(() => {
@@ -252,14 +282,18 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
   function exportarCsv() {
     const header = [
       "Anúncio", "MLB", "Investido", pub ? "Vendas diretas" : "Vendas totais", "Unidades",
-      pub ? "ACOS %" : "TACOS %", "ROAS", "Break-even ROAS", "ROAS ideal (margem alvo)", "% da receita via Ads", "Lucro", "Margem %",
+      pub ? "ACOS %" : "TACOS %", "ROAS", "Break-even ROAS", "ROAS ideal (margem alvo)",
+      "Lucro no ROAS ideal", "Ganho vs hoje", "Vendas atribuídas (un)",
+      "% da receita via Ads", "Lucro", "Margem %",
       "Decisão", "Qualidade dos dados", "Última alteração manual", "Período", "Modo",
     ];
-    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, breakEven, roasIdeal, pctAds, lucroAtual, margemAtual, reco }) => {
+    const linhasCsv = linhasFiltradas.map(({ i, v, un, r, a, breakEven, roasIdeal, lucroNoIdeal, ganhoNoIdeal, pctAds, lucroAtual, margemAtual, reco }) => {
       const ultima = changelog.filter((e) => e.campaignId === i.campaignId).sort((x, y) => y.createdAt - x.createdAt)[0];
       return [
         i.title || i.itemId, i.itemId, num(i.cost, 2), num(v, 2), num(un),
-        i.cost > 0 ? num(a, 1) : "", i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "", roasIdeal != null ? num(roasIdeal, 2) : "", i.totalSales > 0 ? num(pctAds, 1) : "",
+        i.cost > 0 ? num(a, 1) : "", i.cost > 0 ? num(r, 2) : "", breakEven != null ? num(breakEven, 2) : "", roasIdeal != null ? num(roasIdeal, 2) : "",
+        lucroNoIdeal != null ? num(lucroNoIdeal, 2) : "", ganhoNoIdeal != null ? num(ganhoNoIdeal, 2) : "", num(i.directUnits),
+        i.totalSales > 0 ? num(pctAds, 1) : "",
         lucroAtual != null ? num(lucroAtual, 2) : "não disponível", margemAtual != null ? num(margemAtual, 1) : "",
         reco.label, reconciliacao.status, ultima ? formatarResumoAlteracao(ultima) : "",
         `${range.from} a ${range.to}`, pub ? "Publicidade direta" : "Geral",
@@ -284,8 +318,14 @@ export default function AdsTab({ metaMargem = 10, products = [] }: { metaMargem?
       <div className="tab-head">
         <div className="tab-head-left">
           <h2 className="tab-title">Ads</h2>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={load} disabled={loading}>
-            {loading ? "..." : "⟳ Atualizar"}
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={atualizarTudo}
+            disabled={loading || ressincronizando}
+            title="Ressincroniza os pedidos do período e busca o Ads ao vivo no Mercado Livre."
+          >
+            {ressincronizando ? "Sincronizando…" : loading ? "..." : "⟳ Atualizar"}
           </button>
         </div>
         <DateRangePicker from={range.from} to={range.to} onApply={(from, to) => setRange({ from, to })} />

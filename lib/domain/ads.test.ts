@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation } from "./ads";
+import { calculateBreakEvenRoas, calculateTargetRoas, getAdRecommendation, lucroNoRoas, motivoSemRoasIdeal } from "./ads";
 
 describe("calculateBreakEvenRoas", () => {
   it("lucroAntesAds <= 0 nunca tem ROAS que salve — retorna null, nao 0/Infinity", () => {
@@ -82,5 +82,127 @@ describe("calculateTargetRoas", () => {
   it("meta negativa e tratada como zero, nunca afrouxa abaixo do break-even", () => {
     const be = calculateBreakEvenRoas(1000, 250)!;
     expect(calculateTargetRoas(1000, 250, -30)).toBeCloseTo(be, 10);
+  });
+});
+
+describe("lucroNoRoas — o ROAS ideal traduzido em dinheiro", () => {
+  it("bate com a conta feita a mao", () => {
+    // Receita 1000, lucro antes do ads 200. Pra ROAS 10x o ad pode custar
+    // 1000/10 = 100 → sobra 200 − 100 = 100.
+    expect(lucroNoRoas(1000, 200, 10)).toBeCloseTo(100, 2);
+  });
+
+  it("no proprio break-even o lucro e exatamente zero", () => {
+    const be = calculateBreakEvenRoas(1000, 200)!;
+    expect(lucroNoRoas(1000, 200, be)).toBeCloseTo(0, 6);
+  });
+
+  it("no ROAS ideal o lucro entrega a margem alvo", () => {
+    const alvo = calculateTargetRoas(1000, 200, 10)!;
+    // margem alvo 10% sobre receita de 1000 = 100 de lucro
+    expect(lucroNoRoas(1000, 200, alvo)).toBeCloseTo(100, 2);
+  });
+
+  it("ROAS maior sobra mais — a curva anda pro lado certo", () => {
+    expect(lucroNoRoas(1000, 200, 20)!).toBeGreaterThan(lucroNoRoas(1000, 200, 10)!);
+  });
+
+  it("sem alvo ou sem receita devolve null, nao zero", () => {
+    expect(lucroNoRoas(1000, 200, null)).toBeNull();
+    expect(lucroNoRoas(1000, 200, 0)).toBeNull();
+    expect(lucroNoRoas(0, 200, 10)).toBeNull();
+  });
+
+  it("produto no prejuizo antes do ads segue negativo em qualquer ROAS", () => {
+    expect(lucroNoRoas(1000, -50, 30)).toBeLessThan(0);
+  });
+});
+
+describe("motivoSemRoasIdeal — explica o traco em vez de so mostrar '—'", () => {
+  it("quando HA ROAS ideal, nao ha motivo", () => {
+    expect(motivoSemRoasIdeal(1000, 200, 10)).toBeNull();
+  });
+
+  it("sem venda atribuida, diz que falta receita", () => {
+    expect(motivoSemRoasIdeal(0, 200, 10)).toMatch(/Sem venda atribuída/);
+  });
+
+  it("produto que nao cobre o proprio custo tem texto proprio", () => {
+    expect(motivoSemRoasIdeal(1000, -10, 10)).toMatch(/não cobre o próprio custo/);
+  });
+
+  it("margem real abaixo da meta aponta preco/custo, nao campanha", () => {
+    // Rende 5% antes do ads; meta 10% → nenhum ROAS resolve.
+    const m = motivoSemRoasIdeal(1000, 50, 10)!;
+    expect(m).toMatch(/5\.0%/);
+    expect(m).toMatch(/preço ou no custo/);
+  });
+});
+
+describe("getAdRecommendation — nao chamar conclusao de 'sem dados'", () => {
+  const base = {
+    clicks: 30, vendas: 100, cost: 10, lucro: 5, roas: 10,
+    roasTarget: 0, breakEvenRoas: 5, margem: 20, metaMargem: 10,
+    lucroAntesAds: 15,
+  };
+
+  it("produto no vermelho ANTES do ads aponta preco/custo, nao a campanha", () => {
+    // Caso medido: Boldo com ROAS 33x e lucroAntesAds -2,95. Antes isso caia
+    // em "Sem dados suficientes", mandando esperar dado que ja existia.
+    const r = getAdRecommendation({ ...base, clicks: 4, vendas: 39.8, cost: 1.2, lucro: -4.15, roas: 33.17, breakEvenRoas: null, margem: -10.4, lucroAntesAds: -2.95 });
+    expect(r.label).toMatch(/vermelho antes do Ads/);
+    expect(r.tone).toBe("critical");
+  });
+
+  it("vale mesmo com ROAS excelente — o ROAS nao salva produto que nao se paga", () => {
+    const r = getAdRecommendation({ ...base, roas: 99, lucroAntesAds: -1 });
+    expect(r.label).toMatch(/vermelho antes do Ads/);
+  });
+
+  it("gasto relevante sem venda atribuida vira alerta, nao 'sem dados'", () => {
+    const r = getAdRecommendation({ ...base, vendas: 0, cost: 50, lucro: -50, roas: 0, breakEvenRoas: null, margem: null, lucroAntesAds: null });
+    expect(r.acao).toBe("reduzir");
+    expect(r.label).toMatch(/sem venda atribuída/);
+  });
+
+  it("gasto pequeno sem venda diz QUANTO e quantos cliques, nao so 'sem dados'", () => {
+    const r = getAdRecommendation({ ...base, clicks: 10, vendas: 0, cost: 4.79, lucro: -4.79, roas: 0, breakEvenRoas: null, margem: null, lucroAntesAds: null });
+    expect(r.label).toMatch(/10 clique/);
+    expect(r.label).toMatch(/4,79/);
+  });
+
+  it("zero clique e zero venda: nao ha o que concluir mesmo", () => {
+    const r = getAdRecommendation({ ...base, clicks: 0, vendas: 0, cost: 0.68, lucro: null, roas: 0, breakEvenRoas: null, margem: null, lucroAntesAds: null });
+    expect(r.label).toBe("Sem cliques no período");
+  });
+
+  it("volume baixo COM venda diz o que falta pra concluir", () => {
+    const r = getAdRecommendation({ ...base, clicks: 5, margem: 2, roasTarget: 0, breakEvenRoas: 3, roas: 4 });
+    expect(r.label).toMatch(/Volume baixo/);
+    expect(r.label).toMatch(/5 clique/);
+  });
+
+  it("saudavel continua saudavel — a mudanca nao rouba o caso bom", () => {
+    const r = getAdRecommendation(base);
+    expect(r.acao).toBe("escalar");
+  });
+
+  it("prejuizo confirmado com gasto relevante continua critico", () => {
+    const r = getAdRecommendation({ ...base, lucro: -30, cost: 60, margem: -5, lucroAntesAds: 10 });
+    expect(r.acao).toBe("pausar");
+    expect(r.label).toMatch(/prejuízo confirmado/);
+  });
+
+  it("nenhum caminho devolve mais o texto generico antigo", () => {
+    const casos = [
+      { ...base },
+      { ...base, clicks: 0, vendas: 0 },
+      { ...base, vendas: 0, cost: 50 },
+      { ...base, clicks: 5, margem: 2, breakEvenRoas: 3, roas: 4 },
+      { ...base, lucroAntesAds: -1 },
+    ];
+    for (const c of casos) {
+      expect(getAdRecommendation(c).label).not.toBe("Sem dados suficientes");
+    }
   });
 });

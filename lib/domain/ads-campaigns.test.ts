@@ -79,3 +79,112 @@ describe("agregarPorCampanha", () => {
     expect(r[0].campaignName).toBe("Sem campanha identificada");
   });
 });
+
+describe("anuncio em DUAS campanhas — o bug do gasto dobrado", () => {
+  /**
+   * Caso real: um anuncio rodou na campanha antiga e na nova no mesmo periodo
+   * (a antiga foi excluida no meio). O gasto das duas era somado numa linha so
+   * e carimbado com UMA campanha, que aparecia com o dobro do que o Mercado
+   * Ads mostrava — 206 cliques e R$ 47,59 contra 104 e R$ 16,91 reais.
+   */
+  const emDuas = item({
+    campaignId: "nova", campaignName: "Campanha Nova",
+    clicks: 206, cost: 47.59, prints: 2000,
+    directSales: 396.17, directUnits: 10,
+    totalSales: 800, totalUnits: 20,
+    lucroLiquido: 120, lucroDiretoLiquido: -1.57,
+    campanhas: [
+      { campaignId: "nova", campaignName: "Campanha Nova", clicks: 104, prints: 1000, cost: 16.91, directSales: 214.97, directUnits: 6 },
+      { campaignId: "velha", campaignName: "Campanha Velha", clicks: 102, prints: 1000, cost: 30.68, directSales: 181.20, directUnits: 4 },
+    ],
+  });
+
+  it("cada campanha fica com o SEU gasto, nao com a soma", () => {
+    const r = agregarPorCampanha([emDuas], "pub");
+    const nova = r.find((c) => c.campaignId === "nova")!;
+    const velha = r.find((c) => c.campaignId === "velha")!;
+    expect(nova.cost).toBeCloseTo(16.91, 2);
+    expect(velha.cost).toBeCloseTo(30.68, 2);
+  });
+
+  it("cliques tambem se separam — 104 e 102, nao 206 numa so", () => {
+    const r = agregarPorCampanha([emDuas], "pub");
+    expect(r.find((c) => c.campaignId === "nova")!.clicks).toBe(104);
+    expect(r.find((c) => c.campaignId === "velha")!.clicks).toBe(102);
+  });
+
+  it("ROAS de cada campanha usa a receita atribuida a ELA", () => {
+    const r = agregarPorCampanha([emDuas], "pub");
+    // 214,97 / 16,91 = 12,71x — exatamente o que o painel do ML mostra.
+    expect(r.find((c) => c.campaignId === "nova")!.roas).toBeCloseTo(12.71, 1);
+  });
+
+  it("o total continua fechando: soma das campanhas = gasto do anuncio", () => {
+    const r = agregarPorCampanha([emDuas], "pub");
+    expect(r.reduce((s, c) => s + c.cost, 0)).toBeCloseTo(47.59, 2);
+  });
+
+  it("modo geral rateia a receita organica pela proporcao do gasto", () => {
+    const r = agregarPorCampanha([emDuas], "geral");
+    const nova = r.find((c) => c.campaignId === "nova")!;
+    // 16,91 / 47,59 = 35,5% do gasto → 35,5% dos 800 de receita total
+    expect(nova.receita).toBeCloseTo(800 * (16.91 / 47.59), 2);
+    // e o rateio nao cria nem destroi receita
+    expect(r.reduce((s, c) => s + c.receita, 0)).toBeCloseTo(800, 2);
+  });
+
+  it("anuncio de campanha unica nao muda nada (compatibilidade)", () => {
+    const semFatia = agregarPorCampanha([item()], "geral");
+    const comFatiaUnica = agregarPorCampanha([item({
+      campanhas: [{ campaignId: "c1", campaignName: "Campanha 1", clicks: 10, prints: 100, cost: 50, directSales: 200, directUnits: 2 }],
+    })], "geral");
+    expect(comFatiaUnica[0].cost).toBe(semFatia[0].cost);
+    expect(comFatiaUnica[0].receita).toBeCloseTo(semFatia[0].receita, 6);
+    expect(comFatiaUnica[0].lucroAposAds).toBeCloseTo(semFatia[0].lucroAposAds!, 6);
+  });
+});
+
+describe("roasMlAds — o ROAS que o painel do Mercado Ads mostra", () => {
+  it("usa a receita atribuida TOTAL, nao a direta", () => {
+    // Caso real "Pura Folha": R$ 14,79 investido. Direta 69,70 (4,71x aqui),
+    // atribuida total 159,29 (10,77x no painel do ML).
+    const r = agregarPorCampanha([item({
+      campaignId: "pf", campaignName: "Campanha Pura Folha",
+      cost: 14.79, clicks: 35, directSales: 69.70, directUnits: 3,
+      campanhas: [{
+        campaignId: "pf", campaignName: "Campanha Pura Folha",
+        clicks: 35, prints: 500, cost: 14.79,
+        directSales: 69.70, directUnits: 3, sales: 159.29, units: 7,
+      }],
+    })], "pub");
+    expect(r[0].roas).toBeCloseTo(4.71, 2);      // o do modo da tela
+    expect(r[0].roasMlAds).toBeCloseTo(10.77, 2); // o do painel do ML
+  });
+
+  it("sem a receita total, cai na direta em vez de sumir", () => {
+    const r = agregarPorCampanha([item()], "pub");
+    expect(r[0].roasMlAds).toBeCloseTo(r[0].roas!, 6);
+  });
+
+  it("sem investimento nao ha ROAS — null, nao Infinity", () => {
+    const r = agregarPorCampanha([item({ cost: 0, campanhas: undefined })], "pub");
+    expect(r[0].roasMlAds).toBeNull();
+  });
+});
+
+describe("orcamento e ROAS objetivo da campanha", () => {
+  it("vem do anuncio e nao duplica entre anuncios da mesma campanha", () => {
+    const r = agregarPorCampanha([
+      item({ dailyBudget: 20, roasTarget: 6.4 }),
+      item({ dailyBudget: 20, roasTarget: 6.4 }),
+    ], "geral");
+    expect(r[0].dailyBudget).toBe(20);
+    expect(r[0].roasTarget).toBe(6.4);
+  });
+
+  it("sem configuracao devolvida pelo ML fica 0, nao um chute", () => {
+    const r = agregarPorCampanha([item()], "geral");
+    expect(r[0].dailyBudget).toBe(0);
+    expect(r[0].roasTarget).toBe(0);
+  });
+});

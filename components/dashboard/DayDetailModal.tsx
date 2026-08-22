@@ -4,6 +4,21 @@ import { useEffect, useState } from "react";
 import { authedFetch } from "@/lib/api/authed-fetch";
 import { fmtBRL, formatDateLong } from "@/lib/domain/calc";
 
+type AnuncioDia = {
+  item_id: string;
+  title: string;
+  retorno: number;
+  custoProduto: number;
+  envioFull: number;
+  taxaML: number;
+  imposto: number;
+  ads: number;
+  lucro: number;
+  margem: number;
+  qty: number;
+  semVenda?: boolean;
+};
+
 type DayMetrics = {
   faturamentoLiquido: number;
   lucroComCustos: number;
@@ -11,6 +26,7 @@ type DayMetrics = {
   ordersCount: number;
   totalAds: number;
   adsFalhou?: boolean;
+  anuncios?: AnuncioDia[];
 };
 
 /**
@@ -50,6 +66,41 @@ export default function DayDetailModal({ date, onClose }: { date: string; onClos
             <Linha label="Margem líquida" value={`${dados.margemComCustos.toFixed(1)}%`} />
             <Linha label="Pedidos" value={String(dados.ordersCount)} />
             <Linha label="Gasto com ADS" value={dados.adsFalhou ? "indisponível" : fmtBRL(dados.totalAds)} />
+
+            {dados.anuncios && dados.anuncios.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: ".78rem", color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Anúncios do dia (pior lucro primeiro)
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                  {[...dados.anuncios]
+                    .sort((a, b) => a.lucro - b.lucro)
+                    .map((a) => (
+                      <div
+                        key={a.item_id}
+                        style={{
+                          display: "flex", flexDirection: "column", gap: 2,
+                          padding: "8px 10px", borderRadius: 8,
+                          background: "var(--surface-raised,var(--surface2))",
+                          borderLeft: `3px solid ${a.lucro >= 0 ? "var(--success)" : "var(--danger)"}`,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: ".82rem", fontWeight: 600 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</span>
+                          <span className="money" style={{ color: a.lucro >= 0 ? "var(--success)" : "var(--danger)", flexShrink: 0 }}>
+                            {fmtBRL(a.lucro)}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: ".72rem", color: "var(--text-secondary)" }}>
+                          {a.semVenda
+                            ? "sem venda hoje — só ADS"
+                            : `${a.qty} un · retorno ${fmtBRL(a.retorno)} · CMV ${fmtBRL(a.custoProduto)} · frete ${fmtBRL(a.envioFull)} · taxa ML ${fmtBRL(a.taxaML)} · imposto ${fmtBRL(a.imposto)} · ads ${fmtBRL(a.ads)} · margem ${a.margem.toFixed(1)}%`}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div className="modal-btns">

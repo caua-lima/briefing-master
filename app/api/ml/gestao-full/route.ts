@@ -149,6 +149,48 @@ export async function GET(req: Request) {
 
     // Recebimentos (inbound) por inventory_id — best-effort
     const invArr = Array.from(inventoryIds);
+
+    /**
+     * ─── ESTOQUE INDISPONÍVEL NO FULL ───────────────────────────────────
+     *
+     * `available_quantity` do /items conta só o que está PRONTO PRA VENDER.
+     * Unidade que chegou no centro e ficou retida — em transferência entre
+     * centros, avariada, em revisão, em processo interno — some do painel
+     * inteiro: não aparece como disponível (não está) e não aparece como
+     * perda (ninguém contou). É estoque pago, parado e invisível.
+     *
+     * `/inventories/{id}/stock/fulfillment` é o único lugar que o ML expõe
+     * essa quebra, em `not_available_detail`. Best-effort e com teto de
+     * chamadas: é uma requisição por pool, e a cota já derrubou este endpoint
+     * antes (HTTP 429 documentado acima).
+     */
+    const INV_DETALHE_MAX = 60;
+    const estoqueDetalhe = new Map<string, { disponivel: number; indisponivel: number; porStatus: Map<string, number> }>();
+    let detalheFalhou = 0;
+    await mapPool(invArr.slice(0, INV_DETALHE_MAX), 4, async (inv) => {
+      try {
+        const r = await fetch(`${ML_API}/inventories/${inv}/stock/fulfillment`, { headers, cache: "no-store" });
+        if (!r.ok) { detalheFalhou++; return; }
+        const j = (await r.json()) as {
+          available_quantity?: number;
+          not_available_quantity?: number;
+          not_available_detail?: { status?: string; quantity?: number }[];
+        };
+        const porStatus = new Map<string, number>();
+        for (const d of j.not_available_detail ?? []) {
+          const st = String(d?.status ?? "").trim();
+          const q = Number(d?.quantity ?? 0);
+          if (!st || q <= 0) continue;
+          porStatus.set(st, (porStatus.get(st) ?? 0) + q);
+        }
+        estoqueDetalhe.set(inv, {
+          disponivel: Number(j.available_quantity ?? 0),
+          indisponivel: Number(j.not_available_quantity ?? 0),
+          porStatus,
+        });
+      } catch { detalheFalhou++; }
+    });
+
     const now = new Date(Date.now() - 3 * 3600 * 1000);
     /**
      * O ML recusa janela > 60 dias aqui, mas o limite real é a cota: pedir 55
@@ -492,7 +534,47 @@ export async function GET(req: Request) {
      */
     const totalVendido = itens.reduce((s, it) => s + it.sold, 0);
 
-    const body = { itens, recebimentos, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas: remessasComCusto, custoTotalRemessas, custoRemessaIndisponivel, truncado, linhasBrutas: recebimentos.length, duplicadasIgnoradas, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
+    /**
+     * Consolidação do indisponível. Cada pool entra UMA vez (a chave já é o
+     * inventory_id), então aqui não há o risco de dobra que existe do lado do
+     * `available` — ver consolidarEstoqueAnuncios.
+     */
+    const indisponivelPorStatus = new Map<string, number>();
+    let totalIndisponivel = 0;
+    for (const d of estoqueDetalhe.values()) {
+      totalIndisponivel += d.indisponivel;
+      for (const [st, q] of d.porStatus) indisponivelPorStatus.set(st, (indisponivelPorStatus.get(st) ?? 0) + q);
+    }
+
+    /** Produto afetado, pra tela poder dizer QUAL item está retido. */
+    const indisponivelPorProduto = Array.from(estoqueDetalhe.entries())
+      .filter(([, d]) => d.indisponivel > 0)
+      .map(([inv, d]) => ({
+        inventory: inv,
+        nome: tituloPorInventory.get(inv)?.nome ?? "",
+        productId: tituloPorInventory.get(inv)?.productId ?? "",
+        disponivel: d.disponivel,
+        indisponivel: d.indisponivel,
+        porStatus: Array.from(d.porStatus.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([status, qtd]) => ({ status, qtd })),
+      }))
+      .sort((a, b) => b.indisponivel - a.indisponivel);
+
+    const estoqueFull = {
+      totalIndisponivel,
+      porStatus: Array.from(indisponivelPorStatus.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([status, qtd]) => ({ status, qtd })),
+      porProduto: indisponivelPorProduto,
+      // Quantos pools não responderam: sem isto, "0 indisponível" seria
+      // indistinguível de "não consegui perguntar".
+      poolsConsultados: estoqueDetalhe.size,
+      poolsFalharam: detalheFalhou,
+      poolsForaDoTeto: Math.max(0, invArr.length - INV_DETALHE_MAX),
+    };
+
+    const body = { itens, recebimentos, estoqueFull, totalDisponivel, totalVendido, temInventory: invArr.length > 0, opStatus, opErro, opUrl, tiposVistos: Array.from(tiposVistos), amostra, amostras, remessas: remessasComCusto, custoTotalRemessas, custoRemessaIndisponivel, truncado, linhasBrutas: recebimentos.length, duplicadasIgnoradas, dias, janela: { from, to }, inventariosConsultados: invArr.length, anunciosDaConta: arr.length };
     // Só guarda resposta boa: cachear erro esconderia o problema por 5 minutos.
     if (opStatus === 200) cache.set(chaveCache, { at: Date.now(), body });
     return NextResponse.json(body);
