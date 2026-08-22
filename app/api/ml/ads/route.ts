@@ -22,6 +22,7 @@ function statusLabel(campaignId: string, campaignStatus: string): "ativo" | "pau
 import { getValidMlAccessToken } from "@/lib/ml/getToken";
 import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 import { classificarVenda, detectarPedidosSubstituidos } from "@/lib/domain/venda-status";
+import { diaBRDe } from "@/lib/domain/periodo-br";
 
 export const maxDuration = 30;
 
@@ -55,6 +56,14 @@ function vendasPorItem(
       orderId: String(o.order_id ?? ""),
       packId: o.pack_id as string | null | undefined,
       status: o.status,
+      // Comprador + dia + itens: a 2ª regra de detectarPedidosSubstituidos,
+      // que pega a separação de envio quando o ML não reaproveita o pack_id.
+      buyerId: (o.buyer_id as string | null | undefined) ?? null,
+      dia: diaBRDe(String(o.date_created ?? "")),
+      itens: ((o.items as OrderItem[]) ?? []).map((it) => ({
+        itemId: String(it.item_id ?? ""),
+        qty: Number(it.quantity ?? 1),
+      })),
     })),
   );
   for (const o of orders) {

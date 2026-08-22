@@ -116,6 +116,9 @@ type Conciliacao = {
   resgatadosDoCache?:    number;
   substituidasQuantidade?: number;
   substituidasValor?:    number;
+  canceladasDetalhe?:    { orderId: string; valor: number; dia: string; status: string; origem: string; packId: string }[];
+  pedidosSemFrete?:      number;
+  valorSemFrete?:        number;
 };
 
 type Devolucao = {
@@ -597,6 +600,40 @@ function ConferenciaML({ c, periodo }: { c: Conciliacao; periodo: string }) {
             ))}
           </div>
 
+          {/* A LISTA dos cancelados. Comparar dois totais nunca disse QUAIS
+              pedidos divergem — com os ids, dá pra abrir dois no Seller Center
+              e saber na hora se é cancelamento real ou separação de envio. */}
+          {(c.canceladasDetalhe?.length ?? 0) > 0 && (
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: "pointer", color: "var(--muted)", fontSize: ".78rem" }}>
+                Ver os {c.canceladasDetalhe!.length} pedido(s) que estamos contando como cancelados
+              </summary>
+              <div style={{ fontSize: ".72rem", color: "var(--muted)", margin: "8px 0", lineHeight: 1.5 }}>
+                Abra um ou dois destes no Mercado Livre. Se lá aparecerem como venda válida,
+                é separação de envio (ou cancelamento revertido) e o número daqui está alto.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflowY: "auto" }}>
+                {c.canceladasDetalhe!.map((p) => (
+                  <div
+                    key={p.orderId}
+                    style={{
+                      display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+                      padding: "6px 10px", borderRadius: 6, background: "var(--surface-raised,var(--surface2))",
+                    }}
+                  >
+                    <span style={{ fontFamily: "ui-monospace, monospace", fontSize: ".72rem" }}>
+                      #{p.orderId}
+                      <span style={{ color: "var(--muted)", fontFamily: "inherit" }}>
+                        {" "}· {formatDateBR(p.dia)} · {p.origem}{p.packId ? ` · pacote ${p.packId}` : ""}
+                      </span>
+                    </span>
+                    <b className="money" style={{ whiteSpace: "nowrap" }}>{fmtBRL(p.valor)}</b>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
           <div style={{ marginTop: 10, fontSize: ".72rem", color: "var(--muted)", lineHeight: 1.6 }}>
             <b>Se “Vendas brutas” bater e o card acima não</b>, está tudo certo: o
             “Faturamento bruto” do card inclui os cancelados de propósito, e o ML não.
@@ -614,6 +651,15 @@ function ConferenciaML({ c, periodo }: { c: Conciliacao; periodo: string }) {
                 pacote — é o que acontece quando você <b>separa o envio</b> na agência. Não são
                 venda perdida: o valor já está nos pedidos que os substituíram, então eles não
                 entram nem no bruto nem em “Vendas canceladas”.
+              </>
+            )}
+            {(c.pedidosSemFrete ?? 0) > 0 && (
+              <>
+                {" "}· <b style={{ color: "var(--yellow)" }}>{c.pedidosSemFrete} pedido(s)</b> ({fmtBRL(c.valorSemFrete ?? 0)})
+                ainda estão sem o custo de frete confirmado pelo Mercado Livre. Eles entram no
+                lucro com frete R$ 0,00 — não dá pra somar um custo que não conhecemos —, então o
+                <b> lucro e a margem acima são um teto</b>, não o número final. Use “⟳ Atualizar ML”
+                pra buscar esses fretes.
               </>
             )}
             {(c.resgatadosDoCache ?? 0) > 0 && (

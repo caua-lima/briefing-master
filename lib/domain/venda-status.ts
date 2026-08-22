@@ -58,11 +58,51 @@ export type PedidoParaSubstituicao = {
   /** Identificador do pacote/compra no ML. Vazio ou nulo = pedido avulso. */
   packId?: string | null;
   status: unknown;
+  /**
+   * Comprador e dia BR. Sem `pack_id` reaproveitado, é o único jeito de ligar
+   * o pedido cancelado aos que nasceram no lugar dele — ver a 2ª regra abaixo.
+   */
+  buyerId?: string | null;
+  dia?: string;
+  /** Itens do pedido, pra provar que os novos cobrem o que o cancelado tinha. */
+  itens?: { itemId: string; qty: number }[];
 };
 
+/** Soma as unidades por item_id de um conjunto de pedidos. */
+function unidadesPorItem(pedidos: PedidoParaSubstituicao[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const p of pedidos) {
+    for (const it of p.itens ?? []) {
+      const id = String(it.itemId ?? "").trim().toUpperCase();
+      if (!id) continue;
+      m.set(id, (m.get(id) ?? 0) + Math.max(Number(it.qty) || 0, 0));
+    }
+  }
+  return m;
+}
+
 /**
- * Ids dos pedidos cancelados que na verdade foram SUBSTITUÍDOS por outros do
- * mesmo pacote — não devem contar nem como faturamento nem como cancelamento.
+ * Ids dos pedidos cancelados que na verdade foram SUBSTITUÍDOS por outros —
+ * não devem contar nem como faturamento nem como cancelamento.
+ *
+ * ─── DUAS REGRAS, PORQUE O PACK_ID NÃO BASTA ────────────────────────────
+ *
+ * A primeira versão disto olhava só o `pack_id`, apostando que o Mercado
+ * Livre reaproveitaria o pacote ao recriar os pedidos. Nem sempre reaproveita:
+ * medido contra o Seller Center, ~12 pedidos por mês continuavam sendo
+ * contados como cancelamento aqui e como venda boa lá — R$ 499,59 de
+ * diferença num único mês.
+ *
+ * Por isso a 2ª regra, deliberadamente ESTREITA: o cancelado só é considerado
+ * substituído se existirem pedidos válidos do MESMO comprador, no MESMO dia,
+ * cobrindo TODOS os itens dele em quantidade igual ou maior. Exigir cobertura
+ * completa é o que impede confundir com um cancelamento seguido de uma compra
+ * diferente.
+ *
+ * Mesmo se a regra errar e capturar um cancelamento real seguido de recompra,
+ * o faturamento líquido continua certo: o valor sai do cancelado e entra pelo
+ * pedido novo. O que se perde é o registro no KPI de canceladas — e é
+ * exatamente assim que o painel do ML se comporta.
  */
 export function detectarPedidosSubstituidos(pedidos: PedidoParaSubstituicao[]): Set<string> {
   // pacote → tem algum pedido que sobreviveu?
@@ -74,11 +114,46 @@ export function detectarPedidosSubstituidos(pedidos: PedidoParaSubstituicao[]): 
     else if (!pacoteTemValido.has(pack)) pacoteTemValido.set(pack, false);
   }
 
+  // (comprador, dia) → pedidos VÁLIDOS, pra 2ª regra.
+  const validosPorCompradorDia = new Map<string, PedidoParaSubstituicao[]>();
+  for (const p of pedidos) {
+    if (ehStatusNaoVenda(p.status)) continue;
+    const comprador = String(p.buyerId ?? "").trim();
+    const dia = String(p.dia ?? "").trim();
+    if (!comprador || !dia) continue;
+    const k = `${comprador}|${dia}`;
+    const arr = validosPorCompradorDia.get(k) ?? [];
+    arr.push(p);
+    validosPorCompradorDia.set(k, arr);
+  }
+
   const substituidos = new Set<string>();
   for (const p of pedidos) {
+    if (!ehStatusNaoVenda(p.status)) continue;
+
+    // 1ª regra — pacote sobreviveu.
     const pack = String(p.packId ?? "").trim();
-    if (!pack || !ehStatusNaoVenda(p.status)) continue;
-    if (pacoteTemValido.get(pack)) substituidos.add(String(p.orderId));
+    if (pack && pacoteTemValido.get(pack)) {
+      substituidos.add(String(p.orderId));
+      continue;
+    }
+
+    // 2ª regra — mesmo comprador, mesmo dia, itens cobertos.
+    const comprador = String(p.buyerId ?? "").trim();
+    const dia = String(p.dia ?? "").trim();
+    const itensCancelado = p.itens ?? [];
+    if (!comprador || !dia || itensCancelado.length === 0) continue;
+
+    const validos = validosPorCompradorDia.get(`${comprador}|${dia}`);
+    if (!validos || validos.length === 0) continue;
+
+    const disponivel = unidadesPorItem(validos);
+    const cobreTudo = itensCancelado.every((it) => {
+      const id = String(it.itemId ?? "").trim().toUpperCase();
+      if (!id) return false;
+      return (disponivel.get(id) ?? 0) >= Math.max(Number(it.qty) || 0, 0);
+    });
+    if (cobreTudo) substituidos.add(String(p.orderId));
   }
   return substituidos;
 }

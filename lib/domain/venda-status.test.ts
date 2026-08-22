@@ -161,3 +161,86 @@ describe("classificarVenda com substituicao", () => {
     expect(r.classe).toBe("cancelada");
   });
 });
+
+describe("2a regra: separacao de envio SEM pack_id reaproveitado", () => {
+  /**
+   * O ML nem sempre recria os pedidos no mesmo pacote. Medido contra o Seller
+   * Center: ~12 pedidos/mes seguiam contados como cancelamento aqui e como
+   * venda boa la — R$ 499,59 num unico mes. A ligacao que sobra e comprador +
+   * dia + itens.
+   */
+  const original = {
+    orderId: "orig", packId: "packA", status: "cancelled",
+    buyerId: "b1", dia: "2026-08-15",
+    itens: [{ itemId: "MLB123", qty: 2 }],
+  };
+  const novos = [
+    { orderId: "n1", packId: "packB", status: "paid", buyerId: "b1", dia: "2026-08-15", itens: [{ itemId: "MLB123", qty: 1 }] },
+    { orderId: "n2", packId: "packC", status: "paid", buyerId: "b1", dia: "2026-08-15", itens: [{ itemId: "MLB123", qty: 1 }] },
+  ];
+
+  it("detecta a substituicao mesmo com pack_id DIFERENTE", () => {
+    const s = detectarPedidosSubstituidos([original, ...novos]);
+    expect(s.has("orig")).toBe(true);
+  });
+
+  it("os pedidos novos continuam sendo venda", () => {
+    const s = detectarPedidosSubstituidos([original, ...novos]);
+    expect(s.has("n1")).toBe(false);
+    expect(s.has("n2")).toBe(false);
+  });
+
+  it("comprador DIFERENTE nao liga — cancelamento de verdade", () => {
+    const s = detectarPedidosSubstituidos([
+      original,
+      { ...novos[0], buyerId: "b2" },
+      { ...novos[1], buyerId: "b2" },
+    ]);
+    expect(s.size).toBe(0);
+  });
+
+  it("dia diferente nao liga — recompra depois nao apaga o cancelamento", () => {
+    const s = detectarPedidosSubstituidos([
+      original,
+      { ...novos[0], dia: "2026-08-16" },
+      { ...novos[1], dia: "2026-08-16" },
+    ]);
+    expect(s.size).toBe(0);
+  });
+
+  it("cobertura PARCIAL nao basta — 2 un canceladas contra 1 un nova", () => {
+    // Exigir cobertura completa e o que impede confundir com cancelamento
+    // seguido de uma compra menor.
+    const s = detectarPedidosSubstituidos([original, novos[0]]);
+    expect(s.size).toBe(0);
+  });
+
+  it("item diferente nao liga, mesmo comprador e mesmo dia", () => {
+    const s = detectarPedidosSubstituidos([
+      original,
+      { ...novos[0], itens: [{ itemId: "MLB999", qty: 2 }] },
+    ]);
+    expect(s.size).toBe(0);
+  });
+
+  it("cancelado sem comprador conhecido nao entra na 2a regra", () => {
+    const s = detectarPedidosSubstituidos([{ ...original, buyerId: null, packId: null }, ...novos]);
+    expect(s.size).toBe(0);
+  });
+
+  it("a 1a regra (pacote) continua valendo sozinha", () => {
+    const s = detectarPedidosSubstituidos([
+      { orderId: "o", packId: "p", status: "cancelled" },
+      { orderId: "v", packId: "p", status: "paid" },
+    ]);
+    expect(s.has("o")).toBe(true);
+  });
+
+  it("item_id compara sem depender de caixa", () => {
+    const s = detectarPedidosSubstituidos([
+      { ...original, itens: [{ itemId: "mlb123", qty: 2 }] },
+      ...novos,
+    ]);
+    expect(s.has("orig")).toBe(true);
+  });
+});

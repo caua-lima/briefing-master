@@ -77,6 +77,17 @@ export async function fetchOrdersLive(
           total_amount: Number(o.total_amount ?? 0),
           shipping_id: String((o.shipping as Record<string, unknown>)?.id ?? ""),
           pack_id: o.pack_id ? String(o.pack_id) : null,
+          /**
+           * O comprador é o que permite reconhecer a SEPARAÇÃO DE ENVIO quando
+           * o Mercado Livre não reaproveita o `pack_id`: o pedido original é
+           * cancelado e outros nascem no lugar, do mesmo comprador, no mesmo
+           * dia, com os mesmos itens. Sem este campo (a busca de pedidos nunca
+           * o trazia, só o sync completo) não havia como ligar um ao outro, e
+           * o cancelamento administrativo era contado como venda perdida.
+           */
+          buyer_id: (o.buyer as Record<string, unknown>)?.id
+            ? String((o.buyer as Record<string, unknown>).id)
+            : null,
           items: rawItems.map((it) => {
             const itemObj = (it.item as Record<string, unknown>) ?? {};
             const itemId = String(itemObj.id ?? "").trim();
