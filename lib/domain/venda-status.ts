@@ -68,6 +68,22 @@ export type PedidoParaSubstituicao = {
   itens?: { itemId: string; qty: number }[];
 };
 
+/**
+ * Quantos dias o pedido substituto pode nascer depois do cancelado.
+ *
+ * 3 dias cobre "cancelou hoje, despachou depois do fim de semana" sem virar
+ * uma janela larga o bastante pra confundir com recompra do mesmo cliente.
+ */
+export const JANELA_SUBSTITUICAO_DIAS = 3;
+
+/** Diferença em dias entre dois dias BR (YYYY-MM-DD). null se algum não for válido. */
+function diffEmDias(de: string, para: string): number | null {
+  const a = Date.parse(`${de}T00:00:00Z`);
+  const b = Date.parse(`${para}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+
 /** Soma as unidades por item_id de um conjunto de pedidos. */
 function unidadesPorItem(pedidos: PedidoParaSubstituicao[]): Map<string, number> {
   const m = new Map<string, number>();
@@ -114,17 +130,15 @@ export function detectarPedidosSubstituidos(pedidos: PedidoParaSubstituicao[]): 
     else if (!pacoteTemValido.has(pack)) pacoteTemValido.set(pack, false);
   }
 
-  // (comprador, dia) → pedidos VÁLIDOS, pra 2ª regra.
-  const validosPorCompradorDia = new Map<string, PedidoParaSubstituicao[]>();
+  // comprador → pedidos VÁLIDOS dele, pra 2ª regra.
+  const validosPorComprador = new Map<string, PedidoParaSubstituicao[]>();
   for (const p of pedidos) {
     if (ehStatusNaoVenda(p.status)) continue;
     const comprador = String(p.buyerId ?? "").trim();
-    const dia = String(p.dia ?? "").trim();
-    if (!comprador || !dia) continue;
-    const k = `${comprador}|${dia}`;
-    const arr = validosPorCompradorDia.get(k) ?? [];
+    if (!comprador || !String(p.dia ?? "").trim()) continue;
+    const arr = validosPorComprador.get(comprador) ?? [];
     arr.push(p);
-    validosPorCompradorDia.set(k, arr);
+    validosPorComprador.set(comprador, arr);
   }
 
   const substituidos = new Set<string>();
@@ -144,8 +158,26 @@ export function detectarPedidosSubstituidos(pedidos: PedidoParaSubstituicao[]): 
     const itensCancelado = p.itens ?? [];
     if (!comprador || !dia || itensCancelado.length === 0) continue;
 
-    const validos = validosPorCompradorDia.get(`${comprador}|${dia}`);
-    if (!validos || validos.length === 0) continue;
+    const todosDoComprador = validosPorComprador.get(comprador);
+    if (!todosDoComprador || todosDoComprador.length === 0) continue;
+
+    /**
+     * Janela PRA FRENTE, não "mesmo dia".
+     *
+     * A separação do envio não acontece na compra — acontece na hora de
+     * despachar, que costuma ser no dia seguinte ou no outro. Como o ML só
+     * cancela e recria NAQUELE momento, os pedidos novos nascem DEPOIS do
+     * original. Exigir mesmo dia deixava passar justamente o caso comum.
+     *
+     * Só pra frente, de propósito: um pedido válido ANTERIOR não pode ser a
+     * substituição de um cancelamento que ainda não aconteceu — aceitar isso
+     * abriria a porta pra apagar cancelamento real de comprador recorrente.
+     */
+    const validos = todosDoComprador.filter((v) => {
+      const d = diffEmDias(dia, String(v.dia ?? ""));
+      return d != null && d >= 0 && d <= JANELA_SUBSTITUICAO_DIAS;
+    });
+    if (validos.length === 0) continue;
 
     const disponivel = unidadesPorItem(validos);
     const cobreTudo = itensCancelado.every((it) => {

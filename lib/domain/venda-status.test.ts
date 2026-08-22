@@ -199,11 +199,46 @@ describe("2a regra: separacao de envio SEM pack_id reaproveitado", () => {
     expect(s.size).toBe(0);
   });
 
-  it("dia diferente nao liga — recompra depois nao apaga o cancelamento", () => {
+  /**
+   * Este teste exigia MESMO DIA e travava o comportamento errado: a separacao
+   * do envio acontece na hora de DESPACHAR, quase sempre no dia seguinte, e o
+   * ML so cancela e recria naquele momento. Exigir mesmo dia deixava passar o
+   * caso comum — que e justamente o que nao batia com o Seller Center.
+   */
+  it("dia seguinte LIGA — e quando a separacao de fato acontece", () => {
     const s = detectarPedidosSubstituidos([
       original,
       { ...novos[0], dia: "2026-08-16" },
       { ...novos[1], dia: "2026-08-16" },
+    ]);
+    expect(s.has("orig")).toBe(true);
+  });
+
+  it("dentro da janela de 3 dias ainda liga (cancelou sexta, despachou segunda)", () => {
+    const s = detectarPedidosSubstituidos([
+      original,
+      { ...novos[0], dia: "2026-08-18" },
+      { ...novos[1], dia: "2026-08-18" },
+    ]);
+    expect(s.has("orig")).toBe(true);
+  });
+
+  it("fora da janela NAO liga — recompra semanas depois nao apaga cancelamento", () => {
+    const s = detectarPedidosSubstituidos([
+      original,
+      { ...novos[0], dia: "2026-08-25" },
+      { ...novos[1], dia: "2026-08-25" },
+    ]);
+    expect(s.size).toBe(0);
+  });
+
+  it("pedido valido ANTERIOR nao substitui — o substituto nasce DEPOIS", () => {
+    // Sem esta direcao, uma compra antiga do mesmo cliente apagaria um
+    // cancelamento posterior legitimo.
+    const s = detectarPedidosSubstituidos([
+      original,
+      { ...novos[0], dia: "2026-08-14" },
+      { ...novos[1], dia: "2026-08-14" },
     ]);
     expect(s.size).toBe(0);
   });

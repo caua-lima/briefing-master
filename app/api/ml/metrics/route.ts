@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAccess } from "@/lib/api-auth";
 import { getAdsSpendByItem, probeAds } from "@/lib/ml/ads";
-import { fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
+import { completarFretesFaltantes, fetchOrdersLive, loadOrders, readShippingCosts } from "@/lib/ml/orders";
 import { getMlAccessToken } from "../token";
 import { custoNaData, impostoNaData, type CustoFaixa, type ImpostoFaixa } from "@/lib/domain/types";
 import { diaBRDe, recortarPorDiaBR } from "@/lib/domain/periodo-br";
@@ -526,21 +526,36 @@ export async function GET(req: Request) {
      * agora contamos quantos pedidos estão nessa situação e o quanto eles
      * representam, pra tela poder dizer que a margem é um TETO.
      */
+    // 1) O que o cache já tem.
+    for (const o of orders) if (o.shipping_cost == null) { const v = shipMap.get(String(o.order_id)); if (v != null) o.shipping_cost = v; }
+    for (const o of ordersHoje) if (o.shipping_cost == null) { const v = shipMap.get(String(o.order_id)); if (v != null) o.shipping_cost = v; }
+
+    /**
+     * 2) O que falta, BUSCA no ML — não assume zero.
+     *
+     * Antes o que faltava caía direto num `?? 0`, e a margem daquele pedido
+     * saía como se o frete fosse grátis. Agora o custo é consultado de fato
+     * (ver completarFretesFaltantes), priorizando os pedidos de maior valor,
+     * que são os que mais distorcem a margem. Best-effort e com teto: é uma
+     * requisição por pedido, e o mês inteiro sem sync estouraria o tempo.
+     */
     let pedidosSemFrete = 0;
     let valorSemFrete = 0;
-    const aplicarFrete = (o: FirebaseFirestore.DocumentData, contar: boolean) => {
+    if (token) {
+      await completarFretesFaltantes(token, orders).catch(() => ({ buscados: 0, aindaSemFrete: 0 }));
+      await completarFretesFaltantes(token, ordersHoje, 20).catch(() => ({ buscados: 0, aindaSemFrete: 0 }));
+    }
+
+    // 3) O que AINDA falta entra como 0 — não dá pra somar o que não se sabe —
+    //    mas é contado, pra tela poder dizer que a margem é um teto.
+    const zerarDesconhecido = (o: FirebaseFirestore.DocumentData, contar: boolean) => {
       if (o.shipping_cost != null) return;
-      const doCache = shipMap.get(String(o.order_id));
-      if (doCache == null) {
-        if (contar) { pedidosSemFrete++; valorSemFrete += Number(o.total_amount ?? 0); }
-        o.shipping_cost = 0;
-        o.frete_desconhecido = true;
-        return;
-      }
-      o.shipping_cost = doCache;
+      if (contar) { pedidosSemFrete++; valorSemFrete += Number(o.total_amount ?? 0); }
+      o.shipping_cost = 0;
+      o.frete_desconhecido = true;
     };
-    for (const o of orders) aplicarFrete(o, true);
-    for (const o of ordersHoje) aplicarFrete(o, false);
+    for (const o of orders) zerarDesconhecido(o, true);
+    for (const o of ordersHoje) zerarDesconhecido(o, false);
 
     // ── Devoluções + cancelamentos: separa por tipo ───────────
     // Cancelamento = venda que não aconteceu (estoque não saiu/voltou).

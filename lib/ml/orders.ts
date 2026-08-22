@@ -131,3 +131,87 @@ export async function readShippingCosts(
   }
   return map;
 }
+
+/**
+ * Custo de frete do VENDEDOR para um envio, direto do ML.
+ *
+ * ─── POR QUE ISTO SAIU DO SYNC ──────────────────────────────────────────
+ *
+ * O custo só existia depois que `syncOrdersRange` passava pelo pedido e
+ * gravava. Pedido recente, ou que o sync ainda não alcançou, ficava sem — e o
+ * Dashboard resolvia isso com `?? 0`, transformando "não sei" em "frete
+ * grátis". A margem daquele pedido saía inflada, e nada na tela dizia que
+ * aquele número era um teto.
+ *
+ * Com o helper aqui, quem calcula margem pode BUSCAR o que falta em vez de
+ * assumir zero. Mesma leitura do sync, pra não existirem duas definições de
+ * custo de frete no app.
+ */
+export async function fetchShippingCost(token: string, shipmentId: string): Promise<number | null> {
+  if (!shipmentId) return null;
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+  try {
+    // `/costs` é o mais preciso: `senders` é literalmente o que VOCÊ paga.
+    const rc = await fetch(`${ML_API}/shipments/${shipmentId}/costs`, { headers, cache: "no-store" });
+    if (rc.ok) {
+      const jc = (await rc.json()) as { senders?: { cost?: number }[] };
+      const soma = (Array.isArray(jc?.senders) ? jc.senders : []).reduce((s, x) => s + Number(x?.cost ?? 0), 0);
+      if (soma > 0) return soma;
+    }
+  } catch { /* cai no detalhe do envio */ }
+
+  try {
+    const rs = await fetch(`${ML_API}/shipments/${shipmentId}`, { headers, cache: "no-store" });
+    if (!rs.ok) return null;
+    const j = (await rs.json()) as {
+      base_cost?: number;
+      shipping_option?: { cost?: number; list_cost?: number };
+    };
+    const pagoPeloComprador = Number(j.shipping_option?.cost ?? 0);
+    // Comprador pagou o frete → o vendedor não arca com nada. É zero de
+    // verdade, não ausência de dado, e por isso devolve 0 em vez de null.
+    if (pagoPeloComprador > 0) return 0;
+    const list = Number(j.shipping_option?.list_cost ?? 0);
+    const base = Number(j.base_cost ?? 0);
+    return list > 0 ? list : base > 0 ? base : 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Completa o custo de frete dos pedidos que o cache não tinha, consultando o
+ * ML. Devolve quantos continuaram sem — esses seguem entrando como 0, e a
+ * tela precisa saber pra avisar que a margem é um teto.
+ *
+ * `limite` existe porque isto é uma requisição por pedido: num mês inteiro
+ * sem sync, buscar tudo estouraria o tempo da função. O teto prioriza os
+ * pedidos de maior valor, que são os que mais distorcem a margem.
+ */
+export async function completarFretesFaltantes(
+  token: string,
+  pedidos: FirebaseFirestore.DocumentData[],
+  limite = 40,
+): Promise<{ buscados: number; aindaSemFrete: number }> {
+  const faltando = pedidos
+    .filter((o) => o.shipping_cost == null && String(o.shipping_id ?? "").trim())
+    .sort((a, b) => Number(b.total_amount ?? 0) - Number(a.total_amount ?? 0));
+
+  const alvos = faltando.slice(0, limite);
+  let buscados = 0;
+  // Concorrência baixa: o ML já devolveu 429 neste endpoint em outras rotas.
+  const CONC = 4;
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONC, alvos.length) }, async () => {
+      while (i < alvos.length) {
+        const o = alvos[i++];
+        const c = await fetchShippingCost(token, String(o.shipping_id ?? ""));
+        if (c != null) { o.shipping_cost = c; buscados++; }
+      }
+    }),
+  );
+
+  const aindaSemFrete = pedidos.filter((o) => o.shipping_cost == null).length;
+  return { buscados, aindaSemFrete };
+}
